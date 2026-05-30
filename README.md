@@ -31,13 +31,14 @@ LaclauGPT is a distributed system with several modules. They communicate with:
 
 ## LaclauGPT Required Modules
 These are the required modules of LaclauGPT.
-* LaclauGPT: Data Analysis 
-* LaclauGPT: Data Storage
-* LaclauGPT: Data Collection
-* LaclauGPT: Data Visualization
+* [LaclauGPT: Data Analysis](https://github.com/TomiToivio/LaclauGPT-Data-Analysis) 
+* [LaclauGPT: Data Storage](https://github.com/TomiToivio/LaclauGPT-Data-Storage)
+* [LaclauGPT: Data Collection](https://github.com/TomiToivio/LaclauGPT-Data-Collection)
+* [LaclauGPT: Data Visualization](https://github.com/TomiToivio/LaclauGPT-Data-Visualization)
 
 ## LaclauGPT Optional Modules
 These modules are experimental and optional.
-* LaclauGPT: Deep Research Agent
-* LaclauGPT: Data Collection Agent
-* LaclauGPT: Social Simulation Laboratory
+* [LaclauGPT: Deep Research Agent](https://github.com/TomiToivio/LaclauGPT-Deep-Research-Agent)
+* [LaclauGPT: Data Collection Agent](https://github.com/TomiToivio/LaclauGPT-Data-Collection-Agent)
+* [LaclauGPT: Social Simulation Laboratory](https://github.com/TomiToivio/LaclauGPT-Social-Simulation-Laboratory)
+* [LaclauGPT: Web Scraper](https://github.com/TomiToivio/LaclauGPT-Web-Scraper)
