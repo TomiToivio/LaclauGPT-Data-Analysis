@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import json
+import sqlite3
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
@@ -90,6 +91,44 @@ def read_csv(path: str | Path) -> list[CanonicalRecord]:
         return []
     with source.open("r", encoding="utf-8", newline="") as handle:
         return [record_from_flat_row(row) for row in csv.DictReader(handle)]
+
+
+def write_sqlite(path: str | Path, records: Iterable[CanonicalRecord]) -> None:
+    """Persist canonical JSON keyed by source_url, never by backend identity."""
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    rows = [(record.source_url, record.schema_version, record_to_json(record)) for record in records]
+    with sqlite3.connect(destination) as connection:
+        connection.execute(
+            """CREATE TABLE IF NOT EXISTS canonical_records (
+                source_url TEXT PRIMARY KEY,
+                schema_version TEXT NOT NULL,
+                payload_json TEXT NOT NULL
+            )"""
+        )
+        connection.executemany(
+            """INSERT INTO canonical_records(source_url, schema_version, payload_json)
+               VALUES (?, ?, ?)
+               ON CONFLICT(source_url) DO UPDATE SET
+                 schema_version=excluded.schema_version,
+                 payload_json=excluded.payload_json""",
+            rows,
+        )
+        connection.commit()
+
+
+def read_sqlite(path: str | Path) -> list[CanonicalRecord]:
+    source = Path(path)
+    if not source.exists():
+        return []
+    with sqlite3.connect(source) as connection:
+        try:
+            rows = connection.execute(
+                "SELECT payload_json FROM canonical_records ORDER BY source_url"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return []
+    return [record_from_json(payload) for (payload,) in rows]
 
 
 def to_mongo_document(record: CanonicalRecord) -> dict[str, Any]:
