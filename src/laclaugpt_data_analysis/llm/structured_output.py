@@ -10,15 +10,11 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, Type, TypeVar
+from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
-from laclaugpt_data_analysis.llm.base import (
-    ChatRequest,
-    LLMProvider,
-    LLMResponse,
-)
+from laclaugpt_data_analysis.llm.base import ChatRequest, LLMProvider, LLMResponse
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +35,7 @@ def strip_code_fences(content: str) -> str:
     return text.strip()
 
 
-def _schema_example(model_cls: Type[T]) -> str:
+def _schema_example(model_cls: type[T]) -> str:
     schema = model_cls.model_json_schema()
     defs = schema.get("$defs", {})
 
@@ -56,16 +52,16 @@ def _schema_example(model_cls: Type[T]) -> str:
             return f'"<{opts}>"'
         branches = node.get("anyOf")
         if branches:
-            non_null = [b for b in branches if b.get("type") != "null"]
+            non_null = [branch for branch in branches if branch.get("type") != "null"]
             return render((non_null or branches)[0], depth)
-        t = node.get("type")
-        if t == "boolean":
+        node_type = node.get("type")
+        if node_type == "boolean":
             return "true"
-        if t in ("number", "integer"):
+        if node_type in ("number", "integer"):
             return "0"
-        if t == "array":
+        if node_type == "array":
             return f'[{render(node.get("items") or {}, depth + 1)}]'
-        if t == "object" or "properties" in node:
+        if node_type == "object" or "properties" in node:
             props = node.get("properties") or {}
             if not props:
                 return "{}"
@@ -85,7 +81,7 @@ def _validation_feedback(exc: Exception, max_chars: int = 1800) -> str:
     return text[:max_chars] if text else type(exc).__name__
 
 
-def build_structured_prompt(user_prompt: str, model_cls: Type[T]) -> str:
+def build_structured_prompt(user_prompt: str, model_cls: type[T]) -> str:
     """Append the required-output-JSON-shape contract to a user prompt."""
     shape = _schema_example(model_cls)
     return user_prompt + (
@@ -98,14 +94,14 @@ def build_structured_prompt(user_prompt: str, model_cls: Type[T]) -> str:
     )
 
 
-def parse_structured(content: str, model_cls: Type[T]) -> T:
+def parse_structured(content: str, model_cls: type[T]) -> T:
     """Validate fenced-or-plain JSON content against the Pydantic model."""
     return model_cls.model_validate_json(strip_code_fences(content))
 
 
 def chat_structured(
     provider: LLMProvider,
-    model_cls: Type[T],
+    model_cls: type[T],
     *,
     model: str,
     system_prompt: str,
@@ -114,13 +110,8 @@ def chat_structured(
     schema: dict[str, Any] | None = None,
     allow_cloud_fallback: bool | None = None,
 ) -> tuple[T, LLMResponse]:
-    """Structured output with one validation-aware retry.
-
-    Returns ``(parsed_model, last_response)`` so provenance always refers to
-    the call that actually produced the accepted answer.
-    """
+    """Structured output with one validation-aware retry."""
     shape_prompt = build_structured_prompt(user_prompt, model_cls)
-    last_response: LLMResponse | None = None
     for attempt in (1, 2):
         request = ChatRequest(
             model=model,
@@ -131,7 +122,6 @@ def chat_structured(
             allow_cloud_fallback=allow_cloud_fallback,
         )
         response = provider.chat(request)
-        last_response = response
         try:
             parsed = parse_structured(response.content, model_cls)
             return parsed, response
