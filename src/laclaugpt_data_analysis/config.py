@@ -63,9 +63,9 @@ class Settings:
 
 
 def load_settings() -> Settings:
-    """Load local/distributed settings without changing canonical data semantics."""
+    """Load settings and initialize the ignored local runtime directory tree."""
     collection_data = _env("COLLECTION_DATA_DIR")
-    return Settings(
+    settings = Settings(
         profile=_env("PROFILE", "local") or "local",
         data_backend=_env("DATA_BACKEND", "csv") or "csv",
         database_url=_env("DATABASE_URL", "sqlite:///./data/database/analysis.sqlite3")
@@ -82,3 +82,5 @@ def load_settings() -> Settings:
         s3_region=_env("S3_REGION"),
         collection_data_dir=Path(collection_data) if collection_data else None,
     )
+    settings.ensure_local_directories()
+    return settings
