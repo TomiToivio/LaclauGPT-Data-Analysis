@@ -28,7 +28,7 @@ class DeploymentProfile:
     ollama_endpoint: str = "http://127.0.0.1:11434"
     caller: str = "human-cli"
 
-    def with_overrides(self, **changes: object) -> "DeploymentProfile":
+    def with_overrides(self, **changes: object) -> DeploymentProfile:
         return replace(self, **changes)
 
     def validate(self) -> list[str]:
