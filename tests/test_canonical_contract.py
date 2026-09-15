@@ -1,5 +1,7 @@
 from datetime import UTC, datetime
 
+import pytest
+
 from laclaugpt_data_analysis.canonical import (
     CanonicalRecord,
     DiscourseObject,
@@ -22,6 +24,10 @@ from laclaugpt_data_analysis.interchange import (
     write_sqlite,
 )
 from laclaugpt_data_analysis.models import ClassificationResult, Provenance
+from laclaugpt_data_analysis.schema_version import (
+    UnsupportedSchemaVersion,
+    normalize_schema_version,
+)
 
 
 def sample_record() -> CanonicalRecord:
@@ -148,3 +154,17 @@ def test_legacy_ep24_numbered_fields_become_structured_lists() -> None:
     assert len(record.content.frames) == 1
     assert record.analysis.summary == "Synthetic analysis"
     assert "ocr_1" not in record.canonical_dict()
+
+
+def test_schema_version_transition_is_explicit() -> None:
+    payload = sample_record().canonical_dict()
+    payload["schema_version"] = "1.0"
+    migrated = normalize_schema_version(payload)
+    assert migrated.schema_version == "1.0.0"
+
+
+def test_unknown_schema_version_is_rejected() -> None:
+    payload = sample_record().canonical_dict()
+    payload["schema_version"] = "99.0.0"
+    with pytest.raises(UnsupportedSchemaVersion):
+        normalize_schema_version(payload)
