@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Storage-neutral analysis core for the modular LaclauGPT research framework"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "EUPL-1.2"}
+license = {text = "CC0-1.0"}
 authors = [{name = "Tomi Toivio"}]
 dependencies = [
   "pydantic>=2.7,<3",
