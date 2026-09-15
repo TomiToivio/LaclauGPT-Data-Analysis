@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
-from . import BackendUnavailable
 from ..models import EmbeddingResult
+from . import BackendUnavailable
 
 _BACKEND = "sentence_transformers"
 _DEFAULT_MODEL = "paraphrase-multilingual-MiniLM-L12-v2"
