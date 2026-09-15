@@ -1,6 +1,13 @@
-from laclaugpt_data_analysis.analysis import BackendUnavailable
-from laclaugpt_data_analysis.analysis import bertopic_backend, gensim_backend, sentence_transformers_backend
-from laclaugpt_data_analysis.analysis import sklearn_backend, spacy_backend, statsmodels_backend, transformers_backend
+from laclaugpt_data_analysis.analysis import (
+    BackendUnavailable,
+    bertopic_backend,
+    gensim_backend,
+    sentence_transformers_backend,
+    sklearn_backend,
+    spacy_backend,
+    statsmodels_backend,
+    transformers_backend,
+)
 from laclaugpt_data_analysis.models import Provenance, Representation, Topic, TopicAssignment
 
 
