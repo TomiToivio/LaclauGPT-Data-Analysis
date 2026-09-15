@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .deployment import DeploymentProfile
+from .distributed import ProjectNamespace
 
 DATA_SUBDIRS = (
     "logs",
@@ -43,6 +44,7 @@ def _bool_env(name: str, default: bool = False) -> bool:
 
 @dataclass(frozen=True)
 class Settings:
+    project_id: str = "default"
     profile: str = "local"
     machine: str = "laptop"
     execution: str = "cli"
@@ -59,17 +61,28 @@ class Settings:
     scratch_dir: Path | None = None
     cache_backend: str = "memory"
     redis_url: str | None = None
+    redis_key_prefix: str = "laclaugpt"
     mongo_url: str | None = None
     mongo_database: str = "laclaugpt"
     object_backend: str = "local"
     s3_endpoint_url: str | None = None
     s3_bucket: str | None = None
     s3_region: str | None = None
+    s3_prefix_root: str = "projects"
     collection_data_dir: Path | None = None
 
     @property
     def remote_enabled(self) -> bool:
         return any((self.mongo_url, self.redis_url, self.s3_endpoint_url, self.s3_bucket))
+
+    @property
+    def distributed_namespace(self) -> ProjectNamespace:
+        return ProjectNamespace(
+            project_id=self.project_id,
+            redis_prefix=self.redis_key_prefix,
+            mongo_database=self.mongo_database,
+            s3_prefix_root=self.s3_prefix_root,
+        )
 
     @property
     def deployment_profile(self) -> DeploymentProfile:
@@ -101,6 +114,7 @@ def load_settings() -> Settings:
     collection_data = _env("COLLECTION_DATA_DIR")
     scratch = _env("SCRATCH_DIR")
     settings = Settings(
+        project_id=_env("PROJECT_ID", "default") or "default",
         profile=_env("PROFILE", "local") or "local",
         machine=_env("MACHINE", "laptop") or "laptop",
         execution=_env("EXECUTION", "cli") or "cli",
@@ -119,14 +133,17 @@ def load_settings() -> Settings:
         scratch_dir=Path(scratch) if scratch else None,
         cache_backend=_env("CACHE_BACKEND", "memory") or "memory",
         redis_url=_env("REDIS_URL"),
+        redis_key_prefix=_env("REDIS_KEY_PREFIX", "laclaugpt") or "laclaugpt",
         mongo_url=_env("MONGO_URL"),
         mongo_database=_env("MONGO_DATABASE", "laclaugpt") or "laclaugpt",
         object_backend=_env("OBJECT_BACKEND", "local") or "local",
         s3_endpoint_url=_env("S3_ENDPOINT_URL"),
         s3_bucket=_env("S3_BUCKET"),
         s3_region=_env("S3_REGION"),
+        s3_prefix_root=_env("S3_PREFIX_ROOT", "projects") or "projects",
         collection_data_dir=Path(collection_data) if collection_data else None,
     )
+    settings.distributed_namespace
     errors = settings.deployment_profile.validate()
     if errors:
         raise ValueError("invalid deployment configuration: " + "; ".join(errors))
