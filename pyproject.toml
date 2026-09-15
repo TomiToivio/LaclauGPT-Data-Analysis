@@ -29,6 +29,9 @@ topics = [
   "bertopic>=0.16",
   "gensim>=4.3",
 ]
+ollama = [
+  "ollama>=0.6,<1",
+]
 remote = [
   "pymongo>=4.8",
   "redis>=5.0",
@@ -48,6 +51,7 @@ all = [
   "transformers>=4.44",
   "bertopic>=0.16",
   "gensim>=4.3",
+  "ollama>=0.6,<1",
   "pymongo>=4.8",
   "redis>=5.0",
   "boto3>=1.35",
@@ -62,9 +66,6 @@ packages = ["src/laclaugpt_data_analysis"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
-# src/ on the path so tests import the package without an editable install;
-# repo root so `tests.fixtures` style imports resolve locally even when a
-# foreign top-level `tests` package exists in site-packages.
 pythonpath = ["src", "."]
 
 [tool.ruff]
