@@ -1,5 +1,12 @@
-﻿from laclaugpt_data_analysis.memory import SQLiteMemory
+from laclaugpt_data_analysis.memory import SQLiteMemory
+
+
 def test_sqlite_memory_alias_resolution(tmp_path):
- m=SQLiteMemory(tmp_path/'memory.sqlite3'); m.create('A-1','actor','Synthetic Actor',provenance='synthetic'); m.add_alias('A-1','S. Actor')
- r=m.resolve('s. actor','actor'); assert r.decision=='EXISTING' and r.obj_id=='A-1'
- assert m.resolve('unknown','actor').decision=='NEW'
+    memory = SQLiteMemory(tmp_path / "memory.sqlite3")
+    memory.create("A-1", "actor", "Synthetic Actor", provenance="synthetic")
+    memory.add_alias("A-1", "S. Actor")
+
+    resolved = memory.resolve("s. actor", "actor")
+    assert resolved.decision == "EXISTING"
+    assert resolved.obj_id == "A-1"
+    assert memory.resolve("unknown", "actor").decision == "NEW"
