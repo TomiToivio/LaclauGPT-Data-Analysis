@@ -52,6 +52,9 @@ config.private.*
 settings.local.*
 settings.private.*
 
+# Private/study-specific codebooks (research data, not methodology)
+codebooks/private/
+
 # Cloud / service credentials
 .aws/
 .mc/
