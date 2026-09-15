@@ -1,9 +1,9 @@
 """Storage-neutral analytical contracts.
 
-The public analysis package intentionally carries only the model fragments
-required by analysis backends. Interpretive discourse claims remain separate
-from descriptive NLP/topic/statistical outputs and should always retain
-provenance and human-review context in downstream modules.
+Derived analysis objects may have their own IDs, but `source_url` remains the
+cross-module identity anchor whenever an object is persisted independently.
+When objects are nested inside CanonicalRecord the enclosing record supplies the
+same identity path.
 """
 from __future__ import annotations
 
@@ -35,6 +35,7 @@ class Provenance(Model):
 class Representation(Model):
     representation_id: str = Field(default_factory=lambda: _id("rep"))
     source_id: str
+    source_url: str = ""
     representation_type: str = "text"
     text: str | None = None
     language: str | None = None
@@ -45,6 +46,7 @@ class Representation(Model):
 class EntityMention(Model):
     mention_id: str = Field(default_factory=lambda: _id("mention"))
     representation_id: str
+    source_url: str = ""
     surface_form: str
     spacy_label: str | None = None
     start_offset: int | None = Field(default=None, ge=0)
@@ -55,6 +57,7 @@ class EntityMention(Model):
 
 class NlpDocument(Model):
     representation_id: str
+    source_url: str = ""
     tokens: list[str] = Field(default_factory=list)
     sentences: list[str] = Field(default_factory=list)
     lemmas: list[str] = Field(default_factory=list)
@@ -69,6 +72,7 @@ class NlpDocument(Model):
 
 class EmbeddingResult(Model):
     item_id: str
+    source_url: str = ""
     vector: list[float]
     model: str
     model_version: str = ""
@@ -87,6 +91,7 @@ class Topic(Model):
 class TopicAssignment(Model):
     target_id: str
     topic_id: str
+    source_url: str = ""
     score: float | None = None
     confidence: float | None = Field(default=None, ge=0, le=1)
     provenance_id: str = ""
@@ -103,6 +108,7 @@ class TopicModelResult(Model):
 
 class ClassificationResult(Model):
     label: str
+    source_url: str = ""
     confidence: float | None = Field(default=None, ge=0, le=1)
     task: str = ""
     model: str = ""
