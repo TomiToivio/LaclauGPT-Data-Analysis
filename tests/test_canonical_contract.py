@@ -6,6 +6,7 @@ from laclaugpt_data_analysis.canonical import (
     CanonicalRecord,
     DiscourseObject,
     Evidence,
+    RawCaptureSection,
     SourceSection,
     Transcript,
 )
@@ -17,6 +18,7 @@ from laclaugpt_data_analysis.interchange import (
     read_jsonl,
     read_sqlite,
     record_from_json,
+    record_to_flat_row,
     record_to_json,
     to_mongo_document,
     write_csv,
@@ -35,6 +37,11 @@ def sample_record() -> CanonicalRecord:
     record = CanonicalRecord(
         source_url=source_url,
         source_native_ids={"document_id": "42"},
+        raw_capture=RawCaptureSection(
+            ref="raw/synthetic/42.json",
+            payload={"id": "42", "native": {"kept": True}},
+            content_type="application/json",
+        ),
         source=SourceSection(platform="synthetic", author="researcher", language="en"),
         provenance=[
             Provenance(method="synthetic", created_at=datetime(2026, 9, 15, tzinfo=UTC))
@@ -42,7 +49,13 @@ def sample_record() -> CanonicalRecord:
     )
     record.content.text = "A synthetic political statement."
     record.content.transcripts = [
-        Transcript(id="t1", text="Synthetic transcript", language="en", provider="fake-asr")
+        Transcript(
+            id="t1",
+            text="Synthetic transcript",
+            language="en",
+            translated_text="Synthetic translation",
+            provider="fake-asr",
+        )
     ]
     record.evidence = [
         Evidence(evidence_id="e1", kind="text-span", source_url=source_url, quote="synthetic")
@@ -78,6 +91,8 @@ def assert_same_record(left: CanonicalRecord, right: CanonicalRecord) -> None:
 def test_json_round_trip_preserves_identity_and_analysis() -> None:
     record = sample_record()
     assert_same_record(record, record_from_json(record_to_json(record)))
+    assert record.intermediate.asr[0]["text"] == "Synthetic transcript"
+    assert record.human_readable.summary == "Synthetic summary"
 
 
 def test_csv_jsonl_and_sqlite_round_trip(tmp_path) -> None:
@@ -96,11 +111,24 @@ def test_csv_jsonl_and_sqlite_round_trip(tmp_path) -> None:
     assert_same_record(record, read_sqlite(db_path)[0])
 
 
+def test_wide_projection_contains_old_and_new_researcher_fields() -> None:
+    row = record_to_flat_row(sample_record())
+    assert row["whisper_transcript"] == "Synthetic transcript"
+    assert row["whisper_language"] == "en"
+    assert row["whisper_translated"] == "Synthetic translation"
+    assert row["summary_analysis"] == "Synthetic summary"
+    assert row["raw_ref"] == "raw/synthetic/42.json"
+    assert "human_readable_markdown" in row
+    assert "intermediate" in row
+    assert "analysis" in row
+
+
 def test_mongo_like_document_round_trip_ignores_backend_id() -> None:
     record = sample_record()
     document = to_mongo_document(record)
     document["_id"] = "backend-only-id"
     assert_same_record(record, from_mongo_document(document))
+    assert document["raw_capture"]["payload"]["native"]["kept"] is True
 
 
 def test_collection_adapter_preserves_source_url_and_core_fields() -> None:
@@ -114,6 +142,8 @@ def test_collection_adapter_preserves_source_url_and_core_fields() -> None:
         "text": "Collected text",
         "language": "en",
         "engagement": {"likes": 2},
+        "raw_ref": "raw/synthetic/abc.json",
+        "raw_payload": {"native": "payload"},
         "media_references": [
             {"kind": "image", "url": "https://example.invalid/media.jpg", "media_index": 0}
         ],
@@ -126,6 +156,7 @@ def test_collection_adapter_preserves_source_url_and_core_fields() -> None:
     assert record.content.text == "Collected text"
     assert record.content.media_references[0].kind == "image"
     assert record.provenance[0].metadata["stage"] == "collection"
+    assert record.raw_capture.payload == {"native": "payload"}
 
 
 def test_text_only_record_is_first_class() -> None:
@@ -135,7 +166,7 @@ def test_text_only_record_is_first_class() -> None:
     assert record.content.frames == []
 
 
-def test_legacy_ep24_numbered_fields_become_structured_lists() -> None:
+def test_legacy_ep24_numbered_fields_become_structured_and_remain_exportable() -> None:
     record = from_ep24_legacy(
         {
             "authorUniqueId": "fake-author",
@@ -144,23 +175,34 @@ def test_legacy_ep24_numbered_fields_become_structured_lists() -> None:
             "whisper_transcript": "Synthetic speech",
             "whisper_language": "en",
             "ocr_1": "Synthetic poster",
-            "frame_analysis_1": "A synthetic frame description",
+            "frame_1": "A synthetic frame description",
             "summary_analysis": "Synthetic analysis",
+            "formula_of_populism_analysis": "Synthetic populism analysis",
         }
     )
     assert record.source_url == "tiktok:fake-author:123"
     assert len(record.content.transcripts) == 1
     assert len(record.content.ocr) == 1
     assert len(record.content.frames) == 1
+    assert record.intermediate.frame_analysis[0]["description"] == "A synthetic frame description"
     assert record.analysis.summary == "Synthetic analysis"
-    assert "ocr_1" not in record.canonical_dict()
+    assert record.legacy["formula_of_populism_analysis"] == "Synthetic populism analysis"
+    row = record_to_flat_row(record)
+    assert row["frame_1"] == "A synthetic frame description"
+    assert row["ocr_1"] == "Synthetic poster"
+    assert row["whisper_transcript"] == "Synthetic speech"
 
 
 def test_schema_version_transition_is_explicit() -> None:
     payload = sample_record().canonical_dict()
     payload["schema_version"] = "1.0"
+    payload.pop("raw_capture")
+    payload.pop("intermediate")
+    payload.pop("human_readable")
     migrated = normalize_schema_version(payload)
-    assert migrated.schema_version == "1.0.0"
+    assert migrated.schema_version == "1.1.0"
+    assert "intermediate" in migrated.canonical_dict()
+    assert "human_readable" in migrated.canonical_dict()
 
 
 def test_unknown_schema_version_is_rejected() -> None:
