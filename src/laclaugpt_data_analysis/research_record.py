@@ -8,7 +8,6 @@ structured analysis.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from typing import Any
 
 from .canonical import CanonicalRecord, HumanReadableSection
@@ -205,6 +204,19 @@ def legacy_projection(record: CanonicalRecord) -> dict[str, Any]:
     return legacy
 
 
+def _stable_generated_at(record: CanonicalRecord) -> str | None:
+    """Choose a research-event timestamp without changing on serialization/export."""
+    if record.human_readable.generated_at:
+        return record.human_readable.generated_at
+    if record.analysis.completed_at:
+        return record.analysis.completed_at.isoformat()
+    if record.analysis.started_at:
+        return record.analysis.started_at.isoformat()
+    if record.provenance:
+        return record.provenance[-1].created_at.isoformat()
+    return None
+
+
 def render_human_readable(record: CanonicalRecord) -> HumanReadableSection:
     """Render a deterministic researcher report containing all analysis categories."""
     sync_intermediate_from_content(record)
@@ -276,7 +288,7 @@ def render_human_readable(record: CanonicalRecord) -> HumanReadableSection:
     return HumanReadableSection(
         summary=summary,
         markdown=markdown,
-        generated_at=datetime.now(UTC).isoformat(),
+        generated_at=_stable_generated_at(record),
         generator="laclaugpt-data-analysis/research_record.py",
         sections=sections,
     )
