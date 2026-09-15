@@ -9,8 +9,9 @@ from __future__ import annotations
 import csv
 import json
 import sqlite3
+from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Protocol
+from typing import Any, Protocol
 
 from .config import Settings
 
