@@ -10,6 +10,7 @@ from laclaugpt_data_analysis.canonical import (
     SourceSection,
     Transcript,
 )
+from laclaugpt_data_analysis.exporters import write_research_bundle
 from laclaugpt_data_analysis.interchange import (
     from_collection_record,
     from_ep24_legacy,
@@ -121,6 +122,27 @@ def test_wide_projection_contains_old_and_new_researcher_fields() -> None:
     assert "human_readable_markdown" in row
     assert "intermediate" in row
     assert "analysis" in row
+
+
+def test_research_bundle_keeps_machine_and_human_outputs_in_sync(tmp_path) -> None:
+    record = sample_record()
+    bundle = write_research_bundle([record], tmp_path, stem="synthetic")
+
+    jsonl_path = bundle["jsonl"]
+    csv_path = bundle["csv"]
+    reports = bundle["reports"]
+    assert jsonl_path.exists()
+    assert csv_path.exists()
+    assert len(reports) == 1
+    assert reports[0].exists()
+
+    csv_text = csv_path.read_text(encoding="utf-8")
+    assert "whisper_transcript" in csv_text
+    assert "frame_1" in csv_text
+    assert "raw_ref" in csv_text
+    assert "human_readable_markdown" in csv_text
+    assert "Synthetic transcript" in csv_text
+    assert "Synthetic summary" in reports[0].read_text(encoding="utf-8")
 
 
 def test_mongo_like_document_round_trip_ignores_backend_id() -> None:
