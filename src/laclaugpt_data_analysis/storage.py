@@ -80,22 +80,35 @@ class SqliteStore:
 
 
 class MongoStore:
-    def __init__(self, url: str, database: str, collection: str):
+    def __init__(
+        self,
+        url: str,
+        database: str,
+        collection: str,
+        project_id: str,
+    ):
         try:
             from pymongo import MongoClient
         except ImportError as exc:
             raise RuntimeError("MongoDB support requires: pip install '.[remote]'") from exc
+        self.project_id = project_id
         self.collection = MongoClient(url)[database][collection]
+        self.collection.create_index([("project_id", 1)], name="project_id")
+        self.collection.create_index([("source_url", 1)], name="source_url")
 
     def read(self) -> list[Record]:
         return [
             {key: value for key, value in row.items() if key != "_id"}
-            for row in self.collection.find({})
+            for row in self.collection.find({"project_id": self.project_id})
         ]
 
     def write(self, rows: Iterable[Mapping[str, Any]]) -> None:
-        values = [dict(row) for row in rows]
-        self.collection.delete_many({})
+        values = []
+        for row in rows:
+            payload = dict(row)
+            payload["project_id"] = self.project_id
+            values.append(payload)
+        self.collection.delete_many({"project_id": self.project_id})
         if values:
             self.collection.insert_many(values)
 
@@ -186,7 +199,12 @@ def record_store(settings: Settings, name: str = "analysis") -> RecordStore:
         if not settings.mongo_url:
             raise ValueError("LACLAUGPT_MONGO_URL is required for data_backend=mongodb")
         collection = settings.distributed_namespace.mongo_collection("annotations")
-        return MongoStore(settings.mongo_url, settings.mongo_database, collection=collection)
+        return MongoStore(
+            settings.mongo_url,
+            settings.mongo_database,
+            collection=collection,
+            project_id=settings.project_id,
+        )
     raise ValueError(f"unsupported data backend: {settings.data_backend}")
 
 
