@@ -6,8 +6,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import BackendUnavailable
 from ..models import EntityMention, NlpDocument, Provenance, Representation
+from . import BackendUnavailable
 
 _BACKEND = "spacy"
 _LOADED: dict[str, Any] = {}
