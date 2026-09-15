@@ -11,7 +11,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 def _id(prefix: str) -> str:
@@ -30,6 +30,12 @@ class Provenance(Model):
     pipeline_version: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @field_validator("created_at", mode="before")
+    @classmethod
+    def default_missing_legacy_timestamp(cls, value: Any) -> Any:
+        """Treat explicit null/blank legacy timestamps like an omitted timestamp."""
+        return datetime.now(UTC) if value in (None, "") else value
 
 
 class Representation(Model):

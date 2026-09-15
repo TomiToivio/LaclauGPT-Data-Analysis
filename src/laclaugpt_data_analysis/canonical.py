@@ -1,7 +1,9 @@
 """Canonical cross-module LaclauGPT record used by Data Analysis.
 
-The meta-repository data contract is normative. Analysis enriches this record;
-it never replaces the source identity with representation, database or model IDs.
+Analysis enriches the Collection record without replacing source identity or deleting
+raw/intermediate evidence. The four-layer contract preserves: exact raw capture,
+intermediate stage outputs, current structured analysis and a human-readable researcher
+summary. Legacy dataframe fields are deterministic projections of this record.
 """
 from __future__ import annotations
 
@@ -21,10 +23,42 @@ from .models import (
     TopicAssignment,
 )
 
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"
 ReviewStatus = Literal[
     "PROVISIONAL", "ACCEPTED", "REJECTED", "REVISED", "CANONICAL", "SUPERSEDED"
 ]
+
+
+class RawCaptureSection(Model):
+    ref: str | None = None
+    payload: Any | None = None
+    checksum: str | None = None
+    content_type: str | None = None
+    captured_at: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def preserved(self) -> bool:
+        return bool(self.ref) or self.payload is not None
+
+
+class IntermediateSection(Model):
+    """Lossless stage outputs. Later stages append/replace named stage slots, not history."""
+
+    asr: list[dict[str, Any]] = Field(default_factory=list)
+    ocr: list[dict[str, Any]] = Field(default_factory=list)
+    frames: list[dict[str, Any]] = Field(default_factory=list)
+    frame_analysis: list[dict[str, Any]] = Field(default_factory=list)
+    translations: list[dict[str, Any]] = Field(default_factory=list)
+    stage_outputs: dict[str, Any] = Field(default_factory=dict)
+
+
+class HumanReadableSection(Model):
+    summary: str = ""
+    markdown: str = ""
+    generated_at: str | None = None
+    generator: str = "laclaugpt-data-analysis"
+    sections: dict[str, str] = Field(default_factory=dict)
 
 
 class MediaReference(Model):
@@ -185,10 +219,13 @@ class CanonicalRecord(Model):
     schema_version: str = SCHEMA_VERSION
     source_url: str
     source_native_ids: dict[str, str] = Field(default_factory=dict)
+    raw_capture: RawCaptureSection = Field(default_factory=RawCaptureSection)
     source: SourceSection = Field(default_factory=SourceSection)
     content: ContentSection = Field(default_factory=ContentSection)
+    intermediate: IntermediateSection = Field(default_factory=IntermediateSection)
     evidence: list[Evidence] = Field(default_factory=list)
     analysis: AnalysisSection = Field(default_factory=AnalysisSection)
+    human_readable: HumanReadableSection = Field(default_factory=HumanReadableSection)
     provenance: list[Provenance] = Field(default_factory=list)
     review: ReviewSection = Field(default_factory=ReviewSection)
     legacy: dict[str, Any] = Field(default_factory=dict)
