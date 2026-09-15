@@ -44,7 +44,8 @@ LLM_LOCAL_MIN_VRAM_GB = float(os.environ.get("LLM_LOCAL_MIN_VRAM_GB", "16"))
 LLM_DEFAULT_LOCAL = "gemma4:e4b"
 LLM_DEFAULT_CLOUD = "gemma4:31b-cloud"
 _CAPABLE_HOST_MARKERS = os.environ.get(
-    "LACLAUGPT_GPU_HOST_MARKERS", "roihu,gpu,workstation").split(",")
+    "LACLAUGPT_GPU_HOST_MARKERS", "roihu,gpu,workstation"
+).split(",")
 _LOCAL_ENDPOINTS = {"", "127.0.0.1", "localhost", "::1"}
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 
@@ -68,7 +69,10 @@ def _detected_vram_gb() -> float:
     try:
         result = subprocess.run(
             ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
-            capture_output=True, text=True, timeout=3, check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+            check=False,
         )
     except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
         return 0.0
@@ -98,8 +102,9 @@ def resolve_endpoint(model_hint: str | None = None) -> tuple[str, str]:
     ``auto`` probes the endpoint only through :func:`probe_host`, which callers
     may suppress in tests by setting ``LLM_MODE`` explicitly.
     """
-    mode_env = (os.environ.get(LLM_MODE_ENV)
-                or os.environ.get(LLM_MODE_ENV_ALIAS) or "").strip().lower()
+    mode_env = (
+        os.environ.get(LLM_MODE_ENV) or os.environ.get(LLM_MODE_ENV_ALIAS) or ""
+    ).strip().lower()
     allowed_modes = ("auto", "local", "cloud", "external")
     if mode_env and mode_env not in allowed_modes:
         raise ValueError(f"LLM mode must be one of: {', '.join(allowed_modes)}")
@@ -119,14 +124,21 @@ def resolve_endpoint(model_hint: str | None = None) -> tuple[str, str]:
         raise ValueError("external Ollama mode requires OLLAMA_HOST")
     if model_hint and model_hint.casefold() == "auto":
         model_hint = None
-    configured = (os.environ.get("LACLAUGPT_OLLAMA_MODEL")
-                  or os.environ.get("OLLAMA_MODEL"))
+    configured = os.environ.get("LACLAUGPT_OLLAMA_MODEL") or os.environ.get("OLLAMA_MODEL")
     if mode == "cloud":
-        model = configured or (model_hint if _looks_cloud(model_hint) else None) \
-            or os.environ.get(LLM_CLOUD_ENV) or LLM_DEFAULT_CLOUD
+        model = (
+            configured
+            or (model_hint if _looks_cloud(model_hint) else None)
+            or os.environ.get(LLM_CLOUD_ENV)
+            or LLM_DEFAULT_CLOUD
+        )
     else:
-        model = configured or (model_hint if not _looks_cloud(model_hint) else None) \
-            or os.environ.get(LLM_LOCAL_MODEL_ENV) or LLM_DEFAULT_LOCAL
+        model = (
+            configured
+            or (model_hint if not _looks_cloud(model_hint) else None)
+            or os.environ.get(LLM_LOCAL_MODEL_ENV)
+            or LLM_DEFAULT_LOCAL
+        )
     return mode, model
 
 
@@ -161,7 +173,8 @@ def probe_host(host: str = "") -> dict[str, Any] | None:
     """Probe a host's reachability and VRAM. Returns None when unreachable."""
     try:
         client = _client(host)
-        info = client.heartbeat() if hasattr(client, "heartbeat") else None
+        if hasattr(client, "heartbeat"):
+            client.heartbeat()
         vram = 0
         try:
             props = client._request("GET", "/api/gpu") if hasattr(client, "_request") else None
@@ -227,8 +240,6 @@ class OllamaProvider:
         fallback_reason = ""
         opts = merge_options(request.options)
         kwargs: dict[str, Any] = {"format": request.schema} if request.schema is not None else {}
-        # OLLAMA_KEEP_ALIVE lets long-running workers keep model tiers resident
-        # across stage rotation; unset -> the server default (5 min unload).
         keep_alive = os.environ.get("OLLAMA_KEEP_ALIVE", "").strip()
         if keep_alive:
             kwargs["keep_alive"] = keep_alive
@@ -236,9 +247,6 @@ class OllamaProvider:
             {"role": "system", "content": request.system},
             {"role": "user", "content": request.user},
         ]
-        # Thinking-mode models spend their num_predict budget on the internal
-        # thinking channel and return EMPTY content, which then fails JSON
-        # validation. Disable thinking unless a caller explicitly opted in.
         if os.environ.get("OLLAMA_THINK", "").strip().casefold() not in _TRUE_VALUES:
             kwargs["think"] = False
         host = self._host_override or os.environ.get(LLM_HOST_ENV, "").strip()
@@ -257,7 +265,8 @@ class OllamaProvider:
             cloud_model = os.environ.get(LLM_CLOUD_ENV) or LLM_DEFAULT_CLOUD
             logger.warning(
                 "local Ollama failed with retryable error (%s); authorised fallback to %s",
-                exc, cloud_model,
+                exc,
+                cloud_model,
             )
             response = client.chat(model=cloud_model, messages=messages, options=opts, **kwargs)
             use_model = cloud_model
@@ -279,6 +288,10 @@ class OllamaProvider:
         )
         logger.debug(
             "LLM response requested=%s/%s actual=%s/%s fallback=%s",
-            mode, resolved, actual_mode, use_model, fallback_used,
+            mode,
+            resolved,
+            actual_mode,
+            use_model,
+            fallback_used,
         )
         return LLMResponse(content=content, provenance=provenance)
