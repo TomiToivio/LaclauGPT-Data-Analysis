@@ -1,10 +1,11 @@
 """scikit-learn baselines for topic discovery and supervised validation."""
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
-from . import BackendUnavailable
 from ..models import Provenance, Topic, TopicAssignment, TopicModelResult
+from . import BackendUnavailable
 
 _BACKEND = "sklearn"
 
