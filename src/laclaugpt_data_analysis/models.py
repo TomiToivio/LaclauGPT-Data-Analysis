@@ -8,7 +8,7 @@ provenance and human-review context in downstream modules.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -28,7 +28,7 @@ class Provenance(Model):
     model: str | None = None
     model_version: str | None = None
     pipeline_version: str | None = None
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
