@@ -4,10 +4,11 @@ Clusters are descriptive candidates, not discourse-theoretical conclusions.
 """
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
-from . import BackendUnavailable
 from ..models import Provenance, Topic, TopicAssignment, TopicModelResult
+from . import BackendUnavailable
 
 _BACKEND = "bertopic"
 
