@@ -5,6 +5,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+from .deployment import DeploymentProfile
+
 DATA_SUBDIRS = (
     "logs",
     "database",
@@ -32,13 +34,29 @@ def _env(name: str, default: str | None = None) -> str | None:
     return os.getenv(f"LACLAUGPT_{name}", default)
 
 
+def _bool_env(name: str, default: bool = False) -> bool:
+    raw = _env(name)
+    if raw is None:
+        return default
+    return raw.strip().casefold() in {"1", "true", "yes", "on"}
+
+
 @dataclass(frozen=True)
 class Settings:
     profile: str = "local"
+    machine: str = "laptop"
+    execution: str = "cli"
+    storage: str = "local"
+    llm_mode: str = "local-ollama"
+    llm_model: str = "gemma4:e4b"
+    llm_endpoint: str = "http://127.0.0.1:11434"
+    cloud_allowed: bool = False
+    caller: str = "human-cli"
     data_backend: str = "csv"
     database_url: str = "sqlite:///./data/database/analysis.sqlite3"
     data_dir: Path = Path("./data")
     artifact_dir: Path = Path("./data/artifacts")
+    scratch_dir: Path | None = None
     cache_backend: str = "memory"
     redis_url: str | None = None
     mongo_url: str | None = None
@@ -53,6 +71,22 @@ class Settings:
     def remote_enabled(self) -> bool:
         return any((self.mongo_url, self.redis_url, self.s3_endpoint_url, self.s3_bucket))
 
+    @property
+    def deployment_profile(self) -> DeploymentProfile:
+        return DeploymentProfile(
+            machine=self.machine,
+            execution=self.execution,
+            storage=self.storage,
+            llm=self.llm_mode,
+            model=self.llm_model,
+            cloud_allowed=self.cloud_allowed,
+            data_dir=self.data_dir,
+            scratch_dir=self.scratch_dir,
+            collection_data_dir=self.collection_data_dir,
+            ollama_endpoint=self.llm_endpoint,
+            caller=self.caller,
+        )
+
     def data_path(self, *parts: str) -> Path:
         return self.data_dir.joinpath(*parts)
 
@@ -65,13 +99,24 @@ class Settings:
 def load_settings() -> Settings:
     """Load settings and initialize the ignored local runtime directory tree."""
     collection_data = _env("COLLECTION_DATA_DIR")
+    scratch = _env("SCRATCH_DIR")
     settings = Settings(
         profile=_env("PROFILE", "local") or "local",
+        machine=_env("MACHINE", "laptop") or "laptop",
+        execution=_env("EXECUTION", "cli") or "cli",
+        storage=_env("STORAGE", "local") or "local",
+        llm_mode=_env("LLM_MODE", "local-ollama") or "local-ollama",
+        llm_model=_env("LLM_MODEL", "gemma4:e4b") or "gemma4:e4b",
+        llm_endpoint=_env("LLM_ENDPOINT", "http://127.0.0.1:11434")
+        or "http://127.0.0.1:11434",
+        cloud_allowed=_bool_env("CLOUD_ALLOWED", False),
+        caller=_env("CALLER", "human-cli") or "human-cli",
         data_backend=_env("DATA_BACKEND", "csv") or "csv",
         database_url=_env("DATABASE_URL", "sqlite:///./data/database/analysis.sqlite3")
         or "sqlite:///./data/database/analysis.sqlite3",
         data_dir=Path(_env("DATA_DIR", "./data") or "./data"),
         artifact_dir=Path(_env("ARTIFACT_DIR", "./data/artifacts") or "./data/artifacts"),
+        scratch_dir=Path(scratch) if scratch else None,
         cache_backend=_env("CACHE_BACKEND", "memory") or "memory",
         redis_url=_env("REDIS_URL"),
         mongo_url=_env("MONGO_URL"),
@@ -82,5 +127,8 @@ def load_settings() -> Settings:
         s3_region=_env("S3_REGION"),
         collection_data_dir=Path(collection_data) if collection_data else None,
     )
+    errors = settings.deployment_profile.validate()
+    if errors:
+        raise ValueError("invalid deployment configuration: " + "; ".join(errors))
     settings.ensure_local_directories()
     return settings
