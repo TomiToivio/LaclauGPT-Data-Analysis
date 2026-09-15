@@ -2,55 +2,68 @@
 
 [![tests](https://github.com/TomiToivio/LaclauGPT-Data-Analysis/actions/workflows/tests.yml/badge.svg)](https://github.com/TomiToivio/LaclauGPT-Data-Analysis/actions/workflows/tests.yml)
 
-**LaclauGPT Data Analysis** is the analysis module of the modular LaclauGPT research framework. It contains storage-neutral analytical contracts and reusable NLP, embedding, topic-model, classification and statistical backends. Collection, durable storage and visualization belong in sibling repositories.
+**LaclauGPT Data Analysis** is the analysis module of the modular LaclauGPT research framework. It contains storage-neutral analytical contracts and reusable NLP, embedding, topic-model, classification, multimodal and statistical backends.
 
-The package is designed to work on a laptop with **CSV + SQLite + local files by default** and to scale to **MongoDB + Redis + S3-compatible object storage** when a project needs distributed infrastructure.
+The package works locally with CSV + SQLite + local files and can scale to MongoDB + Redis + S3-compatible object storage.
+
+## Runtime data boundary
+
+All runtime and study-specific material lives below `./data/`, which is entirely excluded from Git. See `docs/RUNTIME_DATA.md`.
+
+Typical directories include `data/logs/`, `data/database/`, `data/config/`, `data/files/`, `data/csv/`, `data/jsonl/`, `data/codebooks/`, `data/sources/`, `data/downloads/`, `data/media/`, `data/models/ollama/`, `data/models/whisper/`, `data/cache/`, `data/tmp/`, `data/exports/`, `data/artifacts/`, `data/runs/`, `data/transcripts/`, and `data/frames/`.
+
+The application should not create parallel top-level runtime roots such as `var/`, `logs/`, `outputs/`, or model-cache directories.
+
+## Local-first configuration
+
+Default paths:
+
+- data root: `./data`
+- SQLite: `sqlite:///./data/database/analysis.sqlite3`
+- artifacts: `./data/artifacts`
+- cache: in-memory
+
+Example:
+
+```bash
+export LACLAUGPT_DATA_BACKEND=sqlite
+export LACLAUGPT_DATABASE_URL=sqlite:///./data/database/analysis.sqlite3
+```
+
+If Collection runs as a sibling repository on the same machine:
+
+```bash
+export LACLAUGPT_COLLECTION_DATA_DIR=../LaclauGPT-Data-Collection/data
+```
+
+Analysis can then consume canonical Collection material directly without copying private data into either Git repository.
+
+## Distributed/server configuration
+
+For a server or multi-worker deployment, enable adapters independently:
+
+```bash
+export LACLAUGPT_PROFILE=server
+export LACLAUGPT_DATA_BACKEND=mongodb
+export LACLAUGPT_MONGO_URL='mongodb://HOST:27017'
+export LACLAUGPT_MONGO_DATABASE=laclaugpt
+export LACLAUGPT_CACHE_BACKEND=redis
+export LACLAUGPT_REDIS_URL='redis://HOST:6379/0'
+export LACLAUGPT_OBJECT_BACKEND=s3
+export LACLAUGPT_S3_ENDPOINT_URL='https://OBJECT-STORAGE-ENDPOINT'
+export LACLAUGPT_S3_BUCKET='BUCKET-NAME'
+export LACLAUGPT_S3_REGION='REGION'
+```
+
+MongoDB carries canonical records, Redis carries coordination/cache/state where useful, and S3-compatible storage such as CSC Allas carries files and large artifacts. CSV/JSONL export/import remains the manual fallback.
 
 ## Architecture
 
-This repository follows a conventional modern Python package layout:
+Importable implementation lives under `src/laclaugpt_data_analysis/`. Heavy libraries remain optional and lazy. Descriptive computation is kept separate from discourse-theoretical interpretation, and interpretive claims should retain evidence, provenance and human review.
 
-```text
-.
-├── .github/workflows/tests.yml
-├── src/laclaugpt_data_analysis/
-│   ├── analysis/
-│   │   ├── __init__.py
-│   │   ├── bertopic_backend.py
-│   │   ├── gensim_backend.py
-│   │   ├── sentence_transformers_backend.py
-│   │   ├── sklearn_backend.py
-│   │   ├── spacy_backend.py
-│   │   ├── statsmodels_backend.py
-│   │   └── transformers_backend.py
-│   ├── config.py
-│   ├── models.py
-│   └── storage.py
-├── tests/
-├── .env.example
-├── PRIVACY.md
-└── pyproject.toml
-```
+The useful backend layer from `LaclauGPT-Discourse-Analysis` has been adapted here, including spaCy, SentenceTransformers, scikit-learn, BERTopic, gensim, Transformers and statsmodels integrations.
 
-The analysis interfaces intentionally separate **descriptive computation** from **discourse-theoretical interpretation**. Embedding similarity is not equivalence; a topic cluster is not a discourse; classifier confidence is not theoretical confidence. Interpretive claims should retain evidence, provenance and human review in the wider LaclauGPT workflow.
-
-## Reused analysis code
-
-The useful backend layer from [`TomiToivio/LaclauGPT-Discourse-Analysis`](https://github.com/TomiToivio/LaclauGPT-Discourse-Analysis) has been ported and adapted here:
-
-- spaCy: tokens, POS, dependencies and entity-mention candidates
-- SentenceTransformers: multilingual embeddings and similarity
-- scikit-learn: NMF/KMeans topic baselines and TF-IDF classifiers
-- BERTopic: embedding-based topic candidates
-- gensim: LDA/LSI/HDP baselines
-- Hugging Face Transformers: configurable classification/NER inference
-- statsmodels: statistical inference on reviewed corpus-level datasets
-
-The port fixes contract mismatches found in the older integrated implementation and keeps heavyweight libraries optional.
-
-## Install
-
-Minimal local installation:
+## Installation
 
 ```bash
 python -m venv .venv
@@ -59,98 +72,34 @@ python -m pip install -e '.[dev]'
 pytest
 ```
 
-Install analytical extras as needed:
+Optional extras:
 
 ```bash
 pip install -e '.[analysis]'
 pip install -e '.[nlp]'
 pip install -e '.[topics]'
 pip install -e '.[remote]'
-# or everything
-pip install -e '.[all]'
 ```
 
-Optional libraries are imported lazily. The base package and tests do not require spaCy, PyTorch, BERTopic, MongoDB, Redis or S3 clients.
+## Interoperability
 
-## Local-first configuration
+The local pipeline is Collection `data/` -> Analysis `data/` -> Visualization `data/`, connected by configured filesystem paths when everything runs on one machine.
 
-No configuration is required for the default laptop profile:
+Distributed deployments use MongoDB + Redis + S3/Allas. Manual CSV/JSONL transfer is supported. Storage backend choice must not alter the canonical schema, stable IDs or provenance semantics.
 
-- tabular records: CSV
-- relational/local state: SQLite is available via `LACLAUGPT_DATA_BACKEND=sqlite`
-- artifacts: `./var/artifacts`
-- cache: in-memory
-- generated/runtime data: `./var/` (gitignored)
+## Privacy and development
 
-Configuration is read from `LACLAUGPT_*` environment variables. Copy `.env.example` only as a reference; `.env` itself is gitignored and should never be committed.
+This is public code with private runtime data. Tests use synthetic fixtures only. Public examples contain placeholders; operational material belongs under `data/` or external deployment systems.
 
-Example SQLite mode:
-
-```bash
-export LACLAUGPT_DATA_BACKEND=sqlite
-export LACLAUGPT_DATABASE_URL=sqlite:///./var/laclaugpt.db
-```
-
-## Distributed/server configuration
-
-For a server, CSC environment or multi-worker deployment, enable adapters independently:
-
-```bash
-export LACLAUGPT_PROFILE=server
-export LACLAUGPT_DATA_BACKEND=mongodb
-export LACLAUGPT_MONGO_URL='mongodb://HOST:27017'
-export LACLAUGPT_MONGO_DATABASE=laclaugpt
-
-export LACLAUGPT_CACHE_BACKEND=redis
-export LACLAUGPT_REDIS_URL='redis://HOST:6379/0'
-
-export LACLAUGPT_OBJECT_BACKEND=s3
-export LACLAUGPT_S3_ENDPOINT_URL='https://OBJECT-STORAGE-ENDPOINT'
-export LACLAUGPT_S3_BUCKET='BUCKET-NAME'
-export LACLAUGPT_S3_REGION='REGION'
-```
-
-S3-compatible storage is suitable for services such as CSC Allas. Credentials should come from the runtime environment or secret-management tooling, never from committed files.
-
-## Interoperability with other LaclauGPT modules
-
-This repository should remain usable independently while exchanging plain, versionable records with the other core modules:
-
-- [LaclauGPT Data Collection](https://github.com/TomiToivio/LaclauGPT-Data-Collection): produces source/representation records
-- **LaclauGPT Data Analysis**: produces analytical annotations, candidates, embeddings, statistics and provenance
-- [LaclauGPT Data Visualization](https://github.com/TomiToivio/LaclauGPT-Data-Visualization): consumes analysis outputs without importing analysis internals
-
-Prefer JSON-compatible dictionaries/Pydantic models, stable IDs and explicit provenance at module boundaries. Do not make another LaclauGPT repository import a private implementation detail from `analysis/*` when a serialized contract will do.
-
-## Privacy: public code, private data
-
-**Do not commit research data or real configuration.** See [`PRIVACY.md`](PRIVACY.md) for the full policy.
-
-The repository ignores common datasets, SQLite databases, generated artifacts, `.env*`, keys and machine-specific config. That is defense in depth, not permission to stage sensitive material. Before every push, inspect `git status` and `git diff --cached`.
-
-Tests must use synthetic data only.
-
-## Development standards
-
-- Python 3.11+
-- `src/` package layout
-- `pyproject.toml` as package/tool configuration
-- type hints on public interfaces
-- optional dependencies grouped by capability
-- deterministic analytical defaults where practical
-- Ruff for linting
-- pytest for tests
-- GitHub Actions on Python 3.11, 3.12 and 3.13
-- no import-time requirement for heavyweight/remote services
-- no secrets, research datasets or machine-specific configuration in Git
-
-Run locally:
+Before merging:
 
 ```bash
 ruff check .
 pytest --cov=laclaugpt_data_analysis --cov-report=term-missing
 ```
 
+See `AGENTS.md`, `PRIVACY.md`, and `docs/RUNTIME_DATA.md` for the repository contract.
+
 ## License
 
-See [`LICENSE`](LICENSE).
+See `LICENSE`.
