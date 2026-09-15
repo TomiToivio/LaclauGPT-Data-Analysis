@@ -1,41 +1,30 @@
-"""Deterministic lexical retrieval and alias resolution."""
+"""Runtime context retrieval over versioned codebook entries."""
 from __future__ import annotations
 
 from difflib import SequenceMatcher
 
-from .models import MemoryEntry, Resolution
+from ..codebooks import CodebookEntry
 
 
-def resolve(query: str, entries: list[MemoryEntry], *, threshold: float = 0.72) -> Resolution:
+def rank_entries(query: str, entries: list[CodebookEntry], *, limit: int = 8) -> list[tuple[float, CodebookEntry]]:
     q = query.casefold().strip()
-    scored: list[tuple[float, MemoryEntry]] = []
+    scored: list[tuple[float, CodebookEntry]] = []
     for entry in entries:
-        labels = [entry.canonical_label, *entry.aliases]
-        score = max((SequenceMatcher(None, q, label.casefold().strip()).ratio() for label in labels), default=0.0)
-        if q in {label.casefold().strip() for label in labels}:
-            score = 1.0
+        labels = [entry.label, *entry.aliases]
+        score = max((SequenceMatcher(None, q, label.casefold()).ratio() for label in labels), default=0.0)
+        if any(label.casefold() in q for label in labels):
+            score = max(score, 0.95)
         scored.append((score, entry))
-    scored.sort(key=lambda item: (-item[0], item[1].entry_id))
-    candidates = [entry.entry_id for score, entry in scored[:5] if score > 0]
-    if not scored or scored[0][0] < threshold:
-        return Resolution(query=query, score=scored[0][0] if scored else 0.0,
-                          candidates=candidates, abstained=True)
-    return Resolution(query=query, entry_id=scored[0][1].entry_id,
-                      score=scored[0][0], candidates=candidates)
+    scored.sort(key=lambda item: (-item[0], item[1].kind, item[1].label.casefold()))
+    return scored[:limit]
 
 
-def context_block(query: str, entries: list[MemoryEntry], *, limit: int = 8) -> str:
-    """Return candidates as context, never as source evidence."""
-    q = query.casefold()
-    ranked = sorted(
-        entries,
-        key=lambda entry: (
-            -(2 if entry.canonical_label.casefold() in q else 0)
-            - sum(1 for alias in entry.aliases if alias.casefold() in q),
-            entry.entry_id,
-        ),
-    )[:limit]
+def context_block(query: str, entries: list[CodebookEntry], *, limit: int = 8, threshold: float = 0.15) -> str:
+    """Render retrieved candidates as non-evidentiary context."""
+    ranked = [(score, entry) for score, entry in rank_entries(query, entries, limit=limit) if score >= threshold]
+    if not ranked:
+        return ""
     return "\n".join(
-        f"- {entry.entry_id}: {entry.canonical_label} | aliases={', '.join(entry.aliases)} | {entry.description}"
-        for entry in ranked
+        f"- {entry.kind}: {entry.label} | aliases={', '.join(entry.aliases)} | {entry.definition}"
+        for _, entry in ranked
     )
