@@ -143,7 +143,6 @@ def load_settings() -> Settings:
         s3_prefix_root=_env("S3_PREFIX_ROOT", "projects") or "projects",
         collection_data_dir=Path(collection_data) if collection_data else None,
     )
-    settings.distributed_namespace
     errors = settings.deployment_profile.validate()
     if errors:
         raise ValueError("invalid deployment configuration: " + "; ".join(errors))
