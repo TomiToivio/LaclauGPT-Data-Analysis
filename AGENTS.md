@@ -4,7 +4,7 @@ This is the public LaclauGPT Data Analysis repository. Keep it publication-safe 
 
 ## Scope
 
-This repository owns reusable analysis code: analytical contracts, NLP/embedding/topic/classification/statistical backends, multimodal evidence handling, analysis orchestration, and boundary adapters for analysis inputs/outputs. Collection and visualization responsibilities belong in sibling modules.
+This repository owns reusable analysis code: analytical contracts, NLP/embedding/topic/classification/statistical backends, multimodal evidence handling, LLM-assisted analysis, context memory, codebook machinery, analysis orchestration, and boundary adapters for analysis inputs/outputs. Collection and visualization responsibilities belong in sibling modules.
 
 ## Canonical data contract
 
@@ -22,6 +22,24 @@ Mandatory rules:
 - Nested values in flat formats use deterministic JSON encoding, never Python `repr`.
 - Any persisted semantic schema change requires a version decision, migration note and synthetic contract/round-trip tests.
 - Legacy EP24/monolith columns are adapter concerns only. Do not reintroduce numbered OCR/frame columns into canonical code.
+
+## LLM/provider architecture
+
+- All LLM-assisted analysis depends on the provider protocol under `llm/`; do not call Ollama directly from scientific/domain modules.
+- Ollama is an optional adapter and must remain lazy-imported. No network call, model probe or model download occurs during package import.
+- Cloud inference is explicit opt-in. Never silently fall back from local to cloud.
+- Model/provider/endpoint/prompt-version details belong in analysis provenance/model-run metadata.
+- Structured LLM output must be validated before it mutates canonical records.
+- Fake providers are the default testing surface; live Ollama tests, if added, are opt-in only.
+
+## Memory and codebooks
+
+- Persistent stable-ID memory and runtime context retrieval are separate concerns.
+- Local SQLite is the zero-infrastructure persistent-memory default.
+- Codebook/memory retrieval supplies candidates/context, never source evidence.
+- Resolution must support abstention and retain review/provenance semantics.
+- Public conceptual codebooks and synthetic examples may be committed. Study-specific codebooks, entity/target lists and researcher annotations belong under ignored `data/codebooks/`, private repositories or external storage.
+- Do not create duplicate `memory` packages or parallel type systems when the canonical memory models can be extended.
 
 ## Mandatory runtime data boundary
 
@@ -43,6 +61,8 @@ When Collection and Analysis run on the same host, use the configured `collectio
 - avoid import-time network/model work
 - use deterministic defaults and explicit provenance
 - add tests for behavioral changes
+- avoid giant `pipeline.py`, `utils.py`, and `helpers.py` dumping grounds
+- prefer protocols and small cohesive packages over backend-specific branching throughout scientific code
 
 ## Methodological boundary
 
