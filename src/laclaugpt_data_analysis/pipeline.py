@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -10,6 +11,7 @@ from .codebooks import CodebookEntry
 from .llm.structured_output import chat_structured
 from .memory.retrieval import context_block
 from .models import ClassificationResult
+from .research_record import ensure_research_layers
 
 
 class AnalysisProposal(BaseModel):
@@ -25,6 +27,15 @@ class AnalysisProposal(BaseModel):
     abstentions: list[str] = Field(default_factory=list)
 
 
+def _append_stage_output(record: CanonicalRecord, name: str, output: dict[str, Any]) -> None:
+    """Append rather than overwrite intermediate stage history."""
+    existing = record.intermediate.stage_outputs.get(name)
+    if not isinstance(existing, list):
+        existing = [] if existing is None else [existing]
+    existing.append(output)
+    record.intermediate.stage_outputs[name] = existing
+
+
 def analyze_record(
     record: CanonicalRecord,
     *,
@@ -34,7 +45,7 @@ def analyze_record(
     prompt_version: str = "analysis-v1",
     allow_cloud_fallback: bool | None = None,
 ) -> CanonicalRecord:
-    """Enrich one canonical record without changing its source identity."""
+    """Enrich one canonical record without changing identity or deleting stage results."""
     entries = codebook_entries or []
     retrieved = context_block(record.content.text, entries) if entries else ""
     system = (
@@ -68,7 +79,11 @@ def analyze_record(
             label=label,
             task=task,
             model=response.provenance.actual_model,
-            backend="ollama" if response.provenance.actual_mode in {"local", "cloud", "external"} else response.provenance.actual_mode,
+            backend=(
+                "ollama"
+                if response.provenance.actual_mode in {"local", "cloud", "external"}
+                else response.provenance.actual_mode
+            ),
             source_url=record.source_url,
         )
         for task, label in sorted(proposal.classifications.items())
@@ -91,17 +106,20 @@ def analyze_record(
     record.analysis.uncertainty = proposal.uncertainty
     record.analysis.abstentions = proposal.abstentions
     record.analysis.codebook_refs = sorted({entry.label for entry in entries})
-    record.analysis.model_runs.append(
-        {
-            **response.provenance.to_dict(),
-            "prompt_version": prompt_version,
-        }
-    )
+    model_run = {
+        **response.provenance.to_dict(),
+        "prompt_version": prompt_version,
+    }
+    record.analysis.model_runs.append(model_run)
     provenance = record.append_analysis_provenance(
         method="llm-assisted-analysis",
         model=response.provenance.actual_model,
         metadata={
-            "provider": "ollama" if response.provenance.actual_mode in {"local", "cloud", "external"} else response.provenance.actual_mode,
+            "provider": (
+                "ollama"
+                if response.provenance.actual_mode in {"local", "cloud", "external"}
+                else response.provenance.actual_mode
+            ),
             "prompt_version": prompt_version,
             "endpoint": response.provenance.endpoint,
             "fallback_used": response.provenance.fallback_used,
@@ -109,4 +127,16 @@ def analyze_record(
     )
     for item in record.analysis.entities:
         item.provenance_id = provenance.provenance_id
-    return record
+
+    _append_stage_output(
+        record,
+        "llm_analysis",
+        {
+            "created_at": now.isoformat(),
+            "prompt_version": prompt_version,
+            "model_run": model_run,
+            "proposal": proposal.model_dump(mode="json"),
+            "provenance_id": provenance.provenance_id,
+        },
+    )
+    return ensure_research_layers(record)
