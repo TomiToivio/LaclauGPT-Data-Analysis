@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from . import BackendUnavailable
 from ..models import ClassificationResult, Provenance
+from . import BackendUnavailable
 
 _BACKEND = "transformers"
 _ENGINES: dict[str, Any] = {}
