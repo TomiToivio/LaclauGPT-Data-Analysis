@@ -1,10 +1,10 @@
 """Gensim topic-model baselines (LDA/LSI/HDP)."""
 from __future__ import annotations
 
-from typing import Iterable
+from collections.abc import Iterable
 
-from . import BackendUnavailable
 from ..models import Provenance, Topic, TopicAssignment, TopicModelResult
+from . import BackendUnavailable
 
 _BACKEND = "gensim"
 
@@ -73,7 +73,13 @@ def discover(
             metadata={"method": method, "library_version": _version(), "provenance_id": provenance_id},
         ))
     for doc_index, bow in enumerate(corpus):
-        for topic_id, score in trained.get_document_topics(bow, minimum_probability=0.05):
+        if hasattr(trained, "get_document_topics"):
+            assignments = trained.get_document_topics(bow, minimum_probability=0.05)
+        else:
+            assignments = trained[bow]
+        for topic_id, score in assignments:
+            if abs(float(score)) < 0.05:
+                continue
             result.assignments.append(TopicAssignment(
                 target_id=f"document_{doc_index}",
                 topic_id=f"{method}_{topic_id}",
