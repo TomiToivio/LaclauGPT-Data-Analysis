@@ -1,11 +1,20 @@
 """LaclauGPT Data Analysis.
 
-This package owns analytical transformations and evidence-producing model
-interfaces. Collection, durable storage and visualization live in sibling
-modules. Local files and SQLite are first-class defaults; remote services are
-optional adapters.
+Analysis enriches the project-wide canonical source record. Collection,
+durable storage and visualization live in sibling modules; local files and
+SQLite are first-class defaults and remote services are optional adapters.
 """
 
+from .canonical import (
+    SCHEMA_VERSION,
+    AnalysisSection,
+    CanonicalRecord,
+    ContentSection,
+    DiscourseObject,
+    Evidence,
+    ReviewSection,
+    SourceSection,
+)
 from .config import Settings, load_settings
 from .models import (
     ClassificationResult,
@@ -20,13 +29,21 @@ from .models import (
 )
 
 __all__ = [
+    "AnalysisSection",
+    "CanonicalRecord",
     "ClassificationResult",
+    "ContentSection",
+    "DiscourseObject",
     "EmbeddingResult",
     "EntityMention",
+    "Evidence",
     "NlpDocument",
     "Provenance",
     "Representation",
+    "ReviewSection",
+    "SCHEMA_VERSION",
     "Settings",
+    "SourceSection",
     "Topic",
     "TopicAssignment",
     "TopicModelResult",
