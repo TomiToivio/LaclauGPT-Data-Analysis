@@ -68,17 +68,18 @@ def _json(value: Any) -> str:
 
 
 def source_item_text(record: CanonicalRecord) -> str:
-    """Losslessly expose canonical source material plus raw metadata to prompts."""
+    """Losslessly expose canonical source material plus raw collector payload."""
     source = record.source.model_dump(mode="json", exclude_none=False)
     content = record.content.model_dump(mode="json", exclude_none=False)
+    raw_capture = record.raw_capture.model_dump(mode="json", exclude_none=False)
     return _json(
         {
             "source_url": record.source_url,
             "source_native_ids": record.source_native_ids,
             "source": source,
             "content": content,
+            "raw_capture": raw_capture,
             "raw_metadata": record.source.raw_metadata,
-            "raw_capture_ref": record.raw_capture.ref,
         }
     )
 
@@ -120,10 +121,20 @@ def build_prompt_envelope(
             text=situational_context or EMPTY_CONTEXT,
             provenance=provenance.get("situational", []),
         ),
-        memory=ContextFragment(text=memory_context or EMPTY_CONTEXT, provenance=provenance.get("memory", [])),
-        rag=ContextFragment(text=rag_context or EMPTY_CONTEXT, provenance=provenance.get("rag", [])),
-        current_source=ContextFragment(text=source_item_text(record), provenance=[record.source_url]),
-        previous_analysis=ContextFragment(text=previous_analysis_text(record), provenance=[record.source_url]),
+        memory=ContextFragment(
+            text=memory_context or EMPTY_CONTEXT,
+            provenance=provenance.get("memory", []),
+        ),
+        rag=ContextFragment(
+            text=rag_context or EMPTY_CONTEXT,
+            provenance=provenance.get("rag", []),
+        ),
+        current_source=ContextFragment(
+            text=source_item_text(record), provenance=[record.source_url]
+        ),
+        previous_analysis=ContextFragment(
+            text=previous_analysis_text(record), provenance=[record.source_url]
+        ),
         task=ContextFragment(text=task, provenance=provenance.get("task", [])),
         prompt_version=prompt_version,
     )
