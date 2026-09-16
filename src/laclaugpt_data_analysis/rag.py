@@ -1,9 +1,9 @@
 """Optional backend-neutral retrieval and semantic-memory layer.
 
-Neo4j is an index/semantic layer, never the canonical source of truth.  The public
-analysis pipeline talks only to ``RetrievalBackend``; Cypher and Neo4j driver types are
-kept inside ``Neo4jRetrievalBackend``.  RAG failures are designed to degrade to ordinary
-analysis with an explicit audit status rather than silently changing evidence sources.
+Neo4j is an index/semantic layer, never the canonical source of truth. The public
+analysis pipeline talks only to ``RetrievalBackend``; Cypher and Neo4j driver types stay
+inside ``Neo4jRetrievalBackend``. RAG failures degrade to ordinary analysis with an
+explicit audit status rather than silently switching evidence sources.
 """
 from __future__ import annotations
 
@@ -23,8 +23,6 @@ RAG_MODES = {"none", "vector", "graph", "hybrid"}
 
 @dataclass(frozen=True, slots=True)
 class RetrievalItem:
-    """One auditable context item returned by any retrieval backend."""
-
     canonical_id: str
     text: str
     score: float | None = None
@@ -70,7 +68,6 @@ class RetrievalContext:
     audit: RetrievalAudit
 
     def render(self, *, max_chars: int = 16_000) -> str:
-        """Render bounded context for prompts without changing item provenance."""
         chunks: list[str] = []
         used = 0
         for item in self.items:
@@ -88,7 +85,7 @@ class RetrievalContext:
 
 
 class RetrievalBackend(Protocol):
-    """Shared backend-independent contract consumed by pipeline/tools/agents."""
+    """Shared contract for pipelines, agents, chatbots and researcher interfaces."""
 
     def healthcheck(self) -> bool: ...
 
@@ -134,8 +131,6 @@ class RetrievalBackend(Protocol):
 
 
 class NullRetrievalBackend:
-    """Explicit no-RAG backend, useful for callers that want one stable interface."""
-
     embedding_model = ""
 
     def healthcheck(self) -> bool:
@@ -160,8 +155,10 @@ class NullRetrievalBackend:
     def retrieve_context(
         self, query: str, filters=None, *, top_k: int = 20, depth: int = 2, mode: str = "none"
     ) -> RetrievalContext:
-        del query, top_k, depth
-        return _context([], method="none", filters=filters or {}, embedding_model="", status="disabled")
+        del query, top_k, depth, mode
+        return _context(
+            [], method="none", filters=filters or {}, embedding_model="", status="disabled"
+        )
 
     def rebuild(self, records: Iterable[CanonicalRecord]) -> int:
         del records
@@ -175,7 +172,7 @@ class EmbeddingProvider(Protocol):
 
 
 class OllamaEmbeddingProvider:
-    """Minimal Ollama embedding client; embeddings stay separate from chat-model routing."""
+    """Small Ollama embedding client, deliberately separate from chat-model routing."""
 
     def __init__(self, *, base_url: str, model: str, timeout: float = 30.0):
         if not model.strip():
@@ -192,7 +189,7 @@ class OllamaEmbeddingProvider:
             headers={"Content-Type": "application/json", "Accept": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(request, timeout=self.timeout) as response:  # noqa: S310
+        with urllib.request.urlopen(request, timeout=self.timeout) as response:
             data = json.loads(response.read().decode("utf-8"))
         embeddings = data.get("embeddings") or []
         if len(embeddings) != len(texts):
@@ -201,7 +198,6 @@ class OllamaEmbeddingProvider:
 
 
 def record_filters(record: CanonicalRecord, *, dataset: str = "") -> dict[str, Any]:
-    """Build portable metadata filters from canonical fields and Collection metadata."""
     raw = record.source.raw_metadata
     filters = {
         "dataset": dataset or raw.get("collection_id") or raw.get("study") or "",
@@ -250,7 +246,6 @@ def _context(
 def failed_context(
     *, method: str, filters: Mapping[str, Any] | None, embedding_model: str, error: Exception
 ) -> RetrievalContext:
-    """Produce a researcher-visible failure audit without leaking credentials/endpoints."""
     return _context(
         [],
         method=method,
@@ -262,11 +257,7 @@ def failed_context(
 
 
 class Neo4jRetrievalBackend:
-    """Neo4j graph/vector adapter implementing the shared retrieval contract.
-
-    The driver is injectable for offline tests.  Callers never receive driver-specific
-    records or write Cypher themselves.
-    """
+    """Neo4j adapter. Driver injection keeps normal CI offline and deterministic."""
 
     def __init__(
         self,
@@ -282,7 +273,7 @@ class Neo4jRetrievalBackend:
         if driver is None:
             try:
                 from neo4j import GraphDatabase
-            except ImportError as exc:  # pragma: no cover - exercised in optional installs
+            except ImportError as exc:
                 raise RuntimeError("Neo4j RAG requires: pip install '.[rag]'") from exc
             driver = GraphDatabase.driver(uri, auth=(user, password))
         self.driver = driver
@@ -299,7 +290,7 @@ class Neo4jRetrievalBackend:
             return False
 
     @staticmethod
-    def _metadata(record: CanonicalRecord) -> dict[str, Any]:
+    def _metadata(record: CanonicalRecord) -> dict[str, str]:
         raw = record.source.raw_metadata
         return {
             "dataset": str(raw.get("collection_id") or raw.get("study") or ""),
@@ -314,7 +305,16 @@ class Neo4jRetrievalBackend:
 
     @staticmethod
     def _record_text(record: CanonicalRecord) -> str:
-        return (record.human_readable.markdown or record.human_readable.summary or record.content.text).strip()
+        return (
+            record.human_readable.markdown
+            or record.human_readable.summary
+            or record.content.text
+        ).strip()
+
+    def _run(self, cypher: str, params: Mapping[str, Any]) -> list[dict[str, Any]]:
+        with self.driver.session(database=self.database) as session:
+            result = session.run(cypher, dict(params))
+            return [dict(row) for row in result]
 
     def index_records(self, records: Sequence[CanonicalRecord]) -> int:
         count = 0
@@ -329,63 +329,66 @@ class Neo4jRetrievalBackend:
                 "text": text,
                 "title": record.content.title or "",
                 "summary": record.human_readable.summary,
-                "metadata": metadata,
                 "embedding": embedding,
+                **metadata,
+                "index_version": RAG_INDEX_VERSION,
                 "entities": [entity.label for entity in record.analysis.entities],
                 "signifiers": [obj.label for obj in record.analysis.signifiers],
                 "frames": [obj.label for obj in record.analysis.themes],
                 "topics": [topic.label for topic in record.analysis.topics],
-                "relations": [
-                    {
-                        "source": rel.source_ref,
-                        "target": rel.target_ref,
-                        "type": rel.relation_type,
-                        "review_status": rel.review_status,
-                    }
-                    for rel in record.analysis.relations
-                ],
             }
-            cypher = """
-            MERGE (r:Record {canonical_id: $source_url})
-            SET r.text=$text, r.title=$title, r.summary=$summary, r.metadata=$metadata,
-                r.analysis_version=$metadata.analysis_version, r.index_version=$index_version,
-                r.embedding=$embedding
-            MERGE (s:Source {canonical_id: $source_url})
-            MERGE (r)-[:FROM_SOURCE]->(s)
-            FOREACH (name IN $entities |
-              MERGE (e:Entity {label:name}) MERGE (r)-[:MENTIONS {status:'PROVISIONAL'}]->(e))
-            FOREACH (name IN $signifiers |
-              MERGE (g:Signifier {label:name}) MERGE (r)-[:USES_SIGNIFIER {status:'PROVISIONAL'}]->(g))
-            FOREACH (name IN $frames |
-              MERGE (f:Frame {label:name}) MERGE (r)-[:USES_FRAME {status:'PROVISIONAL'}]->(f))
-            FOREACH (name IN $topics |
-              MERGE (t:Topic {label:name}) MERGE (r)-[:HAS_TOPIC {status:'PROVISIONAL'}]->(t))
-            """
-            self._run(cypher, {**params, "index_version": RAG_INDEX_VERSION})
-            # Relations use a fixed generic edge so user/LLM relation labels remain data,
-            # not executable Cypher. Human validation status is preserved explicitly.
-            for relation in params["relations"]:
+            self._run(
+                """
+                MERGE (r:Record {canonical_id:$source_url})
+                SET r.text=$text, r.title=$title, r.summary=$summary, r.embedding=$embedding,
+                    r.dataset=$dataset, r.arena=$arena, r.country=$country,
+                    r.platform=$platform, r.language=$language, r.actor=$actor,
+                    r.created_at=$created_at, r.analysis_version=$analysis_version,
+                    r.index_version=$index_version, r.rag_managed=true
+                MERGE (s:Source {canonical_id:$source_url}) SET s.rag_managed=true
+                MERGE (r)-[:FROM_SOURCE]->(s)
+                FOREACH (name IN $entities |
+                  MERGE (e:Entity {label:name}) SET e.rag_managed=true
+                  MERGE (r)-[:MENTIONS {status:'PROVISIONAL'}]->(e))
+                FOREACH (name IN $signifiers |
+                  MERGE (g:Signifier {label:name}) SET g.rag_managed=true
+                  MERGE (r)-[:USES_SIGNIFIER {status:'PROVISIONAL'}]->(g))
+                FOREACH (name IN $frames |
+                  MERGE (f:Frame {label:name}) SET f.rag_managed=true
+                  MERGE (r)-[:USES_FRAME {status:'PROVISIONAL'}]->(f))
+                FOREACH (name IN $topics |
+                  MERGE (t:Topic {label:name}) SET t.rag_managed=true
+                  MERGE (r)-[:HAS_TOPIC {status:'PROVISIONAL'}]->(t))
+                """,
+                params,
+            )
+            for relation in record.analysis.relations:
                 self._run(
                     """
                     MATCH (r:Record {canonical_id:$source_url})
-                    MERGE (a:Concept {label:$source})
-                    MERGE (b:Concept {label:$target})
-                    MERGE (a)-[rel:RELATED_TO {source_record:$source_url, relation_type:$type}]->(b)
+                    MERGE (a:Concept {label:$source}) SET a.rag_managed=true
+                    MERGE (b:Concept {label:$target}) SET b.rag_managed=true
+                    MERGE (a)-[rel:RELATED_TO {
+                      source_record:$source_url, relation_type:$relation_type
+                    }]->(b)
                     SET rel.review_status=$review_status, rel.inference='analysis-output'
                     MERGE (r)-[:SUPPORTS_RELATION]->(a)
                     """,
-                    {"source_url": record.source_url, **relation},
+                    {
+                        "source_url": record.source_url,
+                        "source": relation.source_ref,
+                        "target": relation.target_ref,
+                        "relation_type": relation.relation_type,
+                        "review_status": relation.review_status,
+                    },
                 )
             count += 1
         return count
 
-    def _run(self, cypher: str, params: Mapping[str, Any]) -> list[dict[str, Any]]:
-        with self.driver.session(database=self.database) as session:
-            result = session.run(cypher, dict(params))
-            return [dict(row) for row in result]
-
     @staticmethod
-    def _filter_clause(filters: Mapping[str, Any], alias: str = "r") -> tuple[str, dict[str, Any]]:
+    def _filter_clause(
+        filters: Mapping[str, Any], alias: str = "r"
+    ) -> tuple[str, dict[str, Any]]:
         allowed = {"dataset", "country", "arena", "platform", "language", "actor", "source"}
         clauses: list[str] = []
         params: dict[str, Any] = {}
@@ -393,12 +396,18 @@ class Neo4jRetrievalBackend:
             if key not in allowed or value in (None, ""):
                 continue
             param = f"filter_{key}"
-            if key == "source":
-                clauses.append(f"{alias}.canonical_id = ${param}")
-            else:
-                clauses.append(f"{alias}.metadata.{key} = ${param}")
+            prop = "canonical_id" if key == "source" else key
+            clauses.append(f"{alias}.{prop} = ${param}")
             params[param] = value
-        return (" AND ".join(clauses), params)
+        return " AND ".join(clauses), params
+
+    @staticmethod
+    def _metadata_from_row(row: Mapping[str, Any]) -> dict[str, Any]:
+        return {
+            key: row.get(key)
+            for key in ("dataset", "country", "arena", "platform", "language", "actor", "created_at")
+            if row.get(key) not in (None, "")
+        }
 
     def vector_search(
         self, query: str, filters: Mapping[str, Any] | None = None, *, top_k: int = 20
@@ -414,7 +423,10 @@ class Neo4jRetrievalBackend:
             CALL db.index.vector.queryNodes($index, $candidate_k, $embedding)
             YIELD node AS r, score
             {where}
-            RETURN r.canonical_id AS canonical_id, r.text AS text, r.metadata AS metadata, score
+            RETURN r.canonical_id AS canonical_id, r.text AS text, score,
+                   r.dataset AS dataset, r.country AS country, r.arena AS arena,
+                   r.platform AS platform, r.language AS language, r.actor AS actor,
+                   r.created_at AS created_at
             ORDER BY score DESC LIMIT $top_k
             """,
             {
@@ -430,7 +442,7 @@ class Neo4jRetrievalBackend:
                 canonical_id=str(row.get("canonical_id") or ""),
                 text=str(row.get("text") or ""),
                 score=float(row["score"]) if row.get("score") is not None else None,
-                metadata=dict(row.get("metadata") or {}),
+                metadata=self._metadata_from_row(row),
             )
             for row in rows
             if row.get("canonical_id")
@@ -447,8 +459,7 @@ class Neo4jRetrievalBackend:
         filters = dict(filters or {})
         clause, params = self._filter_clause(filters)
         terms = [term.casefold() for term in query.split() if len(term) >= 3][:12]
-        query_clause = "any(term IN $terms WHERE toLower(coalesce(r.text,'')) CONTAINS term)"
-        where_parts = [query_clause]
+        where_parts = ["any(term IN $terms WHERE toLower(coalesce(r.text,'')) CONTAINS term)"]
         if clause:
             where_parts.append(clause)
         bounded_depth = max(1, min(int(depth), 5))
@@ -457,24 +468,31 @@ class Neo4jRetrievalBackend:
             MATCH (r:Record)
             WHERE {' AND '.join(where_parts)}
             OPTIONAL MATCH p=(r)-[*1..{bounded_depth}]-(neighbor)
-            WITH r, [n IN nodes(p) | coalesce(n.canonical_id, n.label, labels(n)[0])] AS path
-            RETURN r.canonical_id AS canonical_id, r.text AS text, r.metadata AS metadata,
-                   path
+            RETURN r.canonical_id AS canonical_id, r.text AS text,
+                   [n IN nodes(p) | coalesce(n.canonical_id, n.label, labels(n)[0])] AS path,
+                   r.dataset AS dataset, r.country AS country, r.arena AS arena,
+                   r.platform AS platform, r.language AS language, r.actor AS actor,
+                   r.created_at AS created_at
             LIMIT $top_k
             """,
             {"terms": terms or [query.casefold()], "top_k": max(1, top_k), **params},
         )
-        return [
-            RetrievalItem(
-                canonical_id=str(row.get("canonical_id") or ""),
-                text=str(row.get("text") or ""),
-                score=None,
-                metadata=dict(row.get("metadata") or {}),
-                graph_path=[str(value) for value in (row.get("path") or []) if value is not None],
+        seen: set[str] = set()
+        items: list[RetrievalItem] = []
+        for row in rows:
+            canonical_id = str(row.get("canonical_id") or "")
+            if not canonical_id or canonical_id in seen:
+                continue
+            seen.add(canonical_id)
+            items.append(
+                RetrievalItem(
+                    canonical_id=canonical_id,
+                    text=str(row.get("text") or ""),
+                    metadata=self._metadata_from_row(row),
+                    graph_path=[str(value) for value in (row.get("path") or []) if value is not None],
+                )
             )
-            for row in rows
-            if row.get("canonical_id")
-        ]
+        return items
 
     def hybrid_search(
         self,
@@ -492,13 +510,11 @@ class Neo4jRetrievalBackend:
             if previous is None:
                 merged[item.canonical_id] = item
                 continue
+            scores = [score for score in (previous.score, item.score) if score is not None]
             merged[item.canonical_id] = RetrievalItem(
                 canonical_id=item.canonical_id,
                 text=previous.text or item.text,
-                score=max(
-                    [score for score in (previous.score, item.score) if score is not None],
-                    default=None,
-                ),
+                score=max(scores) if scores else None,
                 metadata={**item.metadata, **previous.metadata},
                 graph_path=previous.graph_path or item.graph_path,
             )
@@ -523,27 +539,33 @@ class Neo4jRetrievalBackend:
             raise ValueError(f"unsupported RAG mode: {mode}")
         filters = dict(filters or {})
         if normalized == "none":
-            return _context([], method="none", filters=filters, embedding_model=self.embedding_model, status="disabled")
+            return _context(
+                [],
+                method="none",
+                filters=filters,
+                embedding_model=self.embedding_model,
+                status="disabled",
+            )
         if normalized == "vector":
             items = self.vector_search(query, filters, top_k=top_k)
         elif normalized == "graph":
             items = self.graph_search(query, filters, top_k=top_k, depth=depth)
         else:
             items = self.hybrid_search(query, filters, top_k=top_k, depth=depth)
-        return _context(items, method=normalized, filters=filters, embedding_model=self.embedding_model)
+        return _context(
+            items,
+            method=normalized,
+            filters=filters,
+            embedding_model=self.embedding_model,
+        )
 
     def rebuild(self, records: Iterable[CanonicalRecord]) -> int:
-        """Rebuild semantic data from canonical records; canonical storage remains authoritative."""
-        self._run(
-            "MATCH (n) WHERE n.index_version = $index_version DETACH DELETE n",
-            {"index_version": RAG_INDEX_VERSION},
-        )
+        self._run("MATCH (n) WHERE n.rag_managed = true DETACH DELETE n", {})
         materialized = list(records)
         return self.index_records(materialized)
 
 
 def backend_from_settings(settings: Any) -> RetrievalBackend:
-    """Construct the configured backend without making RAG a hard dependency."""
     if not getattr(settings, "rag_enabled", False):
         return NullRetrievalBackend()
     backend = str(getattr(settings, "rag_backend", "neo4j") or "neo4j").casefold()
