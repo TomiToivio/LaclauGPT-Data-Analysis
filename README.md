@@ -2,6 +2,10 @@
 
 [![tests](https://github.com/TomiToivio/LaclauGPT-Data-Analysis/actions/workflows/tests.yml/badge.svg)](https://github.com/TomiToivio/LaclauGPT-Data-Analysis/actions/workflows/tests.yml)
 
+> **Part of the [LaclauGPT](https://github.com/TomiToivio/LaclauGPT) project.** The main LaclauGPT repository is the **meta-repository** and project front door: it contains the scientific paper, theory, shared architecture, canonical data contract and complete-system documentation. This repository is only the **Data Analysis** implementation stage.
+>
+> **Project map:** [LaclauGPT / paper + meta-repo](https://github.com/TomiToivio/LaclauGPT) → [Data Collection](https://github.com/TomiToivio/LaclauGPT-Data-Collection) → **Data Analysis (you are here)** → [Data Visualization](https://github.com/TomiToivio/LaclauGPT-Data-Visualization)
+
 **LaclauGPT** is an open social-science research framework for **LLM-assisted computational discourse analysis** of large textual and multimodal corpora. It combines computational methods with interpretive political research while keeping model outputs traceable to source evidence, uncertainty, provenance and human review.
 
 The current flagship research programme is **[LaclauGPT: Ideological contestation over AI](https://github.com/TomiToivio/LaclauGPT/blob/main/paper/PAPER.md)**. The canonical theoretical and methodological contract is **[THEORY.md](https://github.com/TomiToivio/LaclauGPT/blob/main/THEORY.md)**.
@@ -47,7 +51,9 @@ See the **[scientific paper](https://github.com/TomiToivio/LaclauGPT/blob/main/p
 
 ## This repository
 
-**LaclauGPT Data Analysis** is the canonical reusable analysis engine of the modular LaclauGPT research framework. It turns canonical source records into evidence-linked, structured and human-reviewable analytical proposals. It contains storage-neutral analytical contracts, NLP/embedding/topic/classification/multimodal/statistical backends, a provider-neutral LLM runtime, codebook/context-memory machinery and canonical-record orchestration.
+**LaclauGPT Data Analysis** is the canonical reusable analysis engine of the modular LaclauGPT research framework. It turns canonical source records produced by **[LaclauGPT Data Collection](https://github.com/TomiToivio/LaclauGPT-Data-Collection)** into evidence-linked, structured and human-reviewable analytical proposals, which can then be explored in **[LaclauGPT Data Visualization](https://github.com/TomiToivio/LaclauGPT-Data-Visualization)**. The scientific paper, theory and project-wide contracts live in the **[LaclauGPT meta-repository](https://github.com/TomiToivio/LaclauGPT)**.
+
+It contains storage-neutral analytical contracts, NLP/embedding/topic/classification/multimodal/statistical backends, a provider-neutral LLM runtime, codebook/context-memory machinery and canonical-record orchestration.
 
 The package works locally with CSV + SQLite + local files and can scale to MongoDB + Redis + S3-compatible object storage.
 
@@ -158,7 +164,7 @@ pip install -e '.[remote]'
 
 ## Interoperability
 
-The local pipeline is Collection `data/` -> Analysis `data/` -> Visualization `data/`, connected by configured filesystem paths when everything runs on one machine.
+The local pipeline is **[Collection](https://github.com/TomiToivio/LaclauGPT-Data-Collection)** `data/` → Analysis `data/` → **[Visualization](https://github.com/TomiToivio/LaclauGPT-Data-Visualization)** `data/`, connected by configured filesystem paths when everything runs on one machine. The shared schema and cross-module rules are governed by **[LaclauGPT](https://github.com/TomiToivio/LaclauGPT)**.
 
 Distributed deployments use MongoDB + Redis + S3/Allas. Manual CSV/JSONL transfer is supported. Storage backend choice must not alter the canonical schema, stable IDs or provenance semantics.
 
