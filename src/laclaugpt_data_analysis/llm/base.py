@@ -55,7 +55,12 @@ class LLMResponse:
 
 @dataclass(frozen=True)
 class ChatRequest:
-    """A complete provider request."""
+    """A complete provider request.
+
+    ``images`` contains provider-readable local image paths or equivalent image
+    references. It remains empty for text-only calls so existing providers stay
+    source-compatible while multimodal adapters can prove which pixels were attached.
+    """
 
     model: str
     system: str
@@ -63,6 +68,7 @@ class ChatRequest:
     options: dict[str, Any] = field(default_factory=dict)
     schema: dict[str, Any] | None = None
     allow_cloud_fallback: bool | None = None
+    images: tuple[str, ...] = ()
 
 
 class ProviderError(RuntimeError):
