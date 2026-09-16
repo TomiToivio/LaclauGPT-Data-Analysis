@@ -223,6 +223,10 @@ class AnalysisSection(Model):
     codebook_refs: list[str] = Field(default_factory=list)
     memory_refs: list[str] = Field(default_factory=list)
     model_runs: list[dict[str, Any]] = Field(default_factory=list)
+    # Collision-safe namespace for arbitrary analysis plugins. Existing common
+    # fields above remain available for stable interoperability and legacy code.
+    plugin_results: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    plugin_failures: dict[str, dict[str, Any]] = Field(default_factory=dict)
 
 
 class ReviewSection(Model):

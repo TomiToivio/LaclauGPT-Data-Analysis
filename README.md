@@ -57,7 +57,26 @@ It contains storage-neutral analytical contracts, NLP/embedding/topic/classifica
 
 The package works locally with CSV + SQLite + local files and can scale to MongoDB + Redis + S3-compatible object storage.
 
-## Analysis runtime
+## Plugin-first analysis runtime
+
+The core runtime follows one stable shape:
+
+```text
+CanonicalRecord
+  -> PREPROCESS (generic representation normalization)
+  -> [PLUGIN -> PLUGIN -> ... -> PLUGIN]
+  -> POSTPROCESS (generic validation / projection / export)
+```
+
+Preprocess and postprocess remain generic and stable. The middle stage may contain zero, one or many analytical methods. Laclau/Mouffe analysis is therefore one plugin rather than a mandatory shape for every workflow.
+
+`src/laclaugpt_data_analysis/plugin_pipeline.py` provides the versioned plugin contract, capability/dependency checks, registry and Python entry-point discovery, record- and corpus-level scopes, namespaced results, failure isolation and stable postprocessing. Plugin output lives under `analysis.plugin_results[plugin_name]`, with failures under `analysis.plugin_failures[plugin_name]`, while raw capture, intermediate data, evidence and provenance remain intact.
+
+External plugin packages can use the entry-point group `laclaugpt.analysis_plugins`. Existing first-party methods such as Luhmann, DNA/SNA, Bourdieu/GDA, topic modelling and framing can migrate through thin adapters without rewriting the three-module deployment architecture.
+
+See **[docs/PLUGIN_PIPELINE.md](docs/PLUGIN_PIPELINE.md)** for the plugin contract, examples, migration guidance and the distinction between generic preprocessing and analytical framing.
+
+## Analysis runtime details
 
 The reusable monolith analysis behavior is re-homed behind clean boundaries:
 
@@ -70,7 +89,7 @@ CanonicalRecord
   -> provisional human-reviewable output
 ```
 
-`src/laclaugpt_data_analysis/llm/` owns provider contracts, Ollama and model routing. `memory/` owns stable-ID persistent memory and retrieval. `codebooks.py` owns machine-readable codebook validation/seeding. `pipeline.py` orchestrates these without importing Collection or Visualization internals.
+`src/laclaugpt_data_analysis/llm/` owns provider contracts, Ollama and model routing. `memory/` owns stable-ID persistent memory and retrieval. `codebooks.py` owns machine-readable codebook validation/seeding. Existing canonical pipeline code remains available and can be wrapped as a plugin through `LegacyLaclauPlugin`.
 
 Ollama is optional:
 
@@ -141,6 +160,8 @@ Persistent memory uses stable IDs and review/provenance metadata. SQLite is the 
 
 Importable implementation lives under `src/laclaugpt_data_analysis/`. Heavy libraries remain optional and lazy. Descriptive computation is kept separate from discourse-theoretical interpretation, and interpretive claims retain evidence, provenance and human review.
 
+The “WordPress for social data science” idea is a plugin/modularity metaphor only. Collection, Analysis and Visualization stay independently deployable because their browser, GPU/batch and UI requirements differ. The plugin framework standardizes Analysis internals and contracts; it does not collapse the three modules into one service.
+
 The useful backend layer from `LaclauGPT-Discourse-Analysis` has been adapted here, including spaCy, SentenceTransformers, scikit-learn, BERTopic, gensim, Transformers and statsmodels integrations.
 
 ## Installation
@@ -181,7 +202,7 @@ ruff check .
 pytest --cov=laclaugpt_data_analysis --cov-report=term-missing
 ```
 
-See `AGENTS.md`, `PRIVACY.md`, `docs/RUNTIME_DATA.md`, and `docs/ANALYSIS_RUNTIME.md` for the repository contract.
+See `AGENTS.md`, `PRIVACY.md`, `docs/RUNTIME_DATA.md`, `docs/ANALYSIS_RUNTIME.md`, and `docs/PLUGIN_PIPELINE.md` for the repository contract.
 
 ## License
 
