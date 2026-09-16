@@ -3,7 +3,6 @@ set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 ENV_FILE=${LACLAUGPT_ENV_FILE:-"$ROOT_DIR/data/config/ai26/laskin.env"}
-PRIVATE_DIR=${LACLAUGPT_PRIVATE_CONFIG_DIR:-"$ROOT_DIR/data/config/ai26"}
 LOCK_FILE=${LACLAUGPT_AI26_ANALYSIS_LOCK:-"$ROOT_DIR/data/tmp/ai26-laskin-analysis.lock"}
 
 mkdir -p "$ROOT_DIR/data/tmp" "$ROOT_DIR/data/logs"
@@ -13,6 +12,8 @@ set -a
 # shellcheck disable=SC1090
 source "$ENV_FILE"
 set +a
+
+PRIVATE_DIR=${LACLAUGPT_PRIVATE_CONFIG_DIR:-"$ROOT_DIR/data/config/ai26"}
 
 : "${LACLAUGPT_RUN_ID:?required}"
 : "${LACLAUGPT_MONGODB_URI:?required}"
