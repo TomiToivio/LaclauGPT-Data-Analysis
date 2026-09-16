@@ -6,6 +6,16 @@ This is the public LaclauGPT Data Analysis repository. Keep it publication-safe 
 
 This repository owns reusable analysis code: analytical contracts, NLP/embedding/topic/classification/statistical backends, multimodal evidence handling, LLM-assisted analysis, context memory, codebook machinery, analysis orchestration, and boundary adapters for analysis inputs/outputs. Collection and visualization responsibilities belong in sibling modules.
 
+## AI26 public reference study
+
+AI26 (`Ideological contestation over AI`) is the preferred realistic public example for this module because the current LaclauGPT method and modular architecture are being developed alongside the public paper. Use `codebooks/public/seed_ai_formations.md` as the publication-safe conceptual reference, while keeping all analysis APIs study-agnostic.
+
+The six AI26 computational formation labels (`accelerationism`, `doomerism`, `left-wing accelerationism`, `ai safety`, `ai critical`, `anti-ai`) are provisional sensitising categories and aggregation anchors, not a closed ontology. Do not infer them from actor identity, source list, keywords or a single statement. Multi-label overlap, uncertainty and abstention are valid.
+
+Public codebooks may track paper- and situation-report-derived candidate signifiers/motifs such as safety, pacing, competition, innovation, China, control, liability, independent evaluation, regulation, labour, ownership, surveillance and data centres. Treat these as context/retrieval hints only. They are not evidence and must not silently become formations, nodal points, floating/empty signifiers, antagonisms or imaginaries.
+
+The public/private rule for AI26 is **public methodology, private operations/data**. Public-safe conceptual codebooks, project/arena semantics and synthetic examples may be committed. Keep private row-level corpus data, private source/watch lists, unpublished annotations, credentials, private endpoints and machine-specific secrets.
+
 ## Canonical data contract
 
 Read `docs/CANONICAL_RECORD.md` and the project-wide `TomiToivio/LaclauGPT/docs/CANONICAL_DATA_CONTRACT.md` before changing persisted models, exporters, storage adapters, multimodal contracts or analysis result schemas.
@@ -38,14 +48,14 @@ Mandatory rules:
 - Local SQLite is the zero-infrastructure persistent-memory default.
 - Codebook/memory retrieval supplies candidates/context, never source evidence.
 - Resolution must support abstention and retain review/provenance semantics.
-- Public conceptual codebooks and synthetic examples may be committed. Study-specific codebooks, entity/target lists and researcher annotations belong under ignored `data/codebooks/`, private repositories or external storage.
+- Public conceptual codebooks and synthetic examples may be committed. Public-safe AI26 methodology is explicitly allowed. Private corpus-derived codebooks, entity/target lists and researcher annotations belong under ignored `data/codebooks/`, private repositories or external storage.
 - Do not create duplicate `memory` packages or parallel type systems when the canonical memory models can be extended.
 
 ## Mandatory runtime data boundary
 
-All runtime and study-specific material belongs below `data/`, and the complete `data/` tree stays outside Git. Follow `docs/RUNTIME_DATA.md`.
+All runtime and operational study material belongs below `data/`, and the complete `data/` tree stays outside Git. Follow `docs/RUNTIME_DATA.md`.
 
-Logs, local databases, runtime configuration, CSV/JSONL files, codebooks, source lists, downloaded files, media, transcripts, frames, exports, artifacts, temporary files and local Ollama/Whisper model material all belong under `data/`.
+Logs, local databases, runtime configuration, CSV/JSONL files, private codebooks, private source lists, downloaded files, media, transcripts, frames, exports, artifacts, temporary files and local Ollama/Whisper model material all belong under `data/`.
 
 Do not create top-level `var/`, `logs/`, `database/`, `outputs/`, `downloads/` or model-cache roots. Use `Settings.data_dir`, `Settings.data_path()` and `Settings.ensure_local_directories()`.
 
@@ -70,6 +80,6 @@ Computational outputs are evidence or candidates. Topic clusters are not automat
 
 ## Privacy and interoperability
 
-Tests use synthetic data only. Public configuration contains examples/placeholders, while operational material belongs below `data/` or in external deployment systems.
+Tests use synthetic data only. Public configuration contains examples/placeholders and public-safe AI26 methodology, while operational material belongs below `data/` or in external deployment systems.
 
 Prefer the canonical versioned record at module boundaries. Avoid cross-repository imports of implementation internals; use serialized canonical records and bounded adapters instead.
