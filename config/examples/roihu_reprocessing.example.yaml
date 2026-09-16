@@ -1,0 +1,19 @@
+# Public template only. Real EP24/Hungary26 manifests, codebooks, object refs,
+# endpoints, credentials and project paths remain in private runtime configuration.
+project_id: restricted_project_example
+project_profile: generic
+manifest: data/config/restricted_project/manifest.jsonl
+codebook: data/config/restricted_project/codebook.yaml
+model: gemma4:12b
+prompt_version: restricted-reprocessing-v1
+source_object_field: source.raw_metadata.object_ref
+checksum_field: source.raw_metadata.sha256
+# Optional private hook. It may provide ASR/OCR/frame/translation/legacy enrichment
+# using the canonical preprocessor contract. Keep project-specific code private.
+preprocessor_hook: null
+checkpoint:
+  every_records: 25
+  every_seconds: 600
+  retain: 8
+archive_checkpoints: true
+cleanup_staged_media: true
