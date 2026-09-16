@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Incrementally analyze canonical JSONL and refresh researcher-facing outputs.
+"""Incrementally analyze canonical JSONL with the shared production context policy.
 
 The canonical output file is append-only and keyed by ``source_url``. After each pass,
 the script deterministically refreshes a wide legacy-compatible researcher CSV and one
@@ -11,6 +11,8 @@ import argparse
 from pathlib import Path
 
 from laclaugpt_data_analysis.codebooks import load_codebook
+from laclaugpt_data_analysis.config import load_settings
+from laclaugpt_data_analysis.context_orchestration import assemble_analysis_context
 from laclaugpt_data_analysis.exporters import write_human_reports
 from laclaugpt_data_analysis.interchange import (
     read_jsonl,
@@ -20,6 +22,11 @@ from laclaugpt_data_analysis.interchange import (
 )
 from laclaugpt_data_analysis.llm.ollama import OllamaProvider
 from laclaugpt_data_analysis.pipeline import analyze_record
+from laclaugpt_data_analysis.production_context import (
+    production_context_policy,
+    production_retrieval_backend,
+    production_summary_repository,
+)
 
 
 def _seen(path: Path) -> set[str]:
@@ -64,6 +71,10 @@ def main() -> int:
 
     entries = load_codebook(args.codebook).entries if args.codebook else []
     provider = OllamaProvider()
+    settings = load_settings()
+    context_policy = production_context_policy(settings)
+    summary_repository = production_summary_repository(settings)
+    retrieval_backend = production_retrieval_backend(settings)
     seen = _seen(args.output)
     args.output.parent.mkdir(parents=True, exist_ok=True)
 
@@ -77,13 +88,32 @@ def main() -> int:
             record = record_from_json(line)
             if record.source_url in seen:
                 continue
+            context_bundle, context = assemble_analysis_context(
+                record,
+                project_id=settings.project_id,
+                stage="document",
+                task="Compatibility document-analysis context selection.",
+                codebook_entries=entries,
+                policy=context_policy,
+                summary_repository=summary_repository,
+                retrieval_backend=retrieval_backend,
+            )
             analyzed = analyze_record(
                 record,
                 provider=provider,
                 codebook_entries=entries,
+                project_context=context.project_context,
+                source_context=context.source_context,
+                situational_context=context.situational_context,
+                memory_context=context.memory_context,
+                rag_context=context.rag_context,
+                context_profile=context_policy.profile,
                 model=args.model,
                 allow_cloud_fallback=False,
             )
+            analyzed.intermediate.stage_outputs.setdefault(
+                "production_context:document", []
+            ).append(context_bundle.audit_snapshot())
             target.write(record_to_json(analyzed) + "\n")
             target.flush()
             seen.add(record.source_url)
