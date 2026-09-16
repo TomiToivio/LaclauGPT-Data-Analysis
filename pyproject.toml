@@ -39,6 +39,9 @@ topics = [
 ollama = [
   "ollama>=0.6,<1",
 ]
+rag = [
+  "neo4j>=5.25,<7",
+]
 remote = [
   "pymongo>=4.8",
   "redis>=5.0",
@@ -65,6 +68,7 @@ all = [
   "bertopic>=0.16",
   "gensim>=4.3",
   "ollama>=0.6,<1",
+  "neo4j>=5.25,<7",
   "pymongo>=4.8",
   "redis>=5.0",
   "boto3>=1.35",
@@ -91,6 +95,9 @@ select = ["E", "F", "I", "UP", "B"]
 # Keep currently valid Python 3.11 spellings stable across Ruff releases.
 # These can be removed once the minimum Python version and legacy DNA code are modernized together.
 ignore = ["E501", "UP017", "UP035", "UP037"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/laclaugpt_data_analysis/rag.py" = ["I001"]
 
 [tool.coverage.run]
 source = ["laclaugpt_data_analysis"]

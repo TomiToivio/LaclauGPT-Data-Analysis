@@ -42,6 +42,11 @@ def _bool_env(name: str, default: bool = False) -> bool:
     return raw.strip().casefold() in {"1", "true", "yes", "on"}
 
 
+def _int_env(name: str, default: int) -> int:
+    raw = _env(name)
+    return int(raw) if raw not in (None, "") else default
+
+
 @dataclass(frozen=True)
 class Settings:
     project_id: str = "default"
@@ -70,6 +75,22 @@ class Settings:
     s3_region: str | None = None
     s3_prefix_root: str = "projects"
     collection_data_dir: Path | None = None
+
+    # Optional semantic-memory layer. Disabled by default and never required by
+    # the canonical/local analysis path.
+    rag_enabled: bool = False
+    rag_backend: str = "neo4j"
+    rag_mode: str = "hybrid"
+    rag_top_k: int = 20
+    rag_graph_depth: int = 2
+    neo4j_uri: str = "bolt://127.0.0.1:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = ""
+    neo4j_database: str = "neo4j"
+    neo4j_vector_index: str = "laclaugpt_record_embedding"
+    embedding_model: str = ""
+    embedding_endpoint: str = ""
+
     luhmann_enabled: bool = False
     luhmann_codebook: Path = Path("codebooks/public/luhmann_social_systems_v1.yaml")
     castells_enabled: bool = False
@@ -145,6 +166,19 @@ def load_settings() -> Settings:
         s3_region=_env("S3_REGION"),
         s3_prefix_root=_env("S3_PREFIX_ROOT", "projects") or "projects",
         collection_data_dir=Path(collection_data) if collection_data else None,
+        rag_enabled=_bool_env("RAG_ENABLED", False),
+        rag_backend=_env("RAG_BACKEND", "neo4j") or "neo4j",
+        rag_mode=_env("RAG_MODE", "hybrid") or "hybrid",
+        rag_top_k=_int_env("RAG_TOP_K", 20),
+        rag_graph_depth=_int_env("RAG_GRAPH_DEPTH", 2),
+        neo4j_uri=_env("NEO4J_URI", "bolt://127.0.0.1:7687") or "bolt://127.0.0.1:7687",
+        neo4j_user=_env("NEO4J_USER", "neo4j") or "neo4j",
+        neo4j_password=_env("NEO4J_PASSWORD", "") or "",
+        neo4j_database=_env("NEO4J_DATABASE", "neo4j") or "neo4j",
+        neo4j_vector_index=_env("NEO4J_VECTOR_INDEX", "laclaugpt_record_embedding")
+        or "laclaugpt_record_embedding",
+        embedding_model=_env("EMBEDDING_MODEL", "") or "",
+        embedding_endpoint=_env("EMBEDDING_ENDPOINT", "") or "",
         luhmann_enabled=_bool_env("LUHMANN_ENABLED", False),
         luhmann_codebook=Path(
             _env("LUHMANN_CODEBOOK", "codebooks/public/luhmann_social_systems_v1.yaml")
@@ -153,6 +187,14 @@ def load_settings() -> Settings:
         castells_enabled=_bool_env("CASTELLS_ENABLED", False),
     )
     errors = settings.deployment_profile.validate()
+    if settings.rag_mode.casefold() not in {"none", "vector", "graph", "hybrid"}:
+        errors.append(f"unsupported RAG mode: {settings.rag_mode}")
+    if settings.rag_top_k < 1:
+        errors.append("RAG top_k must be >= 1")
+    if settings.rag_graph_depth < 1 or settings.rag_graph_depth > 5:
+        errors.append("RAG graph depth must be between 1 and 5")
+    if settings.rag_enabled and settings.rag_mode.casefold() in {"vector", "hybrid"} and not settings.embedding_model:
+        errors.append("vector/hybrid RAG requires LACLAUGPT_EMBEDDING_MODEL")
     if errors:
         raise ValueError("invalid deployment configuration: " + "; ".join(errors))
     settings.ensure_local_directories()
