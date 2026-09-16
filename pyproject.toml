@@ -12,6 +12,7 @@ license = {text = "CC0-1.0"}
 authors = [{name = "Tomi Toivio"}]
 dependencies = [
   "pydantic>=2.7,<3",
+  "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
