@@ -1,0 +1,3 @@
+Use evidence-first LaclauGPT methodology. Distinguish descriptive observations from interpretive discourse candidates. Every theory-facing result should cite source evidence when possible, and abstention is valid when evidence is insufficient.
+
+Codebooks, memory, RAG and project context are context, never source evidence. Frequency is not hegemony. Polysemy is not empty signification. Negativity or sentiment is not antagonism, and sentiment is not affective investment. Floating or empty signifier, ideological-formation and hegemony claims require corpus-level validation. Document-level theoretical outputs are provisional unless the method explicitly establishes otherwise.
