@@ -88,9 +88,9 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
-# UP017/UP037 are ignored because the repository supports Python 3.11 and keeps
-# explicit timezone/forward-annotation spellings that remain valid there.
-ignore = ["E501", "UP017", "UP037"]
+# Keep currently valid Python 3.11 spellings stable across Ruff releases.
+# These can be removed once the minimum Python version and legacy DNA code are modernized together.
+ignore = ["E501", "UP017", "UP035", "UP037"]
 
 [tool.coverage.run]
 source = ["laclaugpt_data_analysis"]
