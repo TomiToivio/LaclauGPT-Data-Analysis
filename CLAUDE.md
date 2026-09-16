@@ -8,4 +8,6 @@ For AI26, inspect `docs/AI26_REFERENCE_CASE.md`, `codebooks/public/seed_ai_forma
 
 Preserve evidence, uncertainty, abstention, human review and `source_url` identity. Keep descriptive NLP/statistical outputs distinct from theory-facing interpretation. Distributed operation uses the existing MongoDB/Redis/CSC Allas adapters; localhost, Roihu/Slurm and Laskin/cron are execution profiles of one scientific pipeline.
 
+For LLM-assisted scientific work, inspect `docs/PROMPT_LIBRARY.md` and `src/laclaugpt_data_analysis/prompts/` before writing or changing instructions. Reuse canonical prompt IDs/versions instead of reconstructing prompts from memory or adding long inline Python strings. Behavioral prompt changes require a new prompt version, and exact prompt/resource hashes must remain in model-run provenance.
+
 Never expose secrets, invent CSC/runtime values, silently switch local/cloud models, or commit private data/codebooks. Add synthetic tests for behavioral changes and run the repository quality gates before proposing a merge.
