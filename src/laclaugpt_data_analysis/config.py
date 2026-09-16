@@ -72,6 +72,7 @@ class Settings:
     collection_data_dir: Path | None = None
     luhmann_enabled: bool = False
     luhmann_codebook: Path = Path("codebooks/public/luhmann_social_systems_v1.yaml")
+    castells_enabled: bool = False
 
     @property
     def remote_enabled(self) -> bool:
@@ -149,6 +150,7 @@ def load_settings() -> Settings:
             _env("LUHMANN_CODEBOOK", "codebooks/public/luhmann_social_systems_v1.yaml")
             or "codebooks/public/luhmann_social_systems_v1.yaml"
         ),
+        castells_enabled=_bool_env("CASTELLS_ENABLED", False),
     )
     errors = settings.deployment_profile.validate()
     if errors:
