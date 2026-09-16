@@ -26,7 +26,11 @@ def _stable_hash(value: Mapping[str, Any]) -> str:
 
 @dataclass(frozen=True, slots=True)
 class PluginSpec:
-    """Versioned capability contract for one analytical method."""
+    """Versioned capability contract for one analytical method.
+
+    ``prompt_ids`` declares stable first-party/external prompt resources used by an
+    LLM-assisted plugin. Prompt-free statistical/network plugins leave it empty.
+    """
 
     name: str
     version: str
@@ -36,6 +40,7 @@ class PluginSpec:
     dependencies: tuple[str, ...] = ()
     deterministic: bool = False
     model_dependencies: tuple[str, ...] = ()
+    prompt_ids: tuple[str, ...] = ()
     config_schema_version: str = "1"
 
     def validate(self) -> None:
@@ -45,6 +50,8 @@ class PluginSpec:
             raise ValueError(f"unsupported plugin scope: {self.scope}")
         if self.name in self.dependencies:
             raise ValueError("plugin cannot depend on itself")
+        if any(not prompt_id.strip() for prompt_id in self.prompt_ids):
+            raise ValueError("plugin prompt IDs must not be empty")
 
 
 @dataclass(slots=True)
@@ -165,8 +172,6 @@ class Preprocessor:
         enriched = record.model_copy(deep=True)
         capabilities = self.capabilities(enriched)
 
-        # Generic textual fallback from already extracted transcript/OCR. This is
-        # representation assembly, not political/media framing analysis.
         if not enriched.content.text.strip():
             chunks = [item.text for item in enriched.content.transcripts if item.text.strip()]
             chunks.extend(item.text for item in enriched.content.ocr if item.text.strip())
@@ -261,6 +266,7 @@ class AnalysisPipeline:
             "scope": plugin.spec.scope,
             "deterministic": plugin.spec.deterministic,
             "model_dependencies": list(plugin.spec.model_dependencies),
+            "prompt_ids": list(plugin.spec.prompt_ids),
             "config_schema_version": plugin.spec.config_schema_version,
             "config_hash": _stable_hash(config),
             "config_revision": context.config_revision,
@@ -312,7 +318,10 @@ class AnalysisPipeline:
                     metadata={
                         "plugin": plugin.spec.name,
                         "plugin_version": plugin.spec.version,
+                        "prompt_ids": list(plugin.spec.prompt_ids),
                         "config_hash": _stable_hash(selection.config),
+                        "config_revision": context.config_revision,
+                        "codebook_revision": context.codebook_revision,
                         "run_id": context.run_id,
                     },
                 )
@@ -343,7 +352,6 @@ class AnalysisPipeline:
         processed: list[CanonicalRecord] = []
         failures: list[dict[str, Any]] = []
 
-        # Record-level methods compose independently for each source record.
         record_selections = [
             item for item in self.selections if self.registry.get(item.name).spec.scope == "record"
         ]
@@ -422,6 +430,12 @@ class LegacyLaclauPlugin:
         requires=frozenset({"text"}),
         produces=frozenset({"laclau"}),
         deterministic=False,
+        prompt_ids=(
+            "laclau.system:v1",
+            "laclau.frame_analysis:v1",
+            "laclau.summary_analysis:v1",
+            "laclau.discourse_analysis:v1",
+        ),
     )
 
     def __init__(self, executor: Callable[[CanonicalRecord, Mapping[str, Any]], CanonicalRecord]):
