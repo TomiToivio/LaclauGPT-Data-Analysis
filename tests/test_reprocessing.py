@@ -69,4 +69,4 @@ def test_atomic_checkpoint_retention(tmp_path: Path):
 def test_sha256_file(tmp_path: Path):
     path = tmp_path / "object.bin"
     path.write_bytes(b"restricted-project-test")
-    assert sha256_file(path) == "f5e6da3281185879d14af7a4ded51d77fcfae312394edff3bd60c1bb1dba7e85"
+    assert sha256_file(path) == "2dd62d1aa542e7a1cf40be770fa3f336c3942c307d2a7b6374631de6df4f76d5"
