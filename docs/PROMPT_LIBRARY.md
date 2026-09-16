@@ -8,6 +8,9 @@ First-party prompts live under `src/laclaugpt_data_analysis/prompts/`. A filenam
 
 - `prompts/laclau/system_v1.md` -> `laclau.system:v1`
 - `prompts/laclau/document_analysis_v1.md` -> `laclau.document_analysis:v1`
+- `prompts/laclau/frame_analysis_v1.md` -> `laclau.frame_analysis:v1`
+- `prompts/laclau/summary_analysis_v1.md` -> `laclau.summary_analysis:v1`
+- `prompts/laclau/discourse_analysis_v1.md` -> `laclau.discourse_analysis:v1`
 - `prompts/luhmann/extraction_v1.md` -> `luhmann.extraction:v1`
 
 Load them with `load_prompt("laclau.system", version="v1")`. Missing IDs or versions fail explicitly and loading never requires the network.
@@ -57,6 +60,8 @@ The compatibility `prompt_version` fields used by older pipelines may remain as 
 
 ## Plugins
 
+`PluginSpec.prompt_ids` lets an LLM-assisted analysis plugin declare its default prompt resources. The legacy Laclau adapter declares the canonical Laclau prompt set; prompt-free statistical/network plugins leave the tuple empty.
+
 First-party plugins may reference prompt IDs shipped in this package. External plugins can package their own prompt directory and construct `PromptLibrary(root=...)` using an `importlib.resources` Traversable, preserving the same ID/version/hash contract without modifying the core repository.
 
 Plugins are not required to use prompts. Statistical, network, deterministic NLP and other prompt-free plugins remain valid first-class plugins.
@@ -67,4 +72,11 @@ Method prompts may normally be public. Never place credentials, private corpora,
 
 ## Migration inventory
 
-The initial migration covers the provider-neutral `pipeline.py` system/task instructions and the Luhmann structured extraction builder. The canonical staged Laclau pipeline is the next compatibility-sensitive migration target because its stage-specific tasks and envelope integration need to preserve the legacy multimodal ladder while recording exact prompt resources. New analytical code should use the prompt library immediately rather than adding new inline scientific prompts.
+The initial migration covers:
+
+- `pipeline.py`: system and document-analysis task prompts;
+- `canonical_pipeline.py`: evidence-first system guardrail plus frame, summary and discourse task prompts;
+- `analysis/luhmann.py`: structured extraction prompt;
+- `plugin_pipeline.py`: prompt-resource declarations and prompt-free plugin compatibility.
+
+The repository should still be audited when adding or changing analytical methods: search for `system_prompt=`, prompt builders, and long LLM instruction strings, and migrate new scientific instructions into the canonical library rather than adding fresh inline prompts.
