@@ -6,8 +6,8 @@ from laclaugpt_data_analysis.config import load_settings
 def test_local_defaults_are_zero_config(monkeypatch):
     for name in (
         "PROFILE", "DATA_BACKEND", "DATABASE_URL", "DATA_DIR", "ARTIFACT_DIR",
-        "CACHE_BACKEND", "REDIS_URL", "MONGO_URL", "MONGO_DATABASE",
-        "OBJECT_BACKEND", "S3_ENDPOINT_URL", "S3_BUCKET", "S3_REGION",
+        "CACHE_BACKEND", "REDIS_URL", "MONGO_URL", "MONGODB_URI", "MONGO_DATABASE",
+        "OBJECT_BACKEND", "S3_ENDPOINT", "S3_ENDPOINT_URL", "S3_BUCKET", "S3_REGION",
         "COLLECTION_DATA_DIR",
     ):
         monkeypatch.delenv(f"LACLAUGPT_{name}", raising=False)
@@ -39,3 +39,11 @@ def test_remote_profile_is_environment_driven(monkeypatch):
     settings = load_settings()
     assert settings.remote_enabled is True
     assert settings.data_backend == "mongodb"
+
+
+def test_umbrella_distributed_environment_names_are_supported(monkeypatch):
+    monkeypatch.setenv("LACLAUGPT_MONGODB_URI", "mongodb://example.invalid:27017")
+    monkeypatch.setenv("LACLAUGPT_S3_ENDPOINT", "https://object.example.invalid")
+    settings = load_settings()
+    assert settings.mongo_url == "mongodb://example.invalid:27017"
+    assert settings.s3_endpoint_url == "https://object.example.invalid"
