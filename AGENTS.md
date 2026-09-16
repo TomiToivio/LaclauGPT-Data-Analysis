@@ -73,6 +73,12 @@ Mandatory rules:
 - Structured LLM output must be validated before it mutates canonical records.
 - Fake providers are the default testing surface; live Ollama tests, if added, are opt-in only.
 
+## Prompt library
+
+Prompts are scientific-method resources. Before changing LLM analysis instructions, inspect `docs/PROMPT_LIBRARY.md` and `src/laclaugpt_data_analysis/prompts/`. Reuse canonical stable prompt IDs and explicit versions through the prompt library instead of reconstructing prompts from model memory or adding long inline instruction strings.
+
+Keep method/system instructions, stage/task templates, current source evidence, codebook/memory/RAG context and project-specific context distinguishable. Any prompt wording or formatting change that can alter model behaviour requires a new prompt version. Preserve the exact prompt resource ID, version, SHA-256 hash and rendered-prompt hash in run provenance. Prompt-free statistical, network and deterministic plugins remain first-class plugins.
+
 ## Memory and codebooks
 
 - Persistent stable-ID memory and runtime context retrieval are separate concerns.
