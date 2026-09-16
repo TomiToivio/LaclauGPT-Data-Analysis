@@ -30,6 +30,15 @@ analysis:
 
 The switches describe the reference research design, not global defaults for every study.
 
+## Public codebooks
+
+AI26 now exposes two publication-safe codebook views:
+
+- `codebooks/public/seed_ai_formations.md`: human-readable methodological guide;
+- `codebooks/public/ai26_v2.yaml`: machine-readable codebook that can be loaded by `laclaugpt_data_analysis.codebooks.load_codebook()` and seeded into context memory.
+
+The machine-readable codebook contains provisional formation anchors, candidate signifiers and cross-cutting topics derived from the public paper. It intentionally contains no corpus-derived labels or private annotations.
+
 ## Arenas
 
 The paper compares:
@@ -42,7 +51,7 @@ Arena is sampling provenance. It must never be used as evidence for ideological 
 
 ## Canonical formation vocabulary
 
-For stable aggregation, the AI26 public codebook currently exposes six provisional formation labels:
+For stable aggregation, the AI26 public codebook exposes six provisional formation labels:
 
 - accelerationism
 - doomerism
@@ -51,22 +60,39 @@ For stable aggregation, the AI26 public codebook currently exposes six provision
 - ai critical
 - anti-ai
 
-These are sensitising concepts, not a closed ontology. The paper explicitly requires claims/relations to be analysed before documents are put into ideological boxes. Multi-label outputs, uncertainty and abstention are expected.
+These are sensitising concepts, not a closed ontology. The paper explicitly requires claims and relations to be analysed before documents are put into ideological boxes. Multi-label outputs, uncertainty and abstention are expected.
+
+The collection repository uses the same vocabulary only to maintain discursive coverage. It does **not** stamp source records with ideological labels.
+
+## Cross-cutting analytical dimensions
+
+To avoid forcing every record into one of six buckets, AI26 also tracks reusable dimensions across formations:
+
+- political economy: ownership, labour, concentration, redistribution and public infrastructure;
+- governance: regulation, liability, audits, standards, evaluation and democratic control;
+- capability risk: alignment, catastrophic risk, loss of control and autonomous agents;
+- techno-optimism: abundance, growth, innovation, human flourishing and post-work futures;
+- rights and harms: discrimination, surveillance, copyright, creator rights and data extraction;
+- infrastructure: compute, chips, data centres, energy, water and open weights;
+- geopolitics: AI race, sovereignty, national security, China and export controls.
+
+These dimensions are context for analysis, not ideological classes.
 
 ## Current context, 2026-09-16
 
-The live frontier-AI debate currently makes the relation among `safety`, `pacing`, `competition`, `innovation`, `China`, `control`, `liability`, `independent evaluation`, `standards` and `regulation` particularly useful for AI26.
-
-The public situation report in the meta-repository notes that Dario Amodei has argued for coordinated pacing and third-party evaluation, while Mark Zuckerberg and Jensen Huang have publicly rejected coordinated slowdown logic and emphasized competition/company responsibility. Public reporting also describes OpenAI, Anthropic and Google DeepMind discussing forms of AI-safety coordination.
+The public collection and analysis vocabulary currently emphasizes relations among `safety`, `pacing`, `competition`, `innovation`, `control`, `liability`, `independent evaluation`, `standards`, `open weights`, `labour`, `copyright`, `data centres` and `regulation`.
 
 This should update **context/signifier vocabulary**, not expand the top-level formation taxonomy. The same organization can articulate safety, acceleration, competitive leadership and restraint in different texts or moments.
 
-Public background sources used for this update:
+## Collection-to-analysis contract
 
-- Dario Amodei, `We Must Pace the Frontier`: https://darioamodei.com/post/we-must-pace-the-frontier
-- OpenAI, `The AI policy window is open. We need to act.` (2026-09-09): https://openai.com/index/ai-policy-window/
-- Reuters (2026-09-16), reporting Mark Zuckerberg's rejection of coordinated slowdown logic: https://www.reuters.com/business/metas-zuckerberg-says-ai-labs-have-enough-incentive-build-safely-2026-09-16/
-- Reuters (2026-09-15), reporting OpenAI/Anthropic/Google safety discussions: https://www.reuters.com/technology/openai-is-working-with-anthropic-google-ai-safety-bloomberg-news-reports-2026-09-15/
+The public AI26 demo in `TomiToivio/LaclauGPT-Data-Collection` prioritizes RSS/blog/web and scholarly sources, with bounded X, Bluesky and Mastodon samples and transcript-first YouTube collection. Analysis should therefore expect:
+
+- rich attributable long-form text as the main stream;
+- social posts with external links resolved to separate canonical `WEB` records where possible;
+- `arena`, `source_family` and source provenance as sampling metadata only;
+- ambiguous documents retained rather than pre-classified;
+- source publication timestamps preserved so the analysis window can be enforced consistently.
 
 ## Method safeguards
 
@@ -86,16 +112,16 @@ Every theory-facing candidate should retain source evidence, provenance, uncerta
 
 Public:
 
-- conceptual codebooks and formation normalization;
+- conceptual and machine-readable codebooks;
 - project/arena semantics;
-- public entity/source examples;
+- bounded public demo source examples;
 - synthetic fixtures and example prompts;
-- situation-report-derived context vocabulary.
+- current public context vocabulary.
 
 Private/ignored:
 
 - row-level research corpus;
-- private watch lists and target selection notes;
 - unpublished researcher annotations;
-- credentials, tokens and private endpoints;
-- machine-specific runtime/deployment state.
+- credentials, cookies, tokens and private endpoints;
+- machine-specific runtime/deployment state;
+- any source-selection notes that expose sensitive research operations.
