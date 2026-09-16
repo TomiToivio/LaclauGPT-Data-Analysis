@@ -45,6 +45,7 @@ Each seed carries the neutral candidate definition:
 - artificial intelligence
 - AI
 - AGI
+- frontier AI
 - superintelligence
 - AI safety
 - AI regulation
@@ -57,6 +58,7 @@ Each seed carries the neutral candidate definition:
 - stagnation
 - deceleration
 - existential risk
+- catastrophic risk
 - humanity
 - extinction
 - technological singularity
@@ -72,21 +74,40 @@ safety. These are **candidate relational terms**, not a new ideology taxonomy:
 - slowdown
 - pause
 - competition
+- AI race
 - innovation
 - control
 - loss of control
+- recursive self-improvement
+- recursive improvement
+- autonomous agents
+- agent swarms
+- model autonomy
 - liability
+- accountability
 - independent evaluation
 - third-party evaluation
+- audits
+- safety audits
+- red lines
+- incident reporting
 - standards
 - regulation
 - guardrails
 - national security
+- AI sovereignty
+- technological sovereignty
 - geopolitical competition
 - China
 - coordination
+- safety coordination
 - self-regulation
-- catastrophic risk
+- antitrust
+- antitrust exemption
+- compute governance
+- export controls
+- open weights
+- open source
 
 Agents should track how these terms are articulated, by whom, with what demands,
 frontiers and future imaginaries. Do not freeze an organization into one
@@ -96,28 +117,40 @@ formation because of one statement or one moment in the debate.
 
 - labour
 - job displacement
+- job replacement
 - automation
 - ownership
 - corporate power
+- corporate concentration
 - market concentration
 - Big Tech
 - public interest AI
+- public infrastructure
 - public control
 - democratic control
+- democratic AI
 - open source
+- open weights
 - data extraction
 - surveillance
+- military use
+- automated decision-making
 - discrimination
 - copyright
+- creator rights
 - creative work
 - data centres
+- data-centre moratorium
 - energy
+- water use
 - environment
 - infrastructure
 - inequality
 - extraction
+- labour exploitation
 - expertise
 - authority
+- accountability
 
 ## Future-oriented / sociotechnical-imaginary seeds
 
@@ -132,10 +165,16 @@ themselves. Institutional stabilization must be shown across actors/documents.
 - cyborg
 - human enhancement
 - democratic AI
+- public-interest AI
 - AI for the public good
+- sovereign AI
+- national AI champions
 - catastrophic AI future
+- loss-of-control future
 - authoritarian surveillance
 - emancipatory automation
+- mass technological unemployment
+- human-AI collaboration
 
 ## Laclaudian / Palonen research vocabulary
 
@@ -165,6 +204,7 @@ Safeguards:
 - sentiment != affective investment
 - one future claim != stabilized sociotechnical imaginary
 - one document != a validated ideological formation
+- one actor statement != a permanent actor ideology
 
 ## Affect seeds (kind=target, PROVISIONAL)
 
@@ -183,6 +223,8 @@ explicitly evidenced:
 - anxiety
 - contempt
 - grief
+- urgency
+- dread
 
 Do not infer an Us/Frontier position from affect polarity.
 
@@ -200,10 +242,16 @@ People:
 - Demis Hassabis
 - Mark Zuckerberg
 - Jensen Huang
+- Elon Musk
+- Yann LeCun
 - Eliezer Yudkowsky
-- Bernie Sanders
+- Stuart Russell
+- Yoshua Bengio
 - Timnit Gebru
+- Emily M. Bender
 - Émile P. Torres
+- Gary Marcus
+- Peter Sarlin
 - Ray Kurzweil
 - Donna Haraway
 - Ernesto Laclau
@@ -219,12 +267,26 @@ Organizations/movements/institutions:
 - Google DeepMind
 - Meta AI
 - NVIDIA
+- xAI
+- Andreessen Horowitz
 - Machine Intelligence Research Institute
+- Center for AI Safety
+- Future of Life Institute
 - Distributed AI Research Institute
+- AI Now Institute
+- Data & Society
+- Algorithmic Justice League
+- Electronic Frontier Foundation
 - PauseAI
 - Effective Accelerationism
 - European Commission AI Office
 - European Parliament
+- Parliament of Finland
+- Finnish Government
+- Finnish Center for Artificial Intelligence
+- Silo AI
+- AI Finland
+- OECD.AI
 
 ## Arenas
 
@@ -235,7 +297,22 @@ AI26 compares three public research arenas:
    data centres, AI safety and opposition/support;
 3. `parliamentary` — parliamentary, electoral, party, government and policy discourse.
 
-Arena membership is sampling provenance, not evidence of ideology.
+Arena membership is sampling provenance, not evidence of ideology. The three arenas
+are dimensions of one AI26 discourse space and may be analysed/visualized together.
+
+## Source-context cues
+
+The public collection strategy now emphasizes rich source material over raw social
+volume. Analysis should therefore be prepared to receive:
+
+- RSS/blog/news-policy documents as the primary stream;
+- scholarly abstracts/PDFs from arXiv and other public research indexes;
+- YouTube transcripts without video/audio by default;
+- bounded Bluesky/Mastodon/X social samples;
+- linked webpages/documents discovered through social posts as separate canonical
+  `WEB` sources with provenance to the originating post.
+
+Source family is contextual/provenance information, not a credibility or ideology score.
 
 ## Seeding and update rules
 
