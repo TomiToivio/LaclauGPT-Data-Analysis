@@ -20,6 +20,18 @@ from .config import Settings, load_settings
 from .context_envelope import PromptEnvelope, build_prompt_envelope
 from .context_profiles import ContextProfile, available_context_profiles, load_context_profile
 from .context_runtime import ContextItem, ContextSnapshot, assemble_context
+from .derived_structures import (
+    Geocoder,
+    GeocodeResult,
+    LocationEntity,
+    NetworkRelation,
+    TimelineEvent,
+    build_visualization_projection,
+    normalize_location_name,
+    project_locations,
+    project_network_relations,
+    project_timeline_events,
+)
 from .models import (
     ClassificationResult,
     EmbeddingResult,
@@ -58,7 +70,11 @@ __all__ = [
     "EmbeddingResult",
     "EntityMention",
     "Evidence",
+    "GeocodeResult",
+    "Geocoder",
+    "LocationEntity",
     "Neo4jRetrievalBackend",
+    "NetworkRelation",
     "NlpDocument",
     "NullRetrievalBackend",
     "PipelineContext",
@@ -73,6 +89,7 @@ __all__ = [
     "SCHEMA_VERSION",
     "Settings",
     "SourceSection",
+    "TimelineEvent",
     "Topic",
     "TopicAssignment",
     "TopicModelResult",
@@ -81,10 +98,15 @@ __all__ = [
     "backend_from_settings",
     "build_daily_report",
     "build_prompt_envelope",
+    "build_visualization_projection",
     "compose_run_config",
     "compose_run_config_from_files",
     "load_context_profile",
     "load_settings",
+    "normalize_location_name",
+    "project_locations",
+    "project_network_relations",
+    "project_timeline_events",
     "run_canonical_pipeline",
     "run_rag_pipeline",
 ]
