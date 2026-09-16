@@ -15,7 +15,6 @@ from pydantic import Field
 from .canonical import CanonicalRecord, ReviewStatus
 from .models import Model
 
-
 LocationOrigin = Literal["source", "inferred", "geocoded"]
 
 
