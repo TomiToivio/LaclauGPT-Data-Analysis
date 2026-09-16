@@ -1,6 +1,6 @@
 from datetime import UTC, date, datetime
 
-from laclaugpt_data_analysis.canonical import CanonicalRecord
+from laclaugpt_data_analysis.canonical import CanonicalRecord, DiscourseObject
 from laclaugpt_data_analysis.canonical_pipeline import (
     DiscourseProposal,
     DiscursiveElement,
@@ -67,7 +67,7 @@ def test_prompt_envelope_has_all_eight_sections_and_empty_fallbacks():
     ):
         assert f"[{section}]" in rendered
     assert "(none available)" in rendered
-    assert "unknown_collector_field" in rendered or record.raw_capture.payload["unknown_collector_field"] == "must survive"
+    assert "unknown_collector_field" in rendered
 
 
 def test_pipeline_keeps_raw_legacy_human_and_structured_layers():
@@ -80,10 +80,34 @@ def test_pipeline_keeps_raw_legacy_human_and_structured_layers():
         sociotechnical_imaginary_candidates=["democratically governed AI"],
     )
     discourse = DiscourseProposal(
-        demands=[DiscursiveElement(label="democratic control", evidence=["AI should serve democratic society."], confidence=0.8)],
-        nodal_point_candidates=[DiscursiveElement(label="AI", evidence=["AI should serve democratic society."], confidence=0.7)],
-        formation_candidates=[DiscursiveElement(label="democratic AI project", evidence=["AI should serve democratic society."], confidence=0.4)],
-        imaginary_candidates=[DiscursiveElement(label="democratically governed AI", evidence=["AI should serve democratic society."], confidence=0.4)],
+        demands=[
+            DiscursiveElement(
+                label="democratic control",
+                evidence=["AI should serve democratic society."],
+                confidence=0.8,
+            )
+        ],
+        nodal_point_candidates=[
+            DiscursiveElement(
+                label="AI",
+                evidence=["AI should serve democratic society."],
+                confidence=0.7,
+            )
+        ],
+        formation_candidates=[
+            DiscursiveElement(
+                label="democratic AI project",
+                evidence=["AI should serve democratic society."],
+                confidence=0.4,
+            )
+        ],
+        imaginary_candidates=[
+            DiscursiveElement(
+                label="democratically governed AI",
+                evidence=["AI should serve democratic society."],
+                confidence=0.4,
+            )
+        ],
         populist=False,
         non_populist_reason="No constitutive Us/Frontier pair is evidenced.",
         abstentions=["No empty signifier finding at document level."],
@@ -126,7 +150,12 @@ def test_pipeline_keeps_raw_legacy_human_and_structured_layers():
 def test_graph_is_projection_not_second_ontology():
     record = synthetic_record()
     record.analysis.signifiers = [
-        {"object_id": "signifier:1", "label": "AI", "kind": "signifier", "review_status": "PROVISIONAL"}
+        DiscourseObject(
+            object_id="signifier:1",
+            label="AI",
+            kind="signifier",
+            review_status="PROVISIONAL",
+        )
     ]
     graph = build_discourse_graph(record)
     assert graph["source_url"] == record.source_url
@@ -137,13 +166,20 @@ def test_graph_is_projection_not_second_ontology():
 def test_daily_reports_can_filter_by_signifier_and_feed_context():
     record = synthetic_record()
     record.analysis.signifiers = [
-        {"object_id": "signifier:1", "label": "AI", "kind": "signifier", "review_status": "PROVISIONAL"}
+        DiscourseObject(
+            object_id="signifier:1",
+            label="AI",
+            kind="signifier",
+            review_status="PROVISIONAL",
+        )
     ]
     record.human_readable.summary = "Synthetic daily summary"
-    report = build_daily_report([record], report_date=date(2026, 9, 16), filters={"signifier": "AI"})
+    report = build_daily_report(
+        [record], report_date=date(2026, 9, 16), filters={"signifier": "AI"}
+    )
     assert report.record_count == 1
     assert report.top_signifiers == ["AI"]
-    assert "frequency" not in report.markdown.lower() or "do not" in report.markdown.lower()
+    assert "do not by themselves establish" in report.markdown.lower()
     assert "Synthetic daily summary" in report.markdown
 
 
