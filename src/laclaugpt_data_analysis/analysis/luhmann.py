@@ -17,6 +17,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, Field
 
+from ..prompt_library import PromptResource, load_prompt
+
 _TOKEN_RE = re.compile(r"[\w-]+", re.UNICODE)
 
 
@@ -165,24 +167,20 @@ def baseline_to_analysis(
     )
 
 
-def build_structured_extraction_prompt(text: str, codebook: LuhmannCodebook) -> str:
-    """Build a conservative prompt for any structured-output LLM adapter.
+def luhmann_extraction_prompt_resource() -> PromptResource:
+    """Return the versioned first-party Luhmann extraction prompt resource."""
+    return load_prompt("luhmann.extraction", version="v1")
 
-    The caller is responsible for model invocation. The returned prompt explicitly
-    permits unknown/mixed interpretations and asks for source-grounded evidence.
+
+def build_structured_extraction_prompt(text: str, codebook: LuhmannCodebook) -> str:
+    """Render the versioned conservative prompt for a structured-output LLM adapter.
+
+    The caller remains responsible for model invocation. Prompt identity/hash can be
+    obtained from :func:`luhmann_extraction_prompt_resource` for run provenance.
     """
-    systems = "\n".join(
-        f"- {item.id}: {item.definition}" for item in codebook.systems
-    )
-    return (
-        "Analyze the communication using the supplied Luhmann/Social Systems codebook. "
-        "Do not force a single functional-system label. Use unknown or multiple references "
-        "when evidence is weak or mixed. Treat codes/programmes as candidates, not universal "
-        "fixed binaries. Every substantive interpretation should be tied to evidence spans.\n\n"
-        f"Supported systems:\n{systems}\n\n"
-        "Return JSON matching the SystemsAnalysis schema.\n\n"
-        f"TEXT:\n{text}"
-    )
+    systems = "\n".join(f"- {item.id}: {item.definition}" for item in codebook.systems)
+    resource = luhmann_extraction_prompt_resource()
+    return resource.render(systems=systems, text=text).text
 
 
 def parse_structured_analysis(payload: Mapping[str, Any]) -> SystemsAnalysis:
