@@ -9,25 +9,9 @@ from .deployment import DeploymentProfile
 from .distributed import ProjectNamespace
 
 DATA_SUBDIRS = (
-    "logs",
-    "database",
-    "config",
-    "files",
-    "csv",
-    "jsonl",
-    "codebooks",
-    "sources",
-    "downloads",
-    "media",
-    "models/ollama",
-    "models/whisper",
-    "cache",
-    "tmp",
-    "exports",
-    "artifacts",
-    "runs",
-    "transcripts",
-    "frames",
+    "logs", "database", "config", "files", "csv", "jsonl", "codebooks", "sources",
+    "downloads", "media", "models/ollama", "models/whisper", "cache", "tmp", "exports",
+    "artifacts", "runs", "transcripts", "frames",
 )
 
 
@@ -59,6 +43,9 @@ class Settings:
     llm_endpoint: str = "http://127.0.0.1:11434"
     cloud_allowed: bool = False
     caller: str = "human-cli"
+    # New explicit storage selector. ``data_backend`` remains as a compatibility
+    # alias for older configs; storage_backend wins when it is not empty.
+    storage_backend: str = "auto"
     data_backend: str = "csv"
     database_url: str = "sqlite:///./data/database/analysis.sqlite3"
     data_dir: Path = Path("./data")
@@ -69,6 +56,7 @@ class Settings:
     redis_key_prefix: str = "laclaugpt"
     mongo_url: str | None = None
     mongo_database: str = "laclaugpt"
+    mongo_vector_index: str = "laclaugpt_record_embedding"
     object_backend: str = "local"
     s3_endpoint_url: str | None = None
     s3_bucket: str | None = None
@@ -76,10 +64,8 @@ class Settings:
     s3_prefix_root: str = "projects"
     collection_data_dir: Path | None = None
 
-    # Optional semantic-memory layer. Disabled by default and never required by
-    # the canonical/local analysis path.
     rag_enabled: bool = False
-    rag_backend: str = "neo4j"
+    rag_backend: str = "mongodb"
     rag_mode: str = "hybrid"
     rag_top_k: int = 20
     rag_graph_depth: int = 2
@@ -101,28 +87,11 @@ class Settings:
 
     @property
     def distributed_namespace(self) -> ProjectNamespace:
-        return ProjectNamespace(
-            project_id=self.project_id,
-            redis_prefix=self.redis_key_prefix,
-            mongo_database=self.mongo_database,
-            s3_prefix_root=self.s3_prefix_root,
-        )
+        return ProjectNamespace(project_id=self.project_id, redis_prefix=self.redis_key_prefix, mongo_database=self.mongo_database, s3_prefix_root=self.s3_prefix_root)
 
     @property
     def deployment_profile(self) -> DeploymentProfile:
-        return DeploymentProfile(
-            machine=self.machine,
-            execution=self.execution,
-            storage=self.storage,
-            llm=self.llm_mode,
-            model=self.llm_model,
-            cloud_allowed=self.cloud_allowed,
-            data_dir=self.data_dir,
-            scratch_dir=self.scratch_dir,
-            collection_data_dir=self.collection_data_dir,
-            ollama_endpoint=self.llm_endpoint,
-            caller=self.caller,
-        )
+        return DeploymentProfile(machine=self.machine, execution=self.execution, storage=self.storage, llm=self.llm_mode, model=self.llm_model, cloud_allowed=self.cloud_allowed, data_dir=self.data_dir, scratch_dir=self.scratch_dir, collection_data_dir=self.collection_data_dir, ollama_endpoint=self.llm_endpoint, caller=self.caller)
 
     def data_path(self, *parts: str) -> Path:
         return self.data_dir.joinpath(*parts)
@@ -134,7 +103,6 @@ class Settings:
 
 
 def load_settings() -> Settings:
-    """Load settings and initialize the ignored local runtime directory tree."""
     collection_data = _env("COLLECTION_DATA_DIR")
     scratch = _env("SCRATCH_DIR")
     settings = Settings(
@@ -145,13 +113,12 @@ def load_settings() -> Settings:
         storage=_env("STORAGE", "local") or "local",
         llm_mode=_env("LLM_MODE", "local-ollama") or "local-ollama",
         llm_model=_env("LLM_MODEL", "gemma4:e4b") or "gemma4:e4b",
-        llm_endpoint=_env("LLM_ENDPOINT", "http://127.0.0.1:11434")
-        or "http://127.0.0.1:11434",
+        llm_endpoint=_env("LLM_ENDPOINT", "http://127.0.0.1:11434") or "http://127.0.0.1:11434",
         cloud_allowed=_bool_env("CLOUD_ALLOWED", False),
         caller=_env("CALLER", "human-cli") or "human-cli",
+        storage_backend=_env("STORAGE_BACKEND", "auto") or "auto",
         data_backend=_env("DATA_BACKEND", "csv") or "csv",
-        database_url=_env("DATABASE_URL", "sqlite:///./data/database/analysis.sqlite3")
-        or "sqlite:///./data/database/analysis.sqlite3",
+        database_url=_env("DATABASE_URL", "sqlite:///./data/database/analysis.sqlite3") or "sqlite:///./data/database/analysis.sqlite3",
         data_dir=Path(_env("DATA_DIR", "./data") or "./data"),
         artifact_dir=Path(_env("ARTIFACT_DIR", "./data/artifacts") or "./data/artifacts"),
         scratch_dir=Path(scratch) if scratch else None,
@@ -160,41 +127,42 @@ def load_settings() -> Settings:
         redis_key_prefix=_env("REDIS_KEY_PREFIX", "laclaugpt") or "laclaugpt",
         mongo_url=_env("MONGODB_URI") or _env("MONGO_URL"),
         mongo_database=_env("MONGO_DATABASE", "laclaugpt") or "laclaugpt",
+        mongo_vector_index=_env("MONGO_VECTOR_INDEX", "laclaugpt_record_embedding") or "laclaugpt_record_embedding",
         object_backend=_env("OBJECT_BACKEND", "local") or "local",
         s3_endpoint_url=_env("S3_ENDPOINT") or _env("S3_ENDPOINT_URL"),
-        s3_bucket=_env("S3_BUCKET"),
-        s3_region=_env("S3_REGION"),
+        s3_bucket=_env("S3_BUCKET"), s3_region=_env("S3_REGION"),
         s3_prefix_root=_env("S3_PREFIX_ROOT", "projects") or "projects",
         collection_data_dir=Path(collection_data) if collection_data else None,
         rag_enabled=_bool_env("RAG_ENABLED", False),
-        rag_backend=_env("RAG_BACKEND", "neo4j") or "neo4j",
+        rag_backend=_env("RAG_BACKEND", "mongodb") or "mongodb",
         rag_mode=_env("RAG_MODE", "hybrid") or "hybrid",
-        rag_top_k=_int_env("RAG_TOP_K", 20),
-        rag_graph_depth=_int_env("RAG_GRAPH_DEPTH", 2),
+        rag_top_k=_int_env("RAG_TOP_K", 20), rag_graph_depth=_int_env("RAG_GRAPH_DEPTH", 2),
         neo4j_uri=_env("NEO4J_URI", "bolt://127.0.0.1:7687") or "bolt://127.0.0.1:7687",
         neo4j_user=_env("NEO4J_USER", "neo4j") or "neo4j",
         neo4j_password=_env("NEO4J_PASSWORD", "") or "",
         neo4j_database=_env("NEO4J_DATABASE", "neo4j") or "neo4j",
-        neo4j_vector_index=_env("NEO4J_VECTOR_INDEX", "laclaugpt_record_embedding")
-        or "laclaugpt_record_embedding",
+        neo4j_vector_index=_env("NEO4J_VECTOR_INDEX", "laclaugpt_record_embedding") or "laclaugpt_record_embedding",
         embedding_model=_env("EMBEDDING_MODEL", "") or "",
         embedding_endpoint=_env("EMBEDDING_ENDPOINT", "") or "",
         luhmann_enabled=_bool_env("LUHMANN_ENABLED", False),
-        luhmann_codebook=Path(
-            _env("LUHMANN_CODEBOOK", "codebooks/public/luhmann_social_systems_v1.yaml")
-            or "codebooks/public/luhmann_social_systems_v1.yaml"
-        ),
+        luhmann_codebook=Path(_env("LUHMANN_CODEBOOK", "codebooks/public/luhmann_social_systems_v1.yaml") or "codebooks/public/luhmann_social_systems_v1.yaml"),
         castells_enabled=_bool_env("CASTELLS_ENABLED", False),
     )
     errors = settings.deployment_profile.validate()
+    if settings.storage_backend.casefold() not in {"auto", "mongodb", "csv", "sqlite"}:
+        errors.append(f"unsupported storage backend: {settings.storage_backend}")
     if settings.rag_mode.casefold() not in {"none", "vector", "graph", "hybrid"}:
         errors.append(f"unsupported RAG mode: {settings.rag_mode}")
+    if settings.rag_backend.casefold() not in {"mongodb", "neo4j", "none"}:
+        errors.append(f"unsupported RAG backend: {settings.rag_backend}")
     if settings.rag_top_k < 1:
         errors.append("RAG top_k must be >= 1")
     if settings.rag_graph_depth < 1 or settings.rag_graph_depth > 5:
         errors.append("RAG graph depth must be between 1 and 5")
     if settings.rag_enabled and settings.rag_mode.casefold() in {"vector", "hybrid"} and not settings.embedding_model:
         errors.append("vector/hybrid RAG requires LACLAUGPT_EMBEDDING_MODEL")
+    if settings.storage_backend.casefold() == "mongodb" and not settings.mongo_url:
+        errors.append("storage_backend=mongodb requires LACLAUGPT_MONGODB_URI or LACLAUGPT_MONGO_URL")
     if errors:
         raise ValueError("invalid deployment configuration: " + "; ".join(errors))
     settings.ensure_local_directories()
