@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Iterable
 from datetime import date, datetime
-from typing import Iterable
 
 from pydantic import BaseModel, Field
 
@@ -52,11 +52,7 @@ def build_daily_report(
     report_date: date | None = None,
     filters: dict[str, str] | None = None,
 ) -> DailyReport:
-    """Build a deterministic summary suitable for dashboards and next-run context.
-
-    An optional LLM can later enrich this output, but the baseline report remains
-    reproducible and works offline on CSC batch nodes.
-    """
+    """Build a deterministic report suitable for dashboards and next-run context."""
     target = report_date or date.today()
     active_filters = filters or {}
     selected = [
@@ -68,9 +64,13 @@ def build_daily_report(
     signifiers = Counter(x.label for record in selected for x in record.analysis.signifiers)
     formations = Counter(x.label for record in selected for x in record.analysis.formations)
 
-    summaries = [record.human_readable.summary or record.analysis.summary or "" for record in selected]
+    summaries = [
+        record.human_readable.summary or record.analysis.summary or "" for record in selected
+    ]
     summaries = [value.strip() for value in summaries if value and value.strip()]
-    filter_text = ", ".join(f"{key}={value}" for key, value in active_filters.items()) or "none"
+    filter_text = ", ".join(
+        f"{key}={value}" for key, value in active_filters.items()
+    ) or "none"
     lines = [
         f"# LaclauGPT daily summary — {target.isoformat()}",
         "",
