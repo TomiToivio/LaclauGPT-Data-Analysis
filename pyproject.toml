@@ -96,6 +96,9 @@ select = ["E", "F", "I", "UP", "B"]
 # These can be removed once the minimum Python version and legacy DNA code are modernized together.
 ignore = ["E501", "UP017", "UP035", "UP037"]
 
+[tool.ruff.lint.per-file-ignores]
+"src/laclaugpt_data_analysis/rag.py" = ["I001"]
+
 [tool.coverage.run]
 source = ["laclaugpt_data_analysis"]
 branch = true
