@@ -21,6 +21,7 @@ laclaugpt-analysis-worker = "laclaugpt_data_analysis.distributed_worker:main"
 [project.optional-dependencies]
 analysis = [
   "pandas>=2.2",
+  "numpy>=1.26",
   "scikit-learn>=1.5",
   "statsmodels>=0.14",
   "networkx>=3.3",
@@ -46,10 +47,12 @@ dev = [
   "pytest>=8.3",
   "pytest-cov>=5.0",
   "ruff>=0.6",
+  "numpy>=1.26",
   "networkx>=3.3",
 ]
 all = [
   "pandas>=2.2",
+  "numpy>=1.26",
   "scikit-learn>=1.5",
   "statsmodels>=0.14",
   "networkx>=3.3",
