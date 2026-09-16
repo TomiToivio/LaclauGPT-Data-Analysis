@@ -5,6 +5,13 @@ durable storage and visualization live in sibling modules; local files and
 SQLite are first-class defaults and remote services are optional adapters.
 """
 
+from .analysis_context import (
+    AnalysisContextBundle,
+    AnalysisContextFragment,
+    build_analysis_context_bundle,
+    codebook_context,
+    context_items_fragment,
+)
 from .canonical import (
     SCHEMA_VERSION,
     AnalysisSection,
@@ -69,6 +76,8 @@ from .reporting import DailyReport, build_daily_report
 from .runtime_config import EffectiveRunConfig, compose_run_config, compose_run_config_from_files
 
 __all__ = [
+    "AnalysisContextBundle",
+    "AnalysisContextFragment",
     "AnalysisSection",
     "CanonicalRecord",
     "ClassificationResult",
@@ -112,12 +121,15 @@ __all__ = [
     "assemble_context",
     "available_context_profiles",
     "backend_from_settings",
+    "build_analysis_context_bundle",
     "build_daily_report",
     "build_periodic_summary",
     "build_prompt_envelope",
     "build_visualization_projection",
+    "codebook_context",
     "compose_run_config",
     "compose_run_config_from_files",
+    "context_items_fragment",
     "corpus_windows",
     "grouped_summaries",
     "inject_summary_context",
