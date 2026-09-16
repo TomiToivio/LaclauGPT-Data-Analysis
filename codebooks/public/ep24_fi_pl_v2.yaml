@@ -1,0 +1,251 @@
+codebook_id: ep24-fi-pl-v2
+version: "2.0.0"
+title: EP24 Finland and Poland public methodology layer
+description: >-
+  Public, privacy-safe methodology and language grounding for reprocessing the 2024
+  European Parliament election corpus from Finland and Poland. Researcher workbooks,
+  row-level annotations and private entity/theme mappings are deliberately excluded and
+  must be layered at runtime from the controlled private codebook.
+project: ep24
+arena: european-parliament-election-2024
+required_sections:
+  - epistemic_rules
+  - multimodal_rules
+  - translation_rules
+  - laclau_rules
+optional_sections:
+  - public_context
+entries:
+  # Finland: public party/entity normalization only.
+  - kind: entity
+    label: Kansallinen Kokoomus
+    aliases: [Kokoomus, Kok., National Coalition Party, NCP]
+    definition: Finnish political party; aliases are for mention resolution only.
+    provenance: public-election-context
+    language: fi
+    country: FI
+  - kind: entity
+    label: Perussuomalaiset
+    aliases: [PS, Finns Party, The Finns Party]
+    definition: Finnish political party; aliases are for mention resolution only.
+    provenance: public-election-context
+    language: fi
+    country: FI
+  - kind: entity
+    label: Suomen Sosialidemokraattinen Puolue
+    aliases: [SDP, Social Democratic Party of Finland, Finnish Social Democratic Party]
+    definition: Finnish political party; aliases are for mention resolution only.
+    provenance: public-election-context
+    language: fi
+    country: FI
+  - kind: entity
+    label: Vihreä liitto
+    aliases: [Vihreät, Vihr., Greens, The Greens]
+    definition: Finnish political party; aliases are for mention resolution only.
+    provenance: public-election-context
+    language: fi
+    country: FI
+  - kind: entity
+    label: Vasemmistoliitto
+    aliases: [Vas., Left Alliance, The Left Alliance]
+    definition: Finnish political party; aliases are for mention resolution only.
+    provenance: public-election-context
+    language: fi
+    country: FI
+  - kind: entity
+    label: Suomen Keskusta
+    aliases: [Keskusta, Kesk., Centre Party, Centre Party of Finland]
+    definition: Finnish political party; aliases are for mention resolution only.
+    provenance: public-election-context
+    language: fi
+    country: FI
+  - kind: entity
+    label: Suomen ruotsalainen kansanpuolue
+    aliases: [RKP, SFP, Swedish People's Party of Finland, SPP]
+    definition: Finnish political party; preserve Finnish and Swedish abbreviations when present.
+    provenance: public-election-context
+    language: fi
+    country: FI
+  - kind: entity
+    label: Suomen Kristillisdemokraatit
+    aliases: [KD, Christian Democrats in Finland]
+    definition: Finnish political party; aliases are for mention resolution only.
+    provenance: public-election-context
+    language: fi
+    country: FI
+  - kind: entity
+    label: Liike Nyt
+    aliases: [Movement Now]
+    definition: Finnish political party; aliases are for mention resolution only.
+    provenance: public-election-context
+    language: fi
+    country: FI
+
+  # Poland: public party/committee normalization only.
+  - kind: entity
+    label: Prawo i Sprawiedliwość
+    aliases: [PiS, Law and Justice]
+    definition: Polish political party; preserve PiS as an abbreviation, not a common word.
+    provenance: public-election-context
+    language: pl
+    country: PL
+  - kind: entity
+    label: Koalicja Obywatelska
+    aliases: [KO, Civic Coalition]
+    definition: Polish electoral coalition; aliases are for mention resolution only.
+    provenance: public-election-context
+    language: pl
+    country: PL
+  - kind: entity
+    label: Nowa Lewica
+    aliases: [Lewica, NL, New Left]
+    definition: Polish political party/left electoral label; lowercase lewica can also mean the political left generally, so context is required.
+    provenance: public-election-context
+    language: pl
+    country: PL
+  - kind: entity
+    label: Konfederacja Wolność i Niepodległość
+    aliases: [Konfederacja, Confederation]
+    definition: Polish political alliance; distinguish entity use from generic confederation vocabulary.
+    provenance: public-election-context
+    language: pl
+    country: PL
+  - kind: entity
+    label: Trzecia Droga
+    aliases: [Third Way]
+    definition: Polish electoral coalition; do not translate as an abstract ideological third way when used as a proper name.
+    provenance: public-election-context
+    language: pl
+    country: PL
+  - kind: entity
+    label: Polskie Stronnictwo Ludowe
+    aliases: [PSL, Polish People's Party]
+    definition: Polish political party; aliases are for mention resolution only.
+    provenance: public-election-context
+    language: pl
+    country: PL
+
+  # Shared public analytical vocabulary. These are sensitising concepts, not automatic labels.
+  - kind: topic
+    label: European Union
+    aliases: [EU, UE, Unia Europejska, Euroopan unioni]
+    definition: EU-related political discussion; stance must be coded separately from topic presence.
+    provenance: public-methodology
+  - kind: topic
+    label: European Parliament election
+    aliases: [EP election, EP elections, eurovaalit, wybory do Parlamentu Europejskiego, wybory europejskie]
+    definition: 2024 European Parliament election context.
+    provenance: public-methodology
+  - kind: signifier
+    label: people
+    aliases: [kansa, kansaamme, kansalaiset, ludzie, naród, obywatele]
+    definition: Candidate collective signifier only; occurrence does not itself establish a Laclaudian collective subject.
+    provenance: public-methodology
+  - kind: signifier
+    label: Europe
+    aliases: [Eurooppa, Europa]
+    definition: Candidate political signifier whose role must be established from articulation and evidence.
+    provenance: public-methodology
+  - kind: signifier
+    label: freedom
+    aliases: [vapaus, wolność]
+    definition: Candidate political signifier; distinguish policy-specific use from broader identity or project articulation.
+    provenance: public-methodology
+  - kind: signifier
+    label: security
+    aliases: [turvallisuus, bezpieczeństwo]
+    definition: Candidate political signifier; retain target and context such as military, social, economic or border security.
+    provenance: public-methodology
+
+sections:
+  epistemic_rules:
+    evidence_first:
+      - Every interpretive claim must point to transcript, OCR, metadata or timestamped visual evidence.
+      - Missing evidence is a valid result. Use null/not_evidenced instead of completing a plausible political story.
+      - Preserve contradictions between modalities instead of silently reconciling them.
+      - Separate source description from model interpretation and from human-grounded codebook information.
+      - Do not infer a speaker's ideology, party, identity, motive or stance from visual appearance alone.
+      - Do not infer political meaning from colour, camera distance, background, clothing or composition unless the source itself connects the cue to a political message.
+    confidence:
+      high: Direct, unambiguous source evidence with consistent modalities.
+      medium: Supported interpretation with some ambiguity or partial corroboration.
+      low: Plausible but weakly supported candidate requiring human review.
+      not_evidenced: Required relation is absent or cannot be supported from source evidence.
+    provenance:
+      - human_grounded and model_inferred must remain distinguishable.
+      - Private researcher mappings may normalize mentions but may not be treated as proof that a theme or Laclaudian role occurs in a video.
+
+  multimodal_rules:
+    frame_analysis:
+      - First describe visible people, text, objects, setting, actions and screen-recording/UI indicators literally.
+      - OCR visible text before ideological interpretation and attach frame/timestamp provenance.
+      - Never turn neutral visual properties into sentiment or political stance without explicit corroborating evidence.
+      - A face close-up is not evidence of importance, populism, charisma or candidate status by itself.
+      - A flag/logo/party colour is entity evidence only when visually identifiable with adequate confidence.
+      - Sample deterministic frames plus scene-change/key frames when available; retain legacy 30-second anchors for comparability.
+    fusion:
+      - Use original-language transcript as primary verbal evidence.
+      - Translation is an aid, not a replacement for the original.
+      - Reconcile ASR, OCR, metadata and visual evidence explicitly; record disagreements.
+      - Keep every intermediate output so later researchers can audit summary claims.
+
+  translation_rules:
+    shared:
+      - Preserve named entities, party abbreviations, slogans, hashtags, meme vocabulary and wordplay before producing an English gloss.
+      - Store original text and translation side by side.
+      - Mark uncertain spans rather than forcing fluent English.
+      - Do not translate proper party/coalition names into generic ideological categories when that loses entity identity.
+      - Detect quoted speech and reported speech so the quoted stance is not automatically assigned to the uploader or narrator.
+    fi:
+      language: Finnish
+      notes:
+        - Finnish is morphologically rich; normalize inflected forms for entity/theme matching but preserve the original surface form.
+        - Compound words may encode political concepts; avoid splitting them into misleading independent English concepts.
+        - Colloquial speech, dialect, youth slang and intentionally absurd meme language can be mistranscribed or over-normalized by ASR/translation models.
+        - Distinguish perussuomalaiset as the party name from generic wording referring to ordinary/basic Finns only when context supports the entity reading.
+        - Preserve Kok., Kesk., Vas., Vihr., RKP/SFP, SDP, PS and KD as potential political abbreviations during NER.
+        - Swedish-language Finnish material is possible; detect language per segment rather than assuming every FI item is Finnish.
+    pl:
+      language: Polish
+      notes:
+        - Polish is highly inflected; entity resolution should match declined forms of names while retaining the original form.
+        - Grammatical gender and case endings can alter names and descriptors; avoid treating inflectional variants as new entities.
+        - Preserve PiS, KO, PSL and party/coalition proper names before translation.
+        - Distinguish Lewica/Nowa Lewica as an entity from lewica meaning the political left generally.
+        - Distinguish Trzecia Droga as a proper coalition name from the generic phrase third way.
+        - Polish diacritics must be preserved; ASCII-normalized forms may be aliases but not preferred labels.
+        - ASR may degrade rapid rally speech, crowd chants, names and slogan repetition; use OCR/metadata corroboration where available.
+
+  laclau_rules:
+    general:
+      - Treat signifiers, subjects, demands, affects and relations as provisional document-level candidates.
+      - Co-occurrence is not articulation; record the relation that the source actually proposes.
+      - Negative sentiment or criticism is not automatically antagonism.
+      - A mentioned social group is not automatically a collective political subject.
+      - A slogan is not automatically an empty signifier.
+    nodal_point:
+      requirement: Evidence that a signifier organizes relations among other elements within the discourse.
+    floating_signifier:
+      requirement: Comparative evidence of competing attempts to fix the signifier across actors or discourses; normally a corpus-level judgment.
+    empty_signifier:
+      requirement: Evidence that a signifier represents a wider equivalential chain or broader political project; ambiguity alone is insufficient.
+    equivalence:
+      requirement: The source links heterogeneous demands/identities as jointly aligned, often relative to a shared obstacle or project.
+    antagonism:
+      requirement: Evidence of a political frontier in which an opposing force is represented as blocking or threatening the identity/project of the collective subject.
+    formula_of_populism:
+      rule: Populate Us, Frontier, linked elements and affects only when each component has evidence. It is valid to return no populist articulation.
+
+  public_context:
+    election: 2024 European Parliament election
+    countries:
+      FI:
+        name: Finland
+        notes:
+          - Public election aliases above are normalization aids, not analytical conclusions.
+          - Finland also has Swedish-language political communication; code-switching should remain visible.
+      PL:
+        name: Poland
+        notes:
+          - Public election aliases above are normalization aids, not analytical conclusions.
+          - Party, coalition and European-group labels should remain distinct when the source distinguishes them.
