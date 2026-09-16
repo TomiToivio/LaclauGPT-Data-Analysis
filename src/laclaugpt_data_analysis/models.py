@@ -93,6 +93,11 @@ class Topic(Model):
     description: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @property
+    def label(self) -> str:
+        """Stable display label used by graph/vector projections."""
+        return self.canonical_label
+
 
 class TopicAssignment(Model):
     target_id: str
