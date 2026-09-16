@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from importlib.metadata import entry_points
 from typing import Any, Callable, Iterable, Literal, Mapping, Protocol, Sequence
