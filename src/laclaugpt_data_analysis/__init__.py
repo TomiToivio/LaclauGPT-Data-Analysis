@@ -31,6 +31,16 @@ from .models import (
     TopicAssignment,
     TopicModelResult,
 )
+from .rag import (
+    Neo4jRetrievalBackend,
+    NullRetrievalBackend,
+    RetrievalAudit,
+    RetrievalBackend,
+    RetrievalContext,
+    RetrievalItem,
+    backend_from_settings,
+)
+from .rag_pipeline import run_rag_pipeline
 from .reporting import DailyReport, build_daily_report
 from .runtime_config import EffectiveRunConfig, compose_run_config, compose_run_config_from_files
 
@@ -48,11 +58,17 @@ __all__ = [
     "EmbeddingResult",
     "EntityMention",
     "Evidence",
+    "Neo4jRetrievalBackend",
     "NlpDocument",
+    "NullRetrievalBackend",
     "PipelineContext",
     "PromptEnvelope",
     "Provenance",
     "Representation",
+    "RetrievalAudit",
+    "RetrievalBackend",
+    "RetrievalContext",
+    "RetrievalItem",
     "ReviewSection",
     "SCHEMA_VERSION",
     "Settings",
@@ -62,6 +78,7 @@ __all__ = [
     "TopicModelResult",
     "assemble_context",
     "available_context_profiles",
+    "backend_from_settings",
     "build_daily_report",
     "build_prompt_envelope",
     "compose_run_config",
@@ -69,4 +86,5 @@ __all__ = [
     "load_context_profile",
     "load_settings",
     "run_canonical_pipeline",
+    "run_rag_pipeline",
 ]
