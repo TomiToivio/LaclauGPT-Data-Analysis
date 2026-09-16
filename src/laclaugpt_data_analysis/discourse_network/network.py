@@ -22,6 +22,8 @@ def actor_concept_matrix(
     """Build a sparse actor -> concept signed matrix from raw statement events."""
     matrix: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     for statement in statements:
+        if statement.abstained:
+            continue
         value = statement.signed_value
         if confidence_weighted and statement.confidence is not None:
             value *= statement.confidence
@@ -70,6 +72,8 @@ def concept_projection(
     """Project actor-concept statements into concept congruence or conflict edges."""
     by_concept: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
     for statement in statements:
+        if statement.abstained:
+            continue
         by_concept[statement.concept_id][statement.actor_id] += statement.signed_value
     concepts = sorted(by_concept)
     edges: dict[tuple[str, str], dict[str, Any]] = {}
@@ -122,6 +126,57 @@ def fixed_windows(
     return buckets
 
 
+def community_assignments(
+    statements: Iterable[DiscourseStatement],
+    *,
+    min_shared: int = 1,
+) -> list[dict[str, Any]]:
+    """Return descriptive communities from actor congruence, never ideology labels."""
+    rows = list(statements)
+    actors = sorted({s.actor_id for s in rows if not s.abstained})
+    try:
+        import networkx as nx
+    except ImportError:
+        return [{"actor_id": actor, "community": index + 1, "method": "singleton-no-networkx"} for index, actor in enumerate(actors)]
+
+    graph = nx.Graph()
+    graph.add_nodes_from(actors)
+    for (left, right), data in actor_projection(rows, min_shared=min_shared).items():
+        graph.add_edge(left, right, weight=float(data["weight"]))
+    if graph.number_of_edges() == 0:
+        return [{"actor_id": actor, "community": index + 1, "method": "singleton"} for index, actor in enumerate(actors)]
+    communities = nx.algorithms.community.greedy_modularity_communities(graph, weight="weight")
+    output: list[dict[str, Any]] = []
+    for community_id, members in enumerate(communities, start=1):
+        for actor in sorted(members):
+            output.append(
+                {
+                    "actor_id": actor,
+                    "community": community_id,
+                    "method": "greedy_modularity_congruence",
+                }
+            )
+    return output
+
+
+def fragmentation_summary(statements: Iterable[DiscourseStatement]) -> dict[str, float | int | str]:
+    """Describe congruence/conflict structure without claiming substantive polarization."""
+    rows = list(statements)
+    congruence = actor_projection(rows)
+    conflict = actor_projection(rows, conflict=True)
+    congruence_weight = sum(float(value["weight"]) for value in congruence.values())
+    conflict_weight = sum(float(value["weight"]) for value in conflict.values())
+    total_weight = congruence_weight + conflict_weight
+    return {
+        "congruence_edges": len(congruence),
+        "conflict_edges": len(conflict),
+        "congruence_weight": congruence_weight,
+        "conflict_weight": conflict_weight,
+        "conflict_share": conflict_weight / total_weight if total_weight else 0.0,
+        "interpretation": "descriptive conflict share; not a validated measure of political polarization",
+    }
+
+
 def coverage_summary(statements: Iterable[DiscourseStatement]) -> dict[str, int]:
     rows = list(statements)
     return {
@@ -129,6 +184,7 @@ def coverage_summary(statements: Iterable[DiscourseStatement]) -> dict[str, int]
         "actors": len({s.actor_id for s in rows}),
         "concepts": len({s.concept_id for s in rows}),
         "unknown_stance": sum(s.stance == Stance.UNKNOWN for s in rows),
+        "abstained": sum(s.abstained for s in rows),
         "validated": sum(s.validation_status.value == "validated" for s in rows),
         "exact_evidence": sum(s.evidence.exact for s in rows),
     }

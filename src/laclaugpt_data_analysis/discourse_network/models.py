@@ -55,15 +55,24 @@ class EvidenceSpan(BaseModel):
 
 
 class DiscourseStatement(BaseModel):
-    """One actor-concept coding event suitable for DNA/network projection."""
+    """One evidence-linked actor-concept claim suitable for several analysis methods.
+
+    The original DNA fields remain stable.  The optional AI26 fields make the object
+    usable as the shared claim/statement layer for framing, geometric analysis and
+    cross-method joins without turning any theoretical interpretation into ground truth.
+    """
 
     statement_id: str
     source_url: str
     source_record_id: str | None = None
     actor_id: str
     actor_name: str
+    target_actor_id: str | None = None
+    target_actor_name: str | None = None
     concept_id: str
     concept_label: str
+    original_concept_wording: str | None = None
+    proposition: str | None = None
     concept_type: ConceptType = ConceptType.CONCEPT
     stance: Stance = Stance.UNKNOWN
     polarity: float | None = Field(default=None, ge=-1.0, le=1.0)
@@ -71,12 +80,30 @@ class DiscourseStatement(BaseModel):
     timestamp: datetime | None = None
     evidence: EvidenceSpan = Field(default_factory=EvidenceSpan)
     collection_id: str | None = None
+    project_id: str | None = None
+    arena: str | None = None
+    platform: str | None = None
     coder_type: str = "unknown"
     coder_id_or_model: str | None = None
+    model_provider: str | None = None
+    model_version: str | None = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
     codebook_version: str | None = None
     validation_status: ValidationStatus = ValidationStatus.PROVISIONAL
+    abstained: bool = False
+    reviewed_by: str | None = None
+    reviewed_at: datetime | None = None
+    correction_note: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
     provenance: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_evidence_and_abstention(self) -> "DiscourseStatement":
+        if self.abstained:
+            return self
+        if self.proposition and not self.evidence.quote:
+            raise ValueError("non-abstained normalized claims with proposition require evidence")
+        return self
 
     @property
     def signed_value(self) -> float:

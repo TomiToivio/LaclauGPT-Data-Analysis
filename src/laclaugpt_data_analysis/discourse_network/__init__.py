@@ -3,9 +3,11 @@ from .models import ConceptType, DiscourseStatement, EvidenceSpan, Stance, Valid
 from .network import (
     actor_concept_matrix,
     actor_projection,
+    community_assignments,
     concept_projection,
     coverage_summary,
     fixed_windows,
+    fragmentation_summary,
 )
 
 __all__ = [
@@ -16,7 +18,9 @@ __all__ = [
     "ValidationStatus",
     "actor_concept_matrix",
     "actor_projection",
+    "community_assignments",
     "concept_projection",
     "coverage_summary",
     "fixed_windows",
+    "fragmentation_summary",
 ]
