@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from .analysis_context import AnalysisContextBundle, build_analysis_context_bundle
 from .canonical import (
     CanonicalRecord,
     DiscourseObject,
@@ -157,11 +158,24 @@ def analyze_record(
     *,
     provider,
     codebook_entries: list[CodebookEntry] | None = None,
+    context_bundle: AnalysisContextBundle | None = None,
+    project_context: str = "",
+    theory_context: str = "",
+    source_context: str = "",
+    situational_context: str = "",
+    memory_context: str = "",
+    rag_context: str = "",
+    context_profile: str = "balanced",
     model: str = "auto",
     prompt_version: str = "analysis-v2-parity",
     allow_cloud_fallback: bool | None = None,
 ) -> CanonicalRecord:
-    """Enrich one canonical record without changing identity or deleting stage results."""
+    """Enrich one canonical record using the same canonical context semantics as staged runs.
+
+    The compatibility entrypoint no longer sends only source text plus a codebook block.
+    It renders the canonical PromptEnvelope through AnalysisContextBundle so callers may
+    provide project/theory/source/situational/memory/RAG context with explicit trust roles.
+    """
     entries = codebook_entries or []
     retrieved = context_block(record.content.text, entries) if entries else ""
     system_resource = load_prompt("laclau.system", version="v1")
@@ -171,12 +185,26 @@ def analyze_record(
         source_text=record.content.text,
         codebook_context=retrieved or "(none available)",
     )
+    bundle = context_bundle or build_analysis_context_bundle(
+        record,
+        task=rendered_task.text,
+        project_background=project_context,
+        theory_context=theory_context,
+        source_profile=source_context,
+        codebook_entries=entries,
+        situational_summary=situational_context,
+        memory_context=memory_context,
+        rag_context=rag_context,
+        profile=context_profile,
+    )
+    envelope = bundle.prompt_envelope(record, prompt_version=prompt_version)
+    context_audit = bundle.audit_snapshot()
     proposal, response = chat_structured(
         provider,
         AnalysisProposal,
         model=model,
         system_prompt=system_resource.text,
-        user_prompt=rendered_task.text,
+        user_prompt=envelope.render(),
         allow_cloud_fallback=allow_cloud_fallback,
     )
 
@@ -269,6 +297,9 @@ def analyze_record(
     model_run = {
         **response.provenance.to_dict(),
         "prompt_version": prompt_version,
+        "context_profile": bundle.profile,
+        "context_audit": context_audit,
+        "context_provenance": envelope.provenance_snapshot(),
         **prompt_meta,
     }
     record.analysis.model_runs.append(model_run)
@@ -284,6 +315,8 @@ def analyze_record(
             "prompt_version": prompt_version,
             "endpoint": response.provenance.endpoint,
             "fallback_used": response.provenance.fallback_used,
+            "context_profile": bundle.profile,
+            "context_audit": context_audit,
             **prompt_meta,
         },
     )
@@ -314,6 +347,9 @@ def analyze_record(
             "created_at": now.isoformat(),
             "prompt_version": prompt_version,
             **prompt_meta,
+            "context_profile": bundle.profile,
+            "context_audit": context_audit,
+            "context_provenance": envelope.provenance_snapshot(),
             "model_run": model_run,
             "proposal": proposal.model_dump(mode="json"),
             "provenance_id": provenance.provenance_id,
