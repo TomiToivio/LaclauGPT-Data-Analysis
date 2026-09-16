@@ -18,6 +18,7 @@ dependencies = [
 [project.scripts]
 laclaugpt-analysis-worker = "laclaugpt_data_analysis.distributed_worker:main"
 laclaugpt-reprocess = "laclaugpt_data_analysis.reprocessing:main"
+laclaugpt-ep24 = "laclaugpt_data_analysis.ep24_reprocessing:main"
 
 [project.optional-dependencies]
 analysis = [
