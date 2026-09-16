@@ -1,8 +1,8 @@
 """Periodic discourse/ideology summaries over canonical analysis records.
 
-The module is deliberately storage- and provider-neutral. Deterministic aggregation is
-always authoritative; optional LLM synthesis only turns already-computed aggregates into
-researcher-readable prose. Previous summaries are contextual memory, never source evidence.
+Deterministic aggregation is authoritative. Optional LLM synthesis only turns
+already-computed aggregates into researcher-facing prose. Previous summaries are
+historical context, never source evidence.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from collections import Counter, defaultdict
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -28,8 +28,6 @@ DEFAULT_INTERVAL = timedelta(hours=24)
 
 
 class SummaryScope(BaseModel):
-    """Project-wide or one metadata/category slice."""
-
     dimension: str = "overall"
     value: str = "all"
 
@@ -105,7 +103,6 @@ class PeriodicDiscourseSummary(BaseModel):
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
     def context_text(self, *, max_chars: int = 12_000) -> str:
-        """Bounded context for later analysis. It is explicitly not current evidence."""
         header = (
             "HISTORICAL SUMMARY CONTEXT — NOT CURRENT-SOURCE EVIDENCE\n"
             f"summary_id={self.id}\nproject={self.project_id}\nscope={self.scope.key}\n"
@@ -119,7 +116,7 @@ class NarrativeProposal(BaseModel):
 
 
 class PeriodicSummaryRepository:
-    """Persist summary payloads through the repository's existing RecordStore port."""
+    """Persist summary payloads through the existing RecordStore abstraction."""
 
     def __init__(self, store: RecordStore):
         self.store = store
@@ -277,10 +274,15 @@ def record_matches_scope(record: CanonicalRecord, scope: SummaryScope) -> bool:
     return wanted == _metadata_value(record, scope.dimension).casefold()
 
 
-def _previous_counts(previous: PeriodicDiscourseSummary | None, field: str) -> dict[str, int]:
+def _statistics_field(record_field: str) -> str:
+    return "frontiers" if record_field == "frontier" else record_field
+
+
+def _previous_counts(previous: PeriodicDiscourseSummary | None, record_field: str) -> dict[str, int]:
     if previous is None:
         return {}
-    return {item.label: item.count for item in getattr(previous.statistics, field)}
+    values = getattr(previous.statistics, _statistics_field(record_field))
+    return {item.label: item.count for item in values}
 
 
 def _trend_metrics(
@@ -296,11 +298,9 @@ def _trend_metrics(
     role_meta: dict[str, set[str]] = defaultdict(set)
     for record in records:
         formations = {item.label for item in _labels(record, "formations")}
-        seen: set[str] = set()
         for item in _labels(record, field):
             label = item.label
             counts[label] += 1
-            seen.add(label)
             author = record.source.author or record.source.author_fullname
             if author:
                 authors[label].add(author)
@@ -312,12 +312,9 @@ def _trend_metrics(
             evidence[label].update(refs or [record.source_url])
             if getattr(item, "kind", None):
                 role_meta[label].add(str(item.kind))
-        # document frequency is represented by one count per record below when labels repeat
-        for label in seen:
-            pass
     previous_counts = _previous_counts(previous, field)
     total = max(1, len(records))
-    result = []
+    result: list[TrendMetric] = []
     for label, count in counts.most_common():
         doc_frequency = sum(
             1 for record in records if label in {item.label for item in _labels(record, field)}
@@ -337,9 +334,8 @@ def _trend_metrics(
             )
         )
     if previous is not None:
-        current = set(counts)
         for label, old_count in previous_counts.items():
-            if label not in current:
+            if label not in counts:
                 result.append(TrendMetric(label=label, delta=-old_count))
     return result
 
@@ -357,7 +353,7 @@ def _relation_metrics(
             evidence[key].update(relation.evidence_ids or [record.source_url])
             degree[relation.source_ref] += 1
             degree[relation.target_ref] += 1
-    old = {}
+    old: dict[tuple[str, str, str], int] = {}
     old_degree: dict[str, int] = {}
     if previous is not None:
         old = {
@@ -379,11 +375,7 @@ def _relation_metrics(
     if previous is not None:
         for key, count in old.items():
             if key not in counts:
-                metrics.append(
-                    RelationMetric(
-                        relation_type=key[0], source=key[1], target=key[2], delta=-count
-                    )
-                )
+                metrics.append(RelationMetric(relation_type=key[0], source=key[1], target=key[2], delta=-count))
     degree_delta = {
         node: value - old_degree.get(node, 0)
         for node, value in degree.items()
@@ -444,9 +436,7 @@ def _format_metric(items: list[TrendMetric], limit: int = 12) -> str:
     lines = []
     for item in items[:limit]:
         delta = "" if item.delta is None else f", Δ {item.delta:+d}"
-        lines.append(
-            f"- **{item.label}**: {item.document_frequency} documents ({item.normalized_frequency:.1%}{delta})"
-        )
+        lines.append(f"- **{item.label}**: {item.document_frequency} documents ({item.normalized_frequency:.1%}{delta})")
     return "\n".join(lines)
 
 
@@ -458,6 +448,14 @@ def render_markdown(summary: PeriodicDiscourseSummary) -> str:
         values = changes.get(category, [])
         if values:
             changed.append(f"- **{category}**: {', '.join(values[:10])}")
+    relation_lines = [
+        (
+            f"- {item.relation_type}: **{item.source} → {item.target}** (n={item.count}, Δ {item.delta:+d})"
+            if item.delta is not None
+            else f"- {item.relation_type}: **{item.source} → {item.target}** (n={item.count})"
+        )
+        for item in stats.relations[:15]
+    ] or ["- (none represented in canonical relation data)"]
     return "\n".join(
         [
             f"# Discourse and ideology summary — {summary.project_id} — {summary.window_start.date().isoformat()}",
@@ -469,15 +467,7 @@ def render_markdown(summary: PeriodicDiscourseSummary) -> str:
             _format_metric(stats.signifiers),
             "",
             "## Articulations and chains of equivalence/difference",
-            *(
-                [
-                    f"- {item.relation_type}: **{item.source} → {item.target}** (n={item.count}, Δ {item.delta:+d})"
-                    if item.delta is not None
-                    else f"- {item.relation_type}: **{item.source} → {item.target}** (n={item.count})"
-                    for item in stats.relations[:15]
-                ]
-                or ["- (none represented in canonical relation data)"]
-            ),
+            *relation_lines,
             "",
             "## Discursive / ideological formations",
             _format_metric(stats.formations),
@@ -494,7 +484,7 @@ def render_markdown(summary: PeriodicDiscourseSummary) -> str:
             _format_metric(stats.affects, 8),
             "",
             "## Imaginaries / projected futures",
-            "- Use document-level imaginary candidates as provisional evidence; institutional stabilization requires corpus-level validation.",
+            "- Document-level imaginary candidates remain provisional; institutional stabilization requires corpus-level validation.",
             "",
             "## Actor, author and source shifts",
             f"- Distinct authors: {stats.coverage.distinct_authors}",
@@ -506,7 +496,7 @@ def render_markdown(summary: PeriodicDiscourseSummary) -> str:
             "## Uncertainty, contradictory evidence and items requiring human review",
             "- Frequency/centrality are descriptive signals, not evidence of hegemony.",
             "- Negative sentiment is not automatically antagonism; polysemy is not empty signification.",
-            "- Formation and signifier roles remain provisional unless supported by the required corpus-level evidence.",
+            "- Formation and signifier roles remain provisional unless supported by required corpus-level evidence.",
             "",
             "## Data coverage and provenance",
             f"- Records: {stats.coverage.record_count}",
@@ -539,9 +529,7 @@ def build_periodic_summary(
         and record_matches_scope(record, scope)
     ]
     source_distribution = Counter(record.source.platform or "unknown" for record in selected)
-    language_distribution = Counter(
-        record.content.language or record.source.language or "unknown" for record in selected
-    )
+    language_distribution = Counter(record.content.language or record.source.language or "unknown" for record in selected)
     authors = {
         record.source.author or record.source.author_fullname
         for record in selected
@@ -610,16 +598,10 @@ def grouped_summaries(
         elif dimension == "formation":
             discovered = {item.label for record in values for item in record.analysis.formations}
         elif dimension in {"topic", "theme"}:
-            discovered = {
-                *(label for record in values for label in _topic_labels(record)),
-                *(item.label for record in values for item in record.analysis.themes),
-            }
+            discovered = set().union(*(_topic_labels(record) for record in values)) if values else set()
+            discovered.update(item.label for record in values for item in record.analysis.themes)
         else:
-            discovered = {
-                value
-                for record in values
-                if (value := _metadata_value(record, dimension))
-            }
+            discovered = {value for record in values if (value := _metadata_value(record, dimension))}
         scopes.extend(SummaryScope(dimension=dimension, value=value) for value in sorted(discovered))
     previous = previous or {}
     return [
@@ -653,13 +635,10 @@ def summary_context_item(summary: PeriodicDiscourseSummary) -> ContextItem:
 
 
 def inject_summary_context(context: Any, summary: PeriodicDiscourseSummary) -> Any:
-    """Inject summary into PipelineContext-like objects without creating global state."""
     provenance = {key: list(values) for key, values in getattr(context, "provenance", {}).items()}
     provenance.setdefault("periodic_summary_id", []).append(summary.id)
     provenance.setdefault("periodic_summary_sha256", []).append(summary.sha256)
-    return context.model_copy(
-        update={"situational_context": summary.context_text(), "provenance": provenance}
-    )
+    return context.model_copy(update={"situational_context": summary.context_text(), "provenance": provenance})
 
 
 def synthesize_narrative(
@@ -671,14 +650,11 @@ def synthesize_narrative(
     history: Sequence[PeriodicDiscourseSummary] = (),
     allow_cloud_fallback: bool | None = None,
 ) -> PeriodicDiscourseSummary:
-    """Optional theory-guided prose synthesis over deterministic aggregates."""
     system_resource = load_prompt("laclau.system", version="v1")
     task_resource = load_prompt("periodic_summary.narrative", version="v1")
     rendered = task_resource.render(
         project_context=project_context or "(none supplied)",
-        current_aggregates=json.dumps(
-            summary.statistics.model_dump(mode="json"), ensure_ascii=False, sort_keys=True
-        ),
+        current_aggregates=json.dumps(summary.statistics.model_dump(mode="json"), ensure_ascii=False, sort_keys=True),
         previous_context=json.dumps(
             [
                 {
@@ -724,9 +700,7 @@ def _load_jsonl(path: Path) -> list[CanonicalRecord]:
 
 def _write_jsonl(path: Path, summaries: Sequence[PeriodicDiscourseSummary]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        "".join(item.model_dump_json() + "\n" for item in summaries), encoding="utf-8"
-    )
+    path.write_text("".join(item.model_dump_json() + "\n" for item in summaries), encoding="utf-8")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
