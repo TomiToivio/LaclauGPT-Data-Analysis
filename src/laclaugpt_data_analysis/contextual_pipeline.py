@@ -18,6 +18,7 @@ from .canonical_pipeline import (
 from .codebooks import CodebookEntry
 from .context_orchestration import AnalysisContextPolicy, assemble_analysis_context
 from .context_runtime import ContextItem
+from .llm.multimodal import FrameAwareProvider
 from .periodic_summary import PeriodicSummaryRepository
 from .rag import RetrievalBackend
 
@@ -68,10 +69,11 @@ def run_contextual_canonical_pipeline(
         retrieval_backend=retrieval_backend,
         memory_items=memory_items,
     )
-    _append_context_audit(record, "frame", frame_bundle.audit_snapshot())
+    frame_audit = frame_bundle.audit_snapshot()
+    frame_provider = FrameAwareProvider(provider, record.content.frames)
     record = analyze_frames(
         record,
-        provider=provider,
+        provider=frame_provider,
         context=frame_context,
         codebook_entries=entries,
         model=model,
@@ -79,6 +81,8 @@ def run_contextual_canonical_pipeline(
         project_profile=project_profile,
         allow_cloud_fallback=allow_cloud_fallback,
     )
+    frame_audit["multimodal_visibility"] = frame_provider.audit()
+    _append_context_audit(record, "frame", frame_audit)
 
     summary_bundle, summary_context = assemble_analysis_context(
         record,
