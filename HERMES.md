@@ -12,6 +12,9 @@ Rules:
 - preserve `source_url`, schema/version, evidence, uncertainty, abstention, review and provenance;
 - distinguish descriptive computation from discourse-theoretical interpretation;
 - inspect data quality and run compatibility before tuning prompts/models;
+- before changing LLM scientific instructions, inspect `docs/PROMPT_LIBRARY.md` and `src/laclaugpt_data_analysis/prompts/`;
+- reuse canonical prompt IDs/versions instead of reconstructing prompts from memory or adding long inline Python strings;
+- version any behavior-changing prompt edit and retain prompt/resource/rendered hashes in model-run provenance;
 - never expose secrets or private runtime/codebook contents in logs or summaries;
 - never silently switch local/cloud inference;
 - current default analysis models are configurable and include `gemma4:12b`, `gemma4:31b-cloud`, and `gemma4:e2b`;
