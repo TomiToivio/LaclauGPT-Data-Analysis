@@ -18,6 +18,7 @@ from .codebooks import CodebookEntry
 from .llm.structured_output import chat_structured
 from .memory.retrieval import context_block
 from .models import ClassificationResult, Topic
+from .prompt_library import load_prompt, prompt_provenance
 from .research_record import ensure_research_layers
 
 
@@ -163,28 +164,19 @@ def analyze_record(
     """Enrich one canonical record without changing identity or deleting stage results."""
     entries = codebook_entries or []
     retrieved = context_block(record.content.text, entries) if entries else ""
-    system = (
-        "You are a research analysis assistant. Distinguish descriptive observations from "
-        "interpretive discourse candidates. Every theory-facing result should cite source "
-        "evidence when possible. Abstain when evidence is insufficient. Codebook candidates "
-        "are context, not evidence. Floating/empty signifiers are provisional document-level "
-        "candidates pending corpus validation. Sentiment is not affective investment, and "
-        "negative sentiment is not antagonism."
+    system_resource = load_prompt("laclau.system", version="v1")
+    task_resource = load_prompt("laclau.document_analysis", version="v1")
+    rendered_task = task_resource.render(
+        source_url=record.source_url,
+        source_text=record.content.text,
+        codebook_context=retrieved or "(none available)",
     )
-    user = (
-        f"SOURCE URL: {record.source_url}\nTEXT:\n{record.content.text}\n\n"
-        "Return explicit topics/themes, sentiment, stance, floating/empty-signifier candidates, "
-        "equivalence/difference chains, antagonisms and actor/entity relations when evidenced. "
-        "Do not invent multimodal evidence for text-only records."
-    )
-    if retrieved:
-        user += f"\nRETRIEVED CODEBOOK CANDIDATES (NOT EVIDENCE):\n{retrieved}\n"
     proposal, response = chat_structured(
         provider,
         AnalysisProposal,
         model=model,
-        system_prompt=system,
-        user_prompt=user,
+        system_prompt=system_resource.text,
+        user_prompt=rendered_task.text,
         allow_cloud_fallback=allow_cloud_fallback,
     )
 
@@ -273,7 +265,12 @@ def analyze_record(
     record.analysis.uncertainty = proposal.uncertainty
     record.analysis.abstentions = proposal.abstentions
     record.analysis.codebook_refs = sorted({entry.label for entry in entries})
-    model_run = {**response.provenance.to_dict(), "prompt_version": prompt_version}
+    prompt_meta = prompt_provenance(system_resource, task_resource, rendered=rendered_task)
+    model_run = {
+        **response.provenance.to_dict(),
+        "prompt_version": prompt_version,
+        **prompt_meta,
+    }
     record.analysis.model_runs.append(model_run)
     provenance = record.append_analysis_provenance(
         method="llm-assisted-analysis",
@@ -287,6 +284,7 @@ def analyze_record(
             "prompt_version": prompt_version,
             "endpoint": response.provenance.endpoint,
             "fallback_used": response.provenance.fallback_used,
+            **prompt_meta,
         },
     )
     for item in record.analysis.entities:
@@ -315,6 +313,7 @@ def analyze_record(
         {
             "created_at": now.isoformat(),
             "prompt_version": prompt_version,
+            **prompt_meta,
             "model_run": model_run,
             "proposal": proposal.model_dump(mode="json"),
             "provenance_id": provenance.provenance_id,
