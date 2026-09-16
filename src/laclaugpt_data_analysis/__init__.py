@@ -25,6 +25,13 @@ from .canonical import (
 from .canonical_pipeline import PipelineContext, run_canonical_pipeline
 from .config import Settings, load_settings
 from .context_envelope import PromptEnvelope, build_prompt_envelope
+from .context_orchestration import (
+    AnalysisContextPolicy,
+    StageContextPolicy,
+    assemble_analysis_context,
+    latest_summary_for_record,
+    source_profile_text,
+)
 from .context_profiles import ContextProfile, available_context_profiles, load_context_profile
 from .context_runtime import ContextItem, ContextSnapshot, assemble_context
 from .derived_structures import (
@@ -78,6 +85,7 @@ from .runtime_config import EffectiveRunConfig, compose_run_config, compose_run_
 __all__ = [
     "AnalysisContextBundle",
     "AnalysisContextFragment",
+    "AnalysisContextPolicy",
     "AnalysisSection",
     "CanonicalRecord",
     "ClassificationResult",
@@ -113,11 +121,13 @@ __all__ = [
     "SCHEMA_VERSION",
     "Settings",
     "SourceSection",
+    "StageContextPolicy",
     "SummaryScope",
     "TimelineEvent",
     "Topic",
     "TopicAssignment",
     "TopicModelResult",
+    "assemble_analysis_context",
     "assemble_context",
     "available_context_profiles",
     "backend_from_settings",
@@ -134,6 +144,7 @@ __all__ = [
     "grouped_summaries",
     "inject_summary_context",
     "latest_completed_window",
+    "latest_summary_for_record",
     "load_context_profile",
     "load_settings",
     "normalize_location_name",
@@ -142,5 +153,6 @@ __all__ = [
     "project_timeline_events",
     "run_canonical_pipeline",
     "run_rag_pipeline",
+    "source_profile_text",
     "summary_context_item",
 ]
