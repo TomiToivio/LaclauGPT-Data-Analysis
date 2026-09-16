@@ -8,13 +8,26 @@
 
 set -euo pipefail
 
-# Public example only. Real endpoints, credentials, project paths, private config,
-# codebooks and run manifests are supplied at runtime and must remain outside Git.
+# Public-safe template. Resource directives are examples and should be copied to
+# a private deployment file if the CSC project/partition/account requires changes.
+# Real endpoints, credentials, project paths, codebooks and run manifests stay
+# outside Git under the private runtime root.
+
+ROOT_DIR=${LACLAUGPT_REPO_ROOT:-$PWD}
+ENV_FILE=${LACLAUGPT_ENV_FILE:-"$ROOT_DIR/data/config/ai26/roihu.env"}
+[[ -f "$ENV_FILE" ]] || { echo "missing env file: $ENV_FILE" >&2; exit 2; }
+
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
 
 : "${LACLAUGPT_RUN_ID:?required}"
 : "${LACLAUGPT_PRIVATE_CONFIG_DIR:?required}"
 : "${LACLAUGPT_MONGODB_URI:?required}"
 : "${LACLAUGPT_REDIS_URL:?required}"
+: "${LACLAUGPT_S3_ENDPOINT:?required}"
+: "${LACLAUGPT_S3_BUCKET:?required}"
 : "${OLLAMA_HOST:?required}"
 
 export LACLAUGPT_PROJECT_ID=ai26
@@ -23,13 +36,22 @@ export LACLAUGPT_EXECUTION=slurm
 export LACLAUGPT_STORAGE=distributed
 export LACLAUGPT_DATA_BACKEND=mongodb
 export LACLAUGPT_CACHE_BACKEND=redis
-export LLM_MODE=local
-export LLM_ALLOW_CLOUD_FALLBACK=0
-export LACLAUGPT_OLLAMA_MODEL=gemma4:12b
+export LACLAUGPT_OBJECT_BACKEND=s3
+export LLM_MODE=${LLM_MODE:-local}
+export LLM_ALLOW_CLOUD_FALLBACK=${LLM_ALLOW_CLOUD_FALLBACK:-0}
+export LACLAUGPT_OLLAMA_MODEL=${LACLAUGPT_OLLAMA_MODEL:-gemma4:12b}
+
+cd "$ROOT_DIR"
+WORKER_ID="roihu-slurm-${SLURM_JOB_ID:-manual}-${SLURM_ARRAY_TASK_ID:-0}"
+echo "[$(date -Is)] AI26 Roihu analysis start run=$LACLAUGPT_RUN_ID worker=$WORKER_ID"
 
 laclaugpt-analysis-worker \
   --run-manifest "${LACLAUGPT_PRIVATE_CONFIG_DIR}/run-manifest.json" \
   --private-config "${LACLAUGPT_PRIVATE_CONFIG_DIR}/analysis.json" \
   --codebook "${LACLAUGPT_PRIVATE_CONFIG_DIR}/codebook.json" \
+  --worker-id "$WORKER_ID" \
   --seed-ready \
+  --reclaim-idle-ms "${LACLAUGPT_RECLAIM_IDLE_MS:-300000}" \
   --max-tasks "${LACLAUGPT_MAX_TASKS:-25}"
+
+echo "[$(date -Is)] AI26 Roihu analysis end run=$LACLAUGPT_RUN_ID worker=$WORKER_ID"
