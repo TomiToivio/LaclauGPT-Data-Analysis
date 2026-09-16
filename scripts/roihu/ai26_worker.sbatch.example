@@ -31,4 +31,5 @@ laclaugpt-analysis-worker \
   --run-manifest "${LACLAUGPT_PRIVATE_CONFIG_DIR}/run-manifest.json" \
   --private-config "${LACLAUGPT_PRIVATE_CONFIG_DIR}/analysis.json" \
   --codebook "${LACLAUGPT_PRIVATE_CONFIG_DIR}/codebook.json" \
+  --seed-ready \
   --max-tasks "${LACLAUGPT_MAX_TASKS:-25}"
