@@ -24,7 +24,6 @@ def normalize_schema_version(payload: Mapping[str, Any]) -> CanonicalRecord:
         source = dict(data.get("source") or {})
         content = dict(data.get("content") or {})
         raw_ref = source.get("raw_ref")
-        data["schema_version"] = SCHEMA_VERSION
         data.setdefault(
             "raw_capture",
             RawCaptureSection(
@@ -51,6 +50,11 @@ def normalize_schema_version(payload: Mapping[str, Any]) -> CanonicalRecord:
                 sections={"content": preview[:2000]},
             ).model_dump(mode="python"),
         )
+        data["schema_version"] = SCHEMA_VERSION
+    elif version in {"1.1", "1.1.0"}:
+        # 1.2 adds explicit discourse-parity fields to AnalysisSection. All are
+        # additive with empty defaults, so no semantic reconstruction is needed.
+        data["schema_version"] = SCHEMA_VERSION
     elif version != SCHEMA_VERSION:
         raise UnsupportedSchemaVersion(
             f"unsupported schema version {version!r}; expected {SCHEMA_VERSION!r}"
