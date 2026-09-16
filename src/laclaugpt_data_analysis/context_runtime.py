@@ -64,11 +64,21 @@ def assemble_context(
 ) -> ContextSnapshot:
     """Assemble one deterministic context block under an explicit policy."""
     policy = load_context_profile(profile) if isinstance(profile, str) else profile
-    selected: list[ContextItem] = []
+    codebook_items = tuple(codebook_items)
+    previous_summary = tuple(previous_summary)
+    corpus_context = tuple(corpus_context)
+    previous_records = tuple(previous_records)
+    researcher_validation = tuple(researcher_validation)
+    theory_context = tuple(theory_context)
+    rag_context = tuple(rag_context)
 
+    if policy.fail_on_missing_codebook and policy.inject_codebook and not codebook_items:
+        raise RuntimeError("selected validation context profile requires a codebook")
+
+    selected: list[ContextItem] = []
     if policy.context_memory:
-        selected.extend(list(codebook_items)[: policy.glossary_top_k])
-        selected.extend(list(previous_records)[: policy.max_records])
+        selected.extend(codebook_items[: policy.glossary_top_k])
+        selected.extend(previous_records[: policy.max_records])
     if policy.inject_previous_batch_summary:
         selected.extend(previous_summary)
     if policy.inject_corpus_stats:
@@ -79,9 +89,6 @@ def assemble_context(
         selected.extend(theory_context)
     if policy.vector_rag:
         selected.extend(rag_context)
-
-    if policy.fail_on_missing_codebook and policy.inject_codebook and not tuple(codebook_items):
-        raise RuntimeError("selected validation context profile requires a codebook")
 
     selected = selected[: policy.max_records]
     rendered: list[str] = []
