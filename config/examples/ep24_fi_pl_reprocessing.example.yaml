@@ -1,0 +1,31 @@
+# Public example only. Do not commit actual EP24 manifests, source identifiers,
+# private workbook-derived codebooks, Allas refs, credentials or CSC paths.
+#
+# Before using this config, create the effective runtime codebook with:
+#   laclaugpt-ep24 merge-codebooks \
+#     --public codebooks/public/ep24_fi_pl_v2.yaml \
+#     --private /private/runtime/ep24/private_codebooks/ep24_fi.json \
+#     --output /private/runtime/ep24/effective_codebooks/ep24_fi_effective.json
+
+project_id: ep24
+project_profile: ep24
+manifest: /private/runtime/ep24/canonical/finland_manifest.jsonl
+codebook: /private/runtime/ep24/effective_codebooks/ep24_fi_effective.json
+model: auto
+prompt_version: ep24-reprocessing-v2
+source_object_field: source.raw_metadata.object_ref
+checksum_field: source.raw_metadata.sha256
+
+# The hook may run media preprocessing / ASR / translation / OCR / frame
+# extraction / literal frame analysis before the canonical analysis pipeline.
+# Keep machine- or study-specific implementation/configuration private until
+# concrete adapters are fully disentangled and covered by synthetic tests.
+preprocessor_hook: private_ep24_runtime:preprocess_record
+
+lease_ttl_seconds: 7200
+checkpoint:
+  every_records: 10
+  every_seconds: 300
+  retain: 12
+archive_checkpoints: true
+cleanup_staged_media: true
