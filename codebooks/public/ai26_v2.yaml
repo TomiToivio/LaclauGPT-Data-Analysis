@@ -1,0 +1,222 @@
+codebook_id: ai26-public-v2
+version: "2026-09-16"
+title: AI26 public codebook — ideological contestation over AI
+description: >-
+  Publication-safe, machine-readable AI26 codebook derived from the public paper.
+  Entries are provisional sensitising concepts for retrieval and context memory.
+  They are not source evidence and must never be used as actor-level ground-truth ideology.
+project: ai26
+required_sections: [arenas, safeguards, sampling_dimensions]
+optional_sections: [current_watch_relations]
+
+entries:
+  - kind: formation
+    label: accelerationism
+    aliases: [techno-optimism, e/acc]
+    definition: >-
+      Provisional sampling/aggregation anchor for discourses linking accelerated AI or
+      technological development to desirable transformation, growth, abundance or progress.
+      Techno-optimism and e/acc are not assumed to be synonymous.
+    provenance: public-paper
+    metadata: {state: PROVISIONAL, human_validation_required: true}
+
+  - kind: formation
+    label: doomerism
+    aliases: [AI doomerism]
+    definition: >-
+      Provisional aggregation label for discourse centred on catastrophic or existential AI risk.
+      The term doomer is situated and contested; neutral retrieval should prefer x-risk/catastrophic-risk language.
+    provenance: public-paper
+    metadata: {state: PROVISIONAL, human_validation_required: true}
+
+  - kind: formation
+    label: left-wing accelerationism
+    aliases: [left techno-optimism, post-work techno-optimism]
+    definition: >-
+      Provisional anchor for technology-positive projects articulating automation with egalitarian,
+      redistributive, post-work, public-interest or postcapitalist futures.
+    provenance: public-paper
+    metadata: {state: PROVISIONAL, human_validation_required: true}
+
+  - kind: formation
+    label: ai safety
+    aliases: [AI safety discourse, alignment discourse]
+    definition: >-
+      Provisional anchor for discourse about alignment, evaluation, standards, incidents, pacing,
+      robustness, loss of control and governance of advanced AI. It is broader than existential-risk discourse.
+    provenance: public-paper
+    metadata: {state: PROVISIONAL, human_validation_required: true}
+
+  - kind: formation
+    label: ai critical
+    aliases: [Critical AI, Critical AI Studies]
+    definition: >-
+      Provisional anchor for discourse foregrounding power, labour, inequality, discrimination,
+      surveillance, extraction, ownership, concentration, accountability and social justice.
+    provenance: public-paper
+    metadata: {state: PROVISIONAL, human_validation_required: true}
+
+  - kind: formation
+    label: anti-ai
+    aliases: [AI opposition]
+    definition: >-
+      Provisional anchor for broader opposition to AI or mobilisations against particular deployments.
+      Opposition to one deployment must not be generalized into opposition to AI as such.
+    provenance: public-paper
+    metadata: {state: PROVISIONAL, human_validation_required: true}
+
+  - kind: signifier
+    label: artificial intelligence
+    aliases: [AI]
+    definition: Candidate contested signifier; theoretical role must be demonstrated from articulation.
+    provenance: public-paper
+  - kind: signifier
+    label: AGI
+    aliases: [artificial general intelligence]
+    definition: Candidate future-oriented signifier used differently across competing AI imaginaries.
+    provenance: public-paper
+  - kind: signifier
+    label: frontier AI
+    definition: Candidate signifier linking capability thresholds to safety, governance and competition.
+    provenance: public-paper
+  - kind: signifier
+    label: superintelligence
+    definition: Candidate signifier in singularitarian, safety and catastrophic-risk discourse.
+    provenance: public-paper
+  - kind: signifier
+    label: abundance
+    definition: Candidate signifier connecting AI to growth, prosperity, post-scarcity or redistribution.
+    provenance: public-paper
+  - kind: signifier
+    label: innovation
+    definition: Candidate signifier often articulated with growth, competition, regulation and national strategy.
+    provenance: public-paper
+  - kind: signifier
+    label: existential risk
+    aliases: [x-risk]
+    definition: Candidate signifier concerning threats to humanity's continued existence.
+    provenance: public-paper
+  - kind: signifier
+    label: catastrophic risk
+    definition: Candidate signifier for severe AI harms that may or may not be framed as existential.
+    provenance: public-paper
+  - kind: signifier
+    label: alignment
+    definition: Candidate signifier in debates over model goals, control, safety and authority.
+    provenance: public-paper
+  - kind: signifier
+    label: pacing
+    aliases: [slowdown, pause]
+    definition: Candidate signifier concerning the speed and sequencing of advanced-AI development and deployment.
+    provenance: public-context
+  - kind: signifier
+    label: independent evaluation
+    aliases: [third-party evaluation, external evaluation]
+    definition: Candidate governance signifier concerning who evaluates advanced AI and with what authority.
+    provenance: public-context
+  - kind: signifier
+    label: AI race
+    aliases: [AI competition]
+    definition: Candidate geopolitical/economic signifier linking AI development to strategic competition.
+    provenance: public-paper
+  - kind: signifier
+    label: democratic control
+    aliases: [democratic AI]
+    definition: Candidate signifier linking AI governance to public authority, participation and accountability.
+    provenance: public-paper
+  - kind: signifier
+    label: public interest AI
+    aliases: [public-interest AI]
+    definition: Candidate signifier for AI articulated as public infrastructure, public service or social good.
+    provenance: public-paper
+  - kind: signifier
+    label: open weights
+    aliases: [open-weight AI]
+    definition: Candidate signifier connecting openness to innovation, safety, sovereignty and concentration.
+    provenance: public-context
+  - kind: signifier
+    label: corporate concentration
+    aliases: [market concentration, Big Tech concentration]
+    definition: Candidate political-economy signifier concerning ownership and institutional power in AI.
+    provenance: public-paper
+  - kind: signifier
+    label: labour
+    aliases: [workers, employment]
+    definition: Candidate signifier in automation, job displacement, bargaining and post-work discourse.
+    provenance: public-paper
+  - kind: signifier
+    label: copyright
+    aliases: [creator rights]
+    definition: Candidate signifier in generative-AI disputes over training data, compensation and creative work.
+    provenance: public-paper
+  - kind: signifier
+    label: data centres
+    aliases: [AI data centres, datacentres]
+    definition: Candidate infrastructure signifier connecting AI to energy, water, local development and opposition.
+    provenance: public-paper
+
+  - kind: topic
+    label: AI governance
+    definition: Regulation, standards, liability, audits, evaluation, public oversight and institutional authority.
+    provenance: public-paper
+  - kind: topic
+    label: AI political economy
+    definition: Ownership, labour, concentration, extraction, investment and distribution of AI benefits and harms.
+    provenance: public-paper
+  - kind: topic
+    label: AI labour and automation
+    definition: Employment, displacement, workplace control, bargaining, post-work and automation politics.
+    provenance: public-paper
+  - kind: topic
+    label: AI creative work
+    definition: Generative AI, creator rights, copyright, cultural labour and training-data disputes.
+    provenance: public-paper
+  - kind: topic
+    label: AI infrastructure and environment
+    definition: Compute, chips, data centres, energy, water, emissions and local infrastructure conflicts.
+    provenance: public-paper
+  - kind: topic
+    label: AI geopolitics
+    definition: Sovereignty, national security, strategic competition, China, export controls and national AI capacity.
+    provenance: public-paper
+  - kind: topic
+    label: AI safety and catastrophic risk
+    definition: Alignment, evaluation, loss of control, catastrophic risk, x-risk and pacing.
+    provenance: public-paper
+
+sections:
+  arenas:
+    elites: AI labs, researchers, entrepreneurs, intellectuals and adjacent movements
+    grassroots: mobilisation around labour, culture, surveillance, environment, data centres, safety and deployment resistance
+    parliamentary: parliamentary, electoral, government, party and policy discourse
+
+  sampling_dimensions:
+    - political_economy
+    - governance
+    - capability_risk
+    - techno_optimism
+    - rights_and_harms
+    - infrastructure
+    - geopolitics
+
+  current_watch_relations:
+    - [AI safety, pacing]
+    - [AI safety, independent evaluation]
+    - [innovation, competition]
+    - [AI race, China]
+    - [open weights, safety]
+    - [open weights, innovation]
+    - [automation, labour]
+    - [generative AI, copyright]
+    - [data centres, energy]
+    - [AI, corporate concentration]
+
+  safeguards:
+    - frequency is not hegemony
+    - polysemy is not evidence of floating or empty signification
+    - disagreement or negative sentiment is not automatically antagonism
+    - sentiment is not affective investment
+    - one future claim is not a stabilized sociotechnical imaginary
+    - source family or actor identity is not formation membership
+    - one document is not a validated ideological formation
+    - formation labels are provisional and multi-label overlap or abstention is valid
