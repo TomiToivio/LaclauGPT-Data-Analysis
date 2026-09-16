@@ -3,20 +3,19 @@ from pathlib import Path
 import pytest
 
 from laclaugpt_data_analysis.analysis.luhmann import (
+    CrossSystemTranslation,
+    EvidenceSpan,
+    SystemsAnalysis,
     baseline_to_analysis,
     build_structured_extraction_prompt,
     contingency_matrix,
-    CrossSystemTranslation,
-    EvidenceSpan,
     load_codebook,
     mutual_information,
     prototype_classify,
     shannon_entropy,
-    SystemsAnalysis,
     translation_edges,
 )
 from laclaugpt_data_analysis.config import Settings
-
 
 CODEBOOK = Path("codebooks/public/luhmann_social_systems_v1.yaml")
 
