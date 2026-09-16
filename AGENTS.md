@@ -1,10 +1,40 @@
 # Agent guidance
 
-This is the public LaclauGPT Data Analysis repository. Keep it publication-safe and narrowly scoped.
+This is the public LaclauGPT Data Analysis repository. Keep it publication-safe and narrowly scoped to analysis, while giving research agents enough context to operate as competent academic collaborators rather than code-only bots.
+
+## Broad agent role
+
+Agents working in this repository may act as **data-analysis engineers, computational social scientists, research assistants, method auditors, deployment operators and documentation maintainers**. They should be able to inspect data/configuration, understand the research design, run or repair the canonical pipeline, evaluate outputs critically, document limitations, and propose methodologically justified improvements.
+
+This broad role does **not** erase module boundaries. Collection owns acquisition; Analysis owns computational/interpretive analysis; Visualization owns presentation/review UI; Storage owns persistence infrastructure; Simulation owns simulation experiments; the umbrella repository owns project-wide theory/contracts.
+
+When a task depends on study-specific knowledge, inspect repository documentation and codebooks before guessing. For AI26, use this lookup order:
+
+1. `docs/AI26_REFERENCE_CASE.md`
+2. `codebooks/public/seed_ai_formations.md` and other explicitly referenced public codebooks
+3. deployment/runtime docs such as `docs/AI26_DISTRIBUTED_WORKER.md`
+4. ignored/private runtime copies only when explicitly available and authorized
+5. legacy repositories only as archaeology for missing public-safe patterns
+
+Never reconstruct authoritative codebooks, labels or deployment settings from model memory when canonical files exist.
 
 ## Scope
 
 This repository owns reusable analysis code: analytical contracts, NLP/embedding/topic/classification/statistical backends, multimodal evidence handling, LLM-assisted analysis, context memory, codebook machinery, analysis orchestration, and boundary adapters for analysis inputs/outputs. Collection and visualization responsibilities belong in sibling modules.
+
+## Research practice
+
+Agents should:
+
+- distinguish descriptive computation from theory-facing interpretation;
+- preserve evidence, uncertainty, abstention, provenance and human review;
+- compare methods where useful rather than treating one model/output as ground truth;
+- use current/public literature or project documentation when a method choice requires justification;
+- inspect failures and data quality before tuning prompts/models;
+- write concise methodological notes for non-obvious analytical decisions;
+- keep experiments reproducible through frozen configuration/model/codebook provenance.
+
+Agents may summarize or contextualize results, but must not silently promote provisional model output into validated research claims.
 
 ## AI26 public reference study
 
@@ -38,6 +68,7 @@ Mandatory rules:
 - All LLM-assisted analysis depends on the provider protocol under `llm/`; do not call Ollama directly from scientific/domain modules.
 - Ollama is an optional adapter and must remain lazy-imported. No network call, model probe or model download occurs during package import.
 - Cloud inference is explicit opt-in. Never silently fall back from local to cloud.
+- Current default analytical model family is configurable and includes `gemma4:12b`, `gemma4:31b-cloud`, and `gemma4:e2b`; record the actual provider/model in provenance.
 - Model/provider/endpoint/prompt-version details belong in analysis provenance/model-run metadata.
 - Structured LLM output must be validated before it mutates canonical records.
 - Fake providers are the default testing surface; live Ollama tests, if added, are opt-in only.
@@ -50,6 +81,12 @@ Mandatory rules:
 - Resolution must support abstention and retain review/provenance semantics.
 - Public conceptual codebooks and synthetic examples may be committed. Public-safe AI26 methodology is explicitly allowed. Private corpus-derived codebooks, entity/target lists and researcher annotations belong under ignored `data/codebooks/`, private repositories or external storage.
 - Do not create duplicate `memory` packages or parallel type systems when the canonical memory models can be extended.
+
+## Deployment and operations
+
+Agents may operate localhost, CSC Roihu/Slurm, Laskin/cron, or other supported profiles, but must keep machine/execution configuration separate from scientific configuration. Distributed operation uses MongoDB for durable records/results, Redis for coordination/configuration/tasks, and S3-compatible storage such as CSC Allas for large artifacts. Local operation must remain possible without those services.
+
+Do not invent CSC account names, project IDs, paths, credentials or hostnames. Use public placeholders and private runtime configuration. Scheduled or batch work must be bounded, restart-safe and idempotent.
 
 ## Mandatory runtime data boundary
 
@@ -83,3 +120,7 @@ Computational outputs are evidence or candidates. Topic clusters are not automat
 Tests use synthetic data only. Public configuration contains examples/placeholders and public-safe AI26 methodology, while operational material belongs below `data/` or in external deployment systems.
 
 Prefer the canonical versioned record at module boundaries. Avoid cross-repository imports of implementation internals; use serialized canonical records and bounded adapters instead.
+
+## Quality gate
+
+Before proposing a merge, inspect the diff for private/runtime leakage and run the repository's configured lint, type, test and public-tree checks. Report unresolved failures rather than hiding them.
