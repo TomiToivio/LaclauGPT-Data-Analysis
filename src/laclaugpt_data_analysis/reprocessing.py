@@ -2,7 +2,7 @@
 
 Project-specific manifests, source identifiers, codebooks, credentials and paths stay private.
 The public engine supplies orchestration, Allas/S3 staging, checkpointing, durable state,
-Redis leases and canonical-pipeline integration.
+Redis best-effort leases and canonical-pipeline integration.
 """
 from __future__ import annotations
 
@@ -45,6 +45,7 @@ class ReprocessingConfig(BaseModel):
     source_object_field: str = "source.raw_metadata.object_ref"
     checksum_field: str = "source.raw_metadata.sha256"
     preprocessor_hook: str | None = None
+    lease_ttl_seconds: int = Field(default=7200, ge=60)
     checkpoint: CheckpointConfig = Field(default_factory=CheckpointConfig)
     archive_checkpoints: bool = True
     cleanup_staged_media: bool = True
@@ -121,11 +122,11 @@ class AtomicCheckpointWriter:
             "provenance_json": json.dumps(payload.get("provenance", []), ensure_ascii=False, sort_keys=True),
         }
 
-    def due(self, count: int) -> bool:
-        return count - self._last_count >= self.config.every_records or time.monotonic() - self._last_time >= self.config.every_seconds
+    def due(self, completed_count: int) -> bool:
+        return completed_count - self._last_count >= self.config.every_records or time.monotonic() - self._last_time >= self.config.every_seconds
 
-    def write(self, records: list[CanonicalRecord], *, force: bool = False) -> Path | None:
-        if not force and not self.due(len(records)):
+    def write(self, records: list[CanonicalRecord], *, completed_count: int, force: bool = False) -> Path | None:
+        if not force and not self.due(completed_count):
             return None
         stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
         snapshot = self.root / f"checkpoint-{stamp}.csv"
@@ -143,7 +144,7 @@ class AtomicCheckpointWriter:
                 if os.path.exists(temp_name): os.unlink(temp_name)
         snapshots = sorted(self.root.glob("checkpoint-*.csv"), reverse=True)
         for stale in snapshots[self.config.retain:]: stale.unlink(missing_ok=True)
-        self._last_count, self._last_time = len(records), time.monotonic()
+        self._last_count, self._last_time = completed_count, time.monotonic()
         return snapshot
 
 
@@ -168,11 +169,24 @@ class ReprocessingEngine:
         self.provider = OllamaProvider(host=settings.llm_endpoint)
         self.checkpoints = AtomicCheckpointWriter(settings.data_path("csv", config.project_id, "checkpoints"), config.checkpoint)
 
+    @staticmethod
+    def _digest(source_url: str) -> str:
+        return hashlib.sha256(source_url.encode("utf-8")).hexdigest()
+
     def _lease_key(self, source_url: str) -> str:
-        return "reprocess:lease:" + hashlib.sha256(source_url.encode("utf-8")).hexdigest()
+        return "reprocess:lease:" + self._digest(source_url)
+
+    def _lease_active(self, source_url: str) -> bool:
+        raw = self.cache.get(self._lease_key(source_url))
+        if not raw:
+            return False
+        try:
+            return time.time() - float(raw) < self.config.lease_ttl_seconds
+        except (TypeError, ValueError):
+            return False
 
     def _completed(self, source_url: str) -> bool:
-        marker = self.cache.get("reprocess:done:" + hashlib.sha256(source_url.encode()).hexdigest())
+        marker = self.cache.get("reprocess:done:" + self._digest(source_url))
         if marker: return True
         for row in self.records.read():
             if row.get("source_url") == source_url and row.get("analysis", {}).get("status") == "analyzed":
@@ -183,7 +197,7 @@ class ReprocessingEngine:
         payload = record.model_dump(mode="json")
         ref = _dotted(payload, self.config.source_object_field)
         if not ref: return None
-        target = self.settings.data_path("tmp", self.config.project_id, hashlib.sha256(record.source_url.encode()).hexdigest()[:16], Path(str(ref)).name or "source.bin")
+        target = self.settings.data_path("tmp", self.config.project_id, self._digest(record.source_url)[:16], Path(str(ref)).name or "source.bin")
         target.parent.mkdir(parents=True, exist_ok=True)
         if hasattr(self.objects, "download_ref") and str(ref).startswith("s3://"):
             self.objects.download_ref(str(ref), target)
@@ -197,15 +211,13 @@ class ReprocessingEngine:
 
     def run(self, records: list[CanonicalRecord], *, force: bool = False, start: int = 0, stop: int | None = None) -> RunSummary:
         summary = RunSummary(project_id=self.config.project_id)
-        completed_records: list[CanonicalRecord] = []
         selected = records[start:stop]
         for record in selected:
             if not force and self._completed(record.source_url):
                 summary.skipped += 1; continue
-            lease = self._lease_key(record.source_url)
-            if self.cache.get(lease) and not force:
+            if not force and self._lease_active(record.source_url):
                 summary.skipped += 1; continue
-            self.cache.set(lease, str(time.time()))
+            self.cache.set(self._lease_key(record.source_url), str(time.time()))
             staged: Path | None = None
             try:
                 staged = self._stage_object(record)
@@ -230,9 +242,9 @@ class ReprocessingEngine:
                     "slurm_job_id": os.getenv("SLURM_JOB_ID", ""),
                 })
                 self.records.write([processed.model_dump(mode="json")])
-                self.cache.set("reprocess:done:" + hashlib.sha256(record.source_url.encode()).hexdigest(), "1")
-                completed_records.append(processed); summary.processed += 1
-                snapshot = self.checkpoints.write(completed_records)
+                self.cache.set("reprocess:done:" + self._digest(record.source_url), "1")
+                summary.processed += 1
+                snapshot = self.checkpoints.write(selected, completed_count=summary.processed + summary.failed)
                 if snapshot and self.config.archive_checkpoints:
                     self.objects.upload_file(f"restricted-checkpoints/{self.config.project_id}/{snapshot.name}", snapshot)
             except Exception as exc:  # noqa: BLE001
@@ -241,7 +253,7 @@ class ReprocessingEngine:
                 summary.failed += 1
             finally:
                 if staged and self.config.cleanup_staged_media: staged.unlink(missing_ok=True)
-        snapshot = self.checkpoints.write(completed_records, force=True)
+        snapshot = self.checkpoints.write(selected, completed_count=summary.processed + summary.failed, force=True)
         if snapshot and self.config.archive_checkpoints:
             self.objects.upload_file(f"restricted-checkpoints/{self.config.project_id}/{snapshot.name}", snapshot)
         return summary
