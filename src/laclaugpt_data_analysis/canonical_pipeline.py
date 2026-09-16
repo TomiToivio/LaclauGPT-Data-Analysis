@@ -1,23 +1,22 @@
-"""End-to-end staged analysis pipeline preserving legacy and LaclauGPT 2.0 layers.
+"""Canonical staged LaclauGPT analysis orchestration.
 
-This module intentionally orchestrates existing NLP/multimodal backends rather than
-hard-coding Whisper/OpenCV/spaCy/provider dependencies. Expensive preprocessors can run
-locally, on CSC Roihu, or on a server and feed their results into the same canonical
-record. Every LLM stage uses the shared eight-part prompt envelope.
+The orchestration preserves the legacy multimodal/human-readable ladder while using
+current evidence-first discourse-analysis contracts. Expensive preprocessing remains
+pluggable so the same pipeline can run on a laptop, CSC Roihu, or a Linux server.
 """
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
-from .canonical import CanonicalRecord, DiscourseObject, Entity, Relation
+from .canonical import CanonicalRecord, DiscourseObject, Entity, Evidence, Relation
 from .codebooks import CodebookEntry
 from .context_envelope import PromptEnvelope, build_prompt_envelope
 from .llm.structured_output import chat_structured
 from .research_record import ensure_research_layers
-
 
 THEORY_GUARDRAILS = """Use evidence-first LaclauGPT methodology. Document-level outputs are provisional.
 Frequency is not hegemony. Polysemy is not empty signification. Negativity is not
@@ -138,12 +137,12 @@ def _append_stage(record: CanonicalRecord, name: str, payload: dict[str, Any]) -
 
 
 def _memory_text(entries: list[CodebookEntry]) -> str:
-    if not entries:
-        return ""
     lines = []
     for entry in entries:
         aliases = ", ".join(entry.aliases)
-        lines.append(f"- {entry.kind}: {entry.label}" + (f" (aliases: {aliases})" if aliases else ""))
+        lines.append(
+            f"- {entry.kind}: {entry.label}" + (f" (aliases: {aliases})" if aliases else "")
+        )
     return "\n".join(lines)
 
 
@@ -155,7 +154,9 @@ def _envelope(
     codebook_entries: list[CodebookEntry],
     prompt_version: str,
 ) -> PromptEnvelope:
-    memory = "\n".join(part for part in (context.memory_context, _memory_text(codebook_entries)) if part)
+    memory = "\n".join(
+        part for part in (context.memory_context, _memory_text(codebook_entries)) if part
+    )
     return build_prompt_envelope(
         record,
         task=task,
@@ -174,12 +175,7 @@ def preprocess_record(
     *,
     preprocessor: Preprocessor | None = None,
 ) -> CanonicalRecord:
-    """Stage 1: preserve source and merge deterministic/NLP/multimodal enrichment.
-
-    A preprocessor may return canonical keys ``asr``, ``ocr``, ``frames``,
-    ``translations``, ``legacy`` and arbitrary ``stage_output``. Unknown raw source
-    fields remain in ``raw_capture`` / ``source.raw_metadata``.
-    """
+    """Stage 1: merge deterministic/NLP/multimodal enrichment without data loss."""
     payload = preprocessor(record) if preprocessor else None
     if payload:
         for key in ("asr", "ocr", "frames", "translations"):
@@ -213,18 +209,22 @@ def analyze_frames(
     project_profile: str,
     allow_cloud_fallback: bool | None,
 ) -> CanonicalRecord:
-    """Stage 2: analyse each existing canonical frame/image independently."""
+    """Stage 2: analyse each canonical frame/image independently."""
     if not record.content.frames:
         return record
     for frame in record.content.frames:
-        profile_note = (
-            "EP24: preserve the legacy election visual categories: framing, scene, activity, "
-            "objects, subjects, flags/symbols, screen-recording/platform cues and visible text."
-            if project_profile.lower() == "ep24"
-            else "AI26: also inspect AI labs/models/demos/data centres/robots/LLM interfaces, "
-            "AI-generated media, corporate/policy material, protests, charts and candidate "
-            "future-oriented AI signifiers. Do not perform final discourse classification here."
-        )
+        if project_profile.lower() == "ep24":
+            profile_note = (
+                "EP24: preserve legacy election visual categories: framing, scene, activity, "
+                "objects, subjects, flags/symbols, platform cues and visible text."
+            )
+        else:
+            profile_note = (
+                "AI26/generic AI: also inspect labs/models/demos/data centres/robots/LLM "
+                "interfaces, AI-generated media, corporate/policy material, protests, charts "
+                "and candidate future-oriented AI signifiers. Do not perform final discourse "
+                "classification here."
+            )
         task = f"""Analyse frame {frame.id} at {frame.timestamp_seconds} seconds.
 {profile_note}
 Extract usernames/handles and other visible text when supported. Treat uncertain visual
@@ -244,16 +244,23 @@ identifications as uncertain. Candidate signifiers are provisional only."""
             user_prompt=envelope.render(),
             allow_cloud_fallback=allow_cloud_fallback,
         )
-        item = {
-            "frame_id": frame.id,
-            "timestamp_seconds": frame.timestamp_seconds,
-            "analysis": proposal.model_dump(mode="json"),
-            "prompt_version": prompt_version,
-            "context_provenance": envelope.provenance_snapshot(),
-            "model_run": response.provenance.to_dict(),
-        }
-        record.intermediate.frame_analysis.append(item)
-        record.analysis.model_runs.append({**response.provenance.to_dict(), "prompt_version": prompt_version, "stage": "frame"})
+        record.intermediate.frame_analysis.append(
+            {
+                "frame_id": frame.id,
+                "timestamp_seconds": frame.timestamp_seconds,
+                "analysis": proposal.model_dump(mode="json"),
+                "prompt_version": prompt_version,
+                "context_provenance": envelope.provenance_snapshot(),
+                "model_run": response.provenance.to_dict(),
+            }
+        )
+        record.analysis.model_runs.append(
+            {
+                **response.provenance.to_dict(),
+                "prompt_version": prompt_version,
+                "stage": "frame",
+            }
+        )
     return record
 
 
@@ -268,19 +275,24 @@ def summarize_record(
     project_profile: str,
     allow_cloud_fallback: bool | None,
 ) -> SummaryProposal:
-    """Stage 3: researcher-readable generic summary/NLP comparison layer."""
-    ai26 = project_profile.lower() == "ai26"
+    """Stage 3: human-readable summary and generic social-data-science pre-analysis."""
     task = """Create a human-readable synthesis of the complete item. Combine source metadata,
 text, transcripts/translations, OCR, frame analyses and deterministic NLP outputs. Give a
 narrative summary, topics, entities, sentiment observations for comparison with conventional
 NLP, claims/demands/grievances, difficult language and event/time/location candidates. Add
 only a light Laclaudian pre-analysis of candidate signifiers/articulations/subjects/frontiers.
 Do not promote document-level candidates to corpus-level findings."""
-    if ai26:
+    if project_profile.lower() == "ai26":
         task += """ For AI26 also record claims about what AI is/can do, desirable and feared
 futures, sociotechnical-imaginary candidates, and ownership/control/governance assumptions.
 A personal prediction is not by itself an institutionally stabilized imaginary."""
-    envelope = _envelope(record, context, task=task, codebook_entries=codebook_entries, prompt_version=prompt_version)
+    envelope = _envelope(
+        record,
+        context,
+        task=task,
+        codebook_entries=codebook_entries,
+        prompt_version=prompt_version,
+    )
     proposal, response = chat_structured(
         provider,
         SummaryProposal,
@@ -303,7 +315,9 @@ A personal prediction is not by itself an institutionally stabilized imaginary."
             "demands": "\n".join(proposal.demands),
             "grievances": "\n".join(proposal.grievances),
             "candidate_signifiers": "\n".join(proposal.candidate_signifiers),
-            "sociotechnical_imaginaries": "\n".join(proposal.sociotechnical_imaginary_candidates),
+            "sociotechnical_imaginaries": "\n".join(
+                proposal.sociotechnical_imaginary_candidates
+            ),
         }
     )
     _append_stage(
@@ -317,7 +331,13 @@ A personal prediction is not by itself an institutionally stabilized imaginary."
             "model_run": response.provenance.to_dict(),
         },
     )
-    record.analysis.model_runs.append({**response.provenance.to_dict(), "prompt_version": prompt_version, "stage": "summary"})
+    record.analysis.model_runs.append(
+        {
+            **response.provenance.to_dict(),
+            "prompt_version": prompt_version,
+            "stage": "summary",
+        }
+    )
     return proposal
 
 
@@ -332,7 +352,7 @@ def discourse_analysis(
     project_profile: str,
     allow_cloud_fallback: bool | None,
 ) -> DiscourseProposal:
-    """Stage 4: evidence-first Laclaudian/Palonen discourse pre-analysis."""
+    """Stage 4: dedicated evidence-first Laclau/Mouffe/Palonen pre-analysis."""
     task = """Perform the dedicated Laclau/Mouffe/Palonen discourse pre-analysis. Identify only
 evidence-supported demands, articulations, equivalence/difference relations, collective
 subjects, constitutive antagonistic frontiers, affective investments, and provisional nodal,
@@ -346,7 +366,13 @@ validation."""
 including projected social order, feared/desirable futures, agents of change, beneficiaries or
 harmed groups, and ownership/control/governance assumptions. Do not claim stabilization from a
 single document."""
-    envelope = _envelope(record, context, task=task, codebook_entries=codebook_entries, prompt_version=prompt_version)
+    envelope = _envelope(
+        record,
+        context,
+        task=task,
+        codebook_entries=codebook_entries,
+        prompt_version=prompt_version,
+    )
     proposal, response = chat_structured(
         provider,
         DiscourseProposal,
@@ -366,70 +392,135 @@ single document."""
             "model_run": response.provenance.to_dict(),
         },
     )
-    record.analysis.model_runs.append({**response.provenance.to_dict(), "prompt_version": prompt_version, "stage": "discourse"})
+    record.analysis.model_runs.append(
+        {
+            **response.provenance.to_dict(),
+            "prompt_version": prompt_version,
+            "stage": "discourse",
+        }
+    )
     return proposal
 
 
-def _objects(items: list[DiscursiveElement], kind: str) -> list[DiscourseObject]:
+def _evidence_ids(record: CanonicalRecord, quotes: list[str], prefix: str) -> list[str]:
+    ids: list[str] = []
+    for quote in quotes:
+        text = quote.strip()
+        if not text:
+            continue
+        evidence_id = f"{prefix}:evidence:{len(record.evidence) + 1}"
+        record.evidence.append(
+            Evidence(
+                evidence_id=evidence_id,
+                kind="llm_proposed_source_evidence",
+                source_url=record.source_url,
+                quote=text,
+                metadata={"review_status": "PROVISIONAL"},
+            )
+        )
+        ids.append(evidence_id)
+    return ids
+
+
+def _objects(
+    record: CanonicalRecord,
+    items: list[DiscursiveElement],
+    kind: str,
+) -> list[DiscourseObject]:
+    validation_required = kind in {
+        "floating_signifier",
+        "empty_signifier",
+        "formation",
+        "imaginary",
+    }
     return [
         DiscourseObject(
             object_id=f"{kind}:{index}",
             label=item.label,
             kind=kind,
+            evidence_ids=_evidence_ids(record, item.evidence, f"{kind}:{index}"),
             confidence=item.confidence,
             uncertainty=item.uncertainty or None,
             review_status="PROVISIONAL",
-            metadata={"evidence_text": item.evidence, "corpus_validation_required": kind in {"floating_signifier", "empty_signifier", "formation", "imaginary"}},
+            metadata={"corpus_validation_required": validation_required},
         )
         for index, item in enumerate(items, start=1)
     ]
 
 
-def postprocess_record(record: CanonicalRecord, summary: SummaryProposal, discourse: DiscourseProposal) -> CanonicalRecord:
-    """Stage 5: strict Pydantic outputs -> canonical machine-readable record, without data loss."""
+def postprocess_record(
+    record: CanonicalRecord,
+    summary: SummaryProposal,
+    discourse: DiscourseProposal,
+) -> CanonicalRecord:
+    """Stage 5: validated stage outputs -> canonical record without discarding prose."""
     record.analysis.status = "analyzed"
     record.analysis.summary = summary.summary
-    record.analysis.entities = [Entity(entity_id=f"entity:{i}", label=x, review_status="PROVISIONAL") for i, x in enumerate(summary.entities, 1)]
-    record.analysis.signifiers = _objects(
-        [DiscursiveElement(label=x, confidence=0.0, uncertainty="summary-stage candidate") for x in summary.candidate_signifiers],
-        "signifier",
+    record.analysis.entities = [
+        Entity(entity_id=f"entity:{index}", label=label, review_status="PROVISIONAL")
+        for index, label in enumerate(summary.entities, start=1)
+    ]
+
+    summary_signifiers = [
+        DiscursiveElement(label=label, uncertainty="summary-stage candidate")
+        for label in summary.candidate_signifiers
+    ]
+    record.analysis.signifiers = _objects(record, summary_signifiers, "signifier")
+    record.analysis.signifiers.extend(
+        _objects(record, discourse.floating_signifier_candidates, "floating_signifier")
     )
-    record.analysis.nodal_points = _objects(discourse.nodal_point_candidates, "nodal_point")
-    record.analysis.formations = _objects(discourse.formation_candidates, "formation")
-    record.analysis.imaginaries = _objects(discourse.imaginary_candidates, "imaginary")
-    record.analysis.us = _objects(discourse.collective_subjects, "collective_subject")
-    record.analysis.frontier = _objects(discourse.frontiers, "frontier")
-    record.analysis.affects = _objects(discourse.affects, "affect")
+    record.analysis.signifiers.extend(
+        _objects(record, discourse.empty_signifier_candidates, "empty_signifier")
+    )
+    record.analysis.nodal_points = _objects(record, discourse.nodal_point_candidates, "nodal_point")
+    record.analysis.formations = _objects(record, discourse.formation_candidates, "formation")
+    record.analysis.imaginaries = _objects(record, discourse.imaginary_candidates, "imaginary")
+    record.analysis.us = _objects(record, discourse.collective_subjects, "collective_subject")
+    record.analysis.frontier = _objects(record, discourse.frontiers, "frontier")
+    record.analysis.affects = _objects(record, discourse.affects, "affect")
     record.analysis.formula_of_populism = {
         "populist": discourse.populist,
         "non_populist_reason": discourse.non_populist_reason,
         **discourse.formula_of_populism,
     }
-    record.analysis.uncertainty = list(dict.fromkeys(summary.uncertainty + discourse.uncertainty))
+    record.analysis.uncertainty = list(
+        dict.fromkeys(summary.uncertainty + discourse.uncertainty)
+    )
     record.analysis.abstentions = discourse.abstentions
-    relations = discourse.articulations + discourse.equivalences + discourse.differences + discourse.antagonisms
+
+    relations = (
+        discourse.articulations
+        + discourse.equivalences
+        + discourse.differences
+        + discourse.antagonisms
+    )
     record.analysis.relations = [
         Relation(
-            relation_id=f"relation:{i}",
-            relation_type=rel.relation_type,
-            source_ref=rel.source,
-            target_ref=rel.target,
+            relation_id=f"relation:{index}",
+            relation_type=relation.relation_type,
+            source_ref=relation.source,
+            target_ref=relation.target,
+            evidence_ids=_evidence_ids(record, relation.evidence, f"relation:{index}"),
             review_status="PROVISIONAL",
         )
-        for i, rel in enumerate(relations, 1)
+        for index, relation in enumerate(relations, start=1)
     ]
     record.analysis.completed_at = datetime.now(UTC)
     return ensure_research_layers(record)
 
 
 def build_discourse_graph(record: CanonicalRecord) -> dict[str, Any]:
-    """Stage 6 projection using canonical LaclauGPT graph relation vocabulary.
-
-    This is storage-neutral. An ArangoDB adapter can persist the same nodes/edges without
-    changing the research-domain model.
-    """
-    nodes: list[dict[str, Any]] = [{"id": record.source_url, "type": "document", "label": record.content.title or record.source_url}]
+    """Stage 6: storage-neutral projection using canonical graph semantics."""
+    nodes: list[dict[str, Any]] = [
+        {
+            "id": record.source_url,
+            "type": "document",
+            "label": record.content.title or record.source_url,
+        }
+    ]
     edges: list[dict[str, Any]] = []
+    node_ids = {record.source_url}
+    label_to_id: dict[str, str] = {}
     groups = (
         ("signifier", record.analysis.signifiers),
         ("collective_subject", record.analysis.us),
@@ -437,18 +528,31 @@ def build_discourse_graph(record: CanonicalRecord) -> dict[str, Any]:
         ("affect", record.analysis.affects),
         ("formation", record.analysis.formations),
         ("imaginary", record.analysis.imaginaries),
+        ("nodal_point", record.analysis.nodal_points),
     )
     for node_type, objects in groups:
         for obj in objects:
-            nodes.append({
-                "id": obj.object_id,
-                "type": node_type,
-                "label": obj.label,
-                "confidence": obj.confidence,
-                "review_status": obj.review_status,
-                "metadata": obj.metadata,
-            })
-            edges.append({"source": record.source_url, "target": obj.object_id, "type": "CANDIDATE_IN"})
+            nodes.append(
+                {
+                    "id": obj.object_id,
+                    "type": node_type,
+                    "label": obj.label,
+                    "confidence": obj.confidence,
+                    "review_status": obj.review_status,
+                    "evidence_ids": obj.evidence_ids,
+                    "metadata": obj.metadata,
+                }
+            )
+            node_ids.add(obj.object_id)
+            label_to_id.setdefault(obj.label.casefold(), obj.object_id)
+            edges.append(
+                {
+                    "source": record.source_url,
+                    "target": obj.object_id,
+                    "type": "CANDIDATE_IN",
+                }
+            )
+
     relation_map = {
         "articulation": "ARTICULATES",
         "equivalence": "EQUIVALENT_TO",
@@ -456,8 +560,36 @@ def build_discourse_graph(record: CanonicalRecord) -> dict[str, Any]:
         "antagonism": "ANTAGONISTIC_TO",
     }
     for rel in record.analysis.relations:
-        edges.append({"source": rel.source_ref, "target": rel.target_ref, "type": relation_map.get(rel.relation_type.lower(), rel.relation_type.upper()), "review_status": rel.review_status})
-    return {"schema": "laclaugpt-discourse-graph-v1", "source_url": record.source_url, "nodes": nodes, "edges": edges}
+        source = label_to_id.get(rel.source_ref.casefold(), rel.source_ref)
+        target = label_to_id.get(rel.target_ref.casefold(), rel.target_ref)
+        for endpoint in (source, target):
+            if endpoint not in node_ids:
+                nodes.append(
+                    {
+                        "id": endpoint,
+                        "type": "concept",
+                        "label": endpoint,
+                        "review_status": "PROVISIONAL",
+                    }
+                )
+                node_ids.add(endpoint)
+        edges.append(
+            {
+                "source": source,
+                "target": target,
+                "type": relation_map.get(
+                    rel.relation_type.lower(), rel.relation_type.upper()
+                ),
+                "review_status": rel.review_status,
+                "evidence_ids": rel.evidence_ids,
+            }
+        )
+    return {
+        "schema": "laclaugpt-discourse-graph-v1",
+        "source_url": record.source_url,
+        "nodes": nodes,
+        "edges": edges,
+    }
 
 
 def run_canonical_pipeline(
@@ -474,7 +606,7 @@ def run_canonical_pipeline(
     prompt_version: str = "canonical-pipeline-v1",
     allow_cloud_fallback: bool | None = None,
 ) -> CanonicalRecord:
-    """Run stages 1-6 in the legacy-compatible order; reporting/export are corpus operations."""
+    """Run stages 1-6; aggregate reports and exports operate on the resulting corpus."""
     ctx = context or PipelineContext()
     entries = codebook_entries or []
     record.analysis.started_at = record.analysis.started_at or datetime.now(UTC)
