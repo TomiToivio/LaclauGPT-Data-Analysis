@@ -74,7 +74,9 @@ def test_historical_summary_selection_uses_record_time(tmp_path) -> None:
     repository.save(summary)
 
     current = _record("https://example.org/current", datetime(2026, 9, 16, 10, tzinfo=UTC))
-    assert latest_summary_for_record(repository, current, project_id="AI26") is summary
+    selected = latest_summary_for_record(repository, current, project_id="AI26")
+    assert selected is not None
+    assert selected.id == summary.id
 
     earlier = _record("https://example.org/earlier", datetime(2026, 9, 15, 10, tzinfo=UTC))
     assert latest_summary_for_record(repository, earlier, project_id="AI26") is None
