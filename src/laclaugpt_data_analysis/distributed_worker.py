@@ -253,6 +253,9 @@ def main(argv: list[str] | None = None) -> int:
     private_root = os.environ.get("LACLAUGPT_PRIVATE_CONFIG_DIR")
     if not private_root:
         raise SystemExit("LACLAUGPT_PRIVATE_CONFIG_DIR is required")
+    env_run_id = os.environ.get("LACLAUGPT_RUN_ID")
+    if not env_run_id:
+        raise SystemExit("LACLAUGPT_RUN_ID is required")
     binding = WorkerBinding.build(
         manifest_path=args.run_manifest,
         private_root=private_root,
@@ -260,6 +263,8 @@ def main(argv: list[str] | None = None) -> int:
         codebook=args.codebook,
         worker_id=args.worker_id,
     )
+    if env_run_id != binding.manifest.run_id:
+        raise ValueError("LACLAUGPT_RUN_ID does not match frozen run manifest")
     settings = load_settings()
     worker = build_worker(binding, settings)
     worker.heartbeat(run_id=binding.manifest.run_id, status="starting")
