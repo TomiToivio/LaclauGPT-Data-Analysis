@@ -16,13 +16,8 @@ from .canonical import CanonicalRecord, DiscourseObject, Entity, Evidence, Relat
 from .codebooks import CodebookEntry
 from .context_envelope import PromptEnvelope, build_prompt_envelope
 from .llm.structured_output import chat_structured
+from .prompt_library import load_prompt, prompt_provenance
 from .research_record import ensure_research_layers
-
-THEORY_GUARDRAILS = """Use evidence-first LaclauGPT methodology. Document-level outputs are provisional.
-Frequency is not hegemony. Polysemy is not empty signification. Negativity is not
-antagonism. Sentiment is not affective investment. Floating/empty signifier,
-ideological-formation and hegemony claims require corpus-level validation. Abstention
-and empty lists are valid. Codebooks, memory and RAG are context, never source evidence."""
 
 
 class PipelineContext(BaseModel):
@@ -212,6 +207,8 @@ def analyze_frames(
     """Stage 2: analyse each canonical frame/image independently."""
     if not record.content.frames:
         return record
+    system_resource = load_prompt("laclau.system", version="v1")
+    task_resource = load_prompt("laclau.frame_analysis", version="v1")
     for frame in record.content.frames:
         if project_profile.lower() == "ep24":
             profile_note = (
@@ -222,17 +219,17 @@ def analyze_frames(
             profile_note = (
                 "AI26/generic AI: also inspect labs/models/demos/data centres/robots/LLM "
                 "interfaces, AI-generated media, corporate/policy material, protests, charts "
-                "and candidate future-oriented AI signifiers. Do not perform final discourse "
-                "classification here."
+                "and candidate future-oriented AI signifiers."
             )
-        task = f"""Analyse frame {frame.id} at {frame.timestamp_seconds} seconds.
-{profile_note}
-Extract usernames/handles and other visible text when supported. Treat uncertain visual
-identifications as uncertain. Candidate signifiers are provisional only."""
+        rendered_task = task_resource.render(
+            frame_id=frame.id,
+            timestamp_seconds=frame.timestamp_seconds,
+            project_note=profile_note,
+        )
         envelope = _envelope(
             record,
             context,
-            task=task,
+            task=rendered_task.text,
             codebook_entries=codebook_entries,
             prompt_version=prompt_version,
         )
@@ -240,9 +237,14 @@ identifications as uncertain. Candidate signifiers are provisional only."""
             provider,
             FrameProposal,
             model=model,
-            system_prompt=THEORY_GUARDRAILS,
+            system_prompt=system_resource.text,
             user_prompt=envelope.render(),
             allow_cloud_fallback=allow_cloud_fallback,
+        )
+        prompt_meta = prompt_provenance(
+            system_resource,
+            task_resource,
+            rendered=rendered_task,
         )
         record.intermediate.frame_analysis.append(
             {
@@ -250,8 +252,9 @@ identifications as uncertain. Candidate signifiers are provisional only."""
                 "timestamp_seconds": frame.timestamp_seconds,
                 "analysis": proposal.model_dump(mode="json"),
                 "prompt_version": prompt_version,
+                **prompt_meta,
                 "context_provenance": envelope.provenance_snapshot(),
-                "model_run": response.provenance.to_dict(),
+                "model_run": {**response.provenance.to_dict(), **prompt_meta},
             }
         )
         record.analysis.model_runs.append(
@@ -259,6 +262,7 @@ identifications as uncertain. Candidate signifiers are provisional only."""
                 **response.provenance.to_dict(),
                 "prompt_version": prompt_version,
                 "stage": "frame",
+                **prompt_meta,
             }
         )
     return record
@@ -276,20 +280,20 @@ def summarize_record(
     allow_cloud_fallback: bool | None,
 ) -> SummaryProposal:
     """Stage 3: human-readable summary and generic social-data-science pre-analysis."""
-    task = """Create a human-readable synthesis of the complete item. Combine source metadata,
-text, transcripts/translations, OCR, frame analyses and deterministic NLP outputs. Give a
-narrative summary, topics, entities, sentiment observations for comparison with conventional
-NLP, claims/demands/grievances, difficult language and event/time/location candidates. Add
-only a light Laclaudian pre-analysis of candidate signifiers/articulations/subjects/frontiers.
-Do not promote document-level candidates to corpus-level findings."""
+    project_note = "(none)"
     if project_profile.lower() == "ai26":
-        task += """ For AI26 also record claims about what AI is/can do, desirable and feared
-futures, sociotechnical-imaginary candidates, and ownership/control/governance assumptions.
-A personal prediction is not by itself an institutionally stabilized imaginary."""
+        project_note = (
+            "For AI26 also record claims about what AI is/can do, desirable and feared futures, "
+            "sociotechnical-imaginary candidates, and ownership/control/governance assumptions. "
+            "A personal prediction is not by itself an institutionally stabilized imaginary."
+        )
+    system_resource = load_prompt("laclau.system", version="v1")
+    task_resource = load_prompt("laclau.summary_analysis", version="v1")
+    rendered_task = task_resource.render(project_note=project_note)
     envelope = _envelope(
         record,
         context,
-        task=task,
+        task=rendered_task.text,
         codebook_entries=codebook_entries,
         prompt_version=prompt_version,
     )
@@ -297,10 +301,11 @@ A personal prediction is not by itself an institutionally stabilized imaginary."
         provider,
         SummaryProposal,
         model=model,
-        system_prompt=THEORY_GUARDRAILS,
+        system_prompt=system_resource.text,
         user_prompt=envelope.render(),
         allow_cloud_fallback=allow_cloud_fallback,
     )
+    prompt_meta = prompt_provenance(system_resource, task_resource, rendered=rendered_task)
     now = datetime.now(UTC).isoformat()
     record.human_readable.summary = proposal.summary
     record.human_readable.markdown = proposal.narrative or proposal.summary
@@ -326,9 +331,10 @@ A personal prediction is not by itself an institutionally stabilized imaginary."
         {
             "created_at": now,
             "prompt_version": prompt_version,
+            **prompt_meta,
             "context_provenance": envelope.provenance_snapshot(),
             "proposal": proposal.model_dump(mode="json"),
-            "model_run": response.provenance.to_dict(),
+            "model_run": {**response.provenance.to_dict(), **prompt_meta},
         },
     )
     record.analysis.model_runs.append(
@@ -336,6 +342,7 @@ A personal prediction is not by itself an institutionally stabilized imaginary."
             **response.provenance.to_dict(),
             "prompt_version": prompt_version,
             "stage": "summary",
+            **prompt_meta,
         }
     )
     return proposal
@@ -353,23 +360,21 @@ def discourse_analysis(
     allow_cloud_fallback: bool | None,
 ) -> DiscourseProposal:
     """Stage 4: dedicated evidence-first Laclau/Mouffe/Palonen pre-analysis."""
-    task = """Perform the dedicated Laclau/Mouffe/Palonen discourse pre-analysis. Identify only
-evidence-supported demands, articulations, equivalence/difference relations, collective
-subjects, constitutive antagonistic frontiers, affective investments, and provisional nodal,
-floating/empty-signifier and formation candidates. Distinguish generic sentiment from affective
-investment. Return counter-evidence, uncertainty and abstentions. Populism requires both a
-constructed collective Us and a constitutive antagonistic Frontier; anti-elite language alone is
-not enough. All floating/empty signifier and formation outputs are candidates pending corpus
-validation."""
+    project_note = "(none)"
     if project_profile.lower() == "ai26":
-        task += """ Also identify evidence-supported candidate sociotechnical imaginaries,
-including projected social order, feared/desirable futures, agents of change, beneficiaries or
-harmed groups, and ownership/control/governance assumptions. Do not claim stabilization from a
-single document."""
+        project_note = (
+            "Also identify evidence-supported candidate sociotechnical imaginaries, including "
+            "projected social order, feared/desirable futures, agents of change, beneficiaries "
+            "or harmed groups, and ownership/control/governance assumptions. Do not claim "
+            "stabilization from a single document."
+        )
+    system_resource = load_prompt("laclau.system", version="v1")
+    task_resource = load_prompt("laclau.discourse_analysis", version="v1")
+    rendered_task = task_resource.render(project_note=project_note)
     envelope = _envelope(
         record,
         context,
-        task=task,
+        task=rendered_task.text,
         codebook_entries=codebook_entries,
         prompt_version=prompt_version,
     )
@@ -377,19 +382,21 @@ single document."""
         provider,
         DiscourseProposal,
         model=model,
-        system_prompt=THEORY_GUARDRAILS,
+        system_prompt=system_resource.text,
         user_prompt=envelope.render(),
         allow_cloud_fallback=allow_cloud_fallback,
     )
+    prompt_meta = prompt_provenance(system_resource, task_resource, rendered=rendered_task)
     _append_stage(
         record,
         "discourse_analysis",
         {
             "created_at": datetime.now(UTC).isoformat(),
             "prompt_version": prompt_version,
+            **prompt_meta,
             "context_provenance": envelope.provenance_snapshot(),
             "proposal": proposal.model_dump(mode="json"),
-            "model_run": response.provenance.to_dict(),
+            "model_run": {**response.provenance.to_dict(), **prompt_meta},
         },
     )
     record.analysis.model_runs.append(
@@ -397,6 +404,7 @@ single document."""
             **response.provenance.to_dict(),
             "prompt_version": prompt_version,
             "stage": "discourse",
+            **prompt_meta,
         }
     )
     return proposal
