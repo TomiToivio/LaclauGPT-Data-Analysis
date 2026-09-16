@@ -91,6 +91,13 @@ class LocalArtifactStore:
     def put_text(self, key: str, value: str) -> None:
         path = self.root / key; path.parent.mkdir(parents=True, exist_ok=True); path.write_text(value, encoding="utf-8")
     def get_text(self, key: str) -> str: return (self.root / key).read_text(encoding="utf-8")
+    def put_bytes(self, key: str, value: bytes) -> None:
+        path = self.root / key; path.parent.mkdir(parents=True, exist_ok=True); path.write_bytes(value)
+    def get_bytes(self, key: str) -> bytes: return (self.root / key).read_bytes()
+    def upload_file(self, key: str, source: str | Path) -> str:
+        target = self.root / key; target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(Path(source).read_bytes()); return str(target)
+    def download_to(self, key: str, target: str | Path) -> Path:
+        destination = Path(target); destination.parent.mkdir(parents=True, exist_ok=True); destination.write_bytes((self.root / key).read_bytes()); return destination
 
 
 class S3ArtifactStore:
@@ -103,6 +110,18 @@ class S3ArtifactStore:
         clean = key.lstrip("/"); return f"{self.prefix}/{clean}" if self.prefix else clean
     def put_text(self, key: str, value: str) -> None: self.client.put_object(Bucket=self.bucket, Key=self._key(key), Body=value.encode("utf-8"), ContentType="text/plain; charset=utf-8")
     def get_text(self, key: str) -> str: return self.client.get_object(Bucket=self.bucket, Key=self._key(key))["Body"].read().decode("utf-8")
+    def put_bytes(self, key: str, value: bytes, *, content_type: str = "application/octet-stream") -> str:
+        object_key = self._key(key); self.client.put_object(Bucket=self.bucket, Key=object_key, Body=value, ContentType=content_type); return f"s3://{self.bucket}/{object_key}"
+    def get_bytes(self, key: str) -> bytes: return self.client.get_object(Bucket=self.bucket, Key=self._key(key))["Body"].read()
+    def upload_file(self, key: str, source: str | Path) -> str:
+        object_key = self._key(key); self.client.upload_file(str(source), self.bucket, object_key); return f"s3://{self.bucket}/{object_key}"
+    def download_to(self, key: str, target: str | Path) -> Path:
+        destination = Path(target); destination.parent.mkdir(parents=True, exist_ok=True); self.client.download_file(self.bucket, self._key(key), str(destination)); return destination
+    def download_ref(self, ref: str, target: str | Path) -> Path:
+        prefix = f"s3://{self.bucket}/"
+        if not ref.startswith(prefix): raise ValueError("S3 reference does not belong to configured bucket")
+        object_key = ref[len(prefix):]
+        destination = Path(target); destination.parent.mkdir(parents=True, exist_ok=True); self.client.download_file(self.bucket, object_key, str(destination)); return destination
 
 
 class MemoryCache:
