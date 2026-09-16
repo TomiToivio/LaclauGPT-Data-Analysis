@@ -1,0 +1,2 @@
+source_record_id,text_reference,system_labels,unknown_or_mixed,code_candidates,programme_candidates,annotator,notes
+synthetic-001,"Synthetic example only","science|politics",true,"","","","Replace with human-coded research examples; do not commit private source text"

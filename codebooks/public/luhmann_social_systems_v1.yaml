@@ -1,0 +1,90 @@
+version: "1.0.0-experimental"
+theory: "Luhmann social systems"
+uncertainty_policy:
+  - "Do not force a single functional-system label when evidence is weak or mixed."
+  - "Allow unknown, mixed, and organization-mediated interpretations."
+  - "Treat communication codes and programmes as theory-guided candidates, not a universal fixed taxonomy."
+  - "Separate observed linguistic evidence from analyst/LLM inference."
+  - "Retain evidence spans and provenance for every substantive interpretation."
+
+systems:
+  - id: politics
+    label: Politics
+    definition: "Communication organized around collectively binding decisions, government/opposition, public authority, policy and political competition."
+    prototype_terms: [government, policy, parliament, election, minister, regulation, public authority, coalition, opposition, vote]
+    code_candidates: [government/opposition, power/no-power]
+    programme_candidates: [policy programme, party programme, legislative agenda, administrative rule]
+    cautions:
+      - "Political references do not automatically make the whole communication political-system communication."
+
+  - id: law
+    label: Law
+    definition: "Communication that observes disputes, acts or expectations through legal validity, rights, obligations, liability and adjudication."
+    prototype_terms: [legal, illegal, law, court, rights, liability, regulation, compliance, constitutional, lawsuit]
+    code_candidates: [legal/illegal, valid/invalid]
+    programme_candidates: [statute, precedent, doctrine, regulation, contract]
+    cautions:
+      - "Regulatory policy can simultaneously reference politics and law."
+
+  - id: science
+    label: Science
+    definition: "Communication oriented to producing, testing, criticizing or stabilizing knowledge claims through research procedures and disciplinary criteria."
+    prototype_terms: [research, study, evidence, experiment, dataset, model, peer review, hypothesis, scientific, benchmark]
+    code_candidates: [true/untrue, supported/unsupported]
+    programme_candidates: [method, theory, protocol, peer review, replication standard]
+    cautions:
+      - "Truth-code language should be treated as a candidate operationalization, not a lexical keyword rule."
+
+  - id: economy
+    label: Economy
+    definition: "Communication oriented to payment, prices, exchange, investment, firms, ownership, markets and allocation under monetary conditions."
+    prototype_terms: [market, price, payment, investment, investor, company, firm, revenue, profit, ownership, capital]
+    code_candidates: [payment/non-payment]
+    programme_candidates: [budget, price mechanism, contract, investment criterion, accounting rule]
+    cautions:
+      - "Political economy analysis remains conceptually distinct from assigning economy as a functional-system reference."
+
+  - id: mass_media
+    label: Mass media
+    definition: "Communication oriented to public dissemination, selection, attention, topicality and repeated observation of society through media organizations/platforms."
+    prototype_terms: [news, report, journalist, headline, media, broadcast, article, coverage, breaking, audience]
+    code_candidates: [information/non-information]
+    programme_candidates: [news values, editorial selection, format, genre, audience metric]
+    cautions:
+      - "Social-media communication is not automatically mass-media communication."
+
+  - id: education
+    label: Education
+    definition: "Communication oriented to teaching, learning, curricular progression, evaluation and pedagogical organization."
+    prototype_terms: [school, university, teaching, learning, student, curriculum, course, exam, education, classroom]
+    code_candidates: [learned/not-learned, pass/fail]
+    programme_candidates: [curriculum, syllabus, grading rule, pedagogy]
+    cautions:
+      - "Institutional university communication may also reference science, politics or economy."
+
+  - id: religion
+    label: Religion
+    definition: "Communication that interprets immanence/transcendence, faith, sacred meaning, ritual or ultimate contingency."
+    prototype_terms: [religion, faith, sacred, church, god, ritual, spiritual, theology, prayer, transcendence]
+    code_candidates: [immanence/transcendence]
+    programme_candidates: [doctrine, ritual, scripture, liturgy]
+    cautions:
+      - "Religious vocabulary used metaphorically may not indicate religious-system communication."
+
+  - id: health
+    label: Health / medicine
+    definition: "Communication oriented to illness, diagnosis, treatment, clinical evidence, care and health-system decisions."
+    prototype_terms: [health, medicine, diagnosis, treatment, patient, hospital, clinical, disease, therapy, doctor]
+    code_candidates: [ill/healthy]
+    programme_candidates: [diagnostic guideline, treatment protocol, clinical standard]
+    cautions:
+      - "Public-health policy can couple medicine, politics, law and science."
+
+  - id: art
+    label: Art
+    definition: "Communication organized around artistic works, aesthetic form, interpretation, production and distinctions internal to art worlds."
+    prototype_terms: [art, artist, exhibition, aesthetic, gallery, film, literature, music, performance, artwork]
+    code_candidates: [work/non-work, fitting/not-fitting]
+    programme_candidates: [genre, style, curatorial criterion, compositional convention]
+    cautions:
+      - "Artistic content discussed economically or politically can involve multiple system references."

@@ -70,6 +70,8 @@ class Settings:
     s3_region: str | None = None
     s3_prefix_root: str = "projects"
     collection_data_dir: Path | None = None
+    luhmann_enabled: bool = False
+    luhmann_codebook: Path = Path("codebooks/public/luhmann_social_systems_v1.yaml")
 
     @property
     def remote_enabled(self) -> bool:
@@ -142,6 +144,11 @@ def load_settings() -> Settings:
         s3_region=_env("S3_REGION"),
         s3_prefix_root=_env("S3_PREFIX_ROOT", "projects") or "projects",
         collection_data_dir=Path(collection_data) if collection_data else None,
+        luhmann_enabled=_bool_env("LUHMANN_ENABLED", False),
+        luhmann_codebook=Path(
+            _env("LUHMANN_CODEBOOK", "codebooks/public/luhmann_social_systems_v1.yaml")
+            or "codebooks/public/luhmann_social_systems_v1.yaml"
+        ),
     )
     errors = settings.deployment_profile.validate()
     if errors:
