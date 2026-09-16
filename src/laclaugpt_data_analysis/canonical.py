@@ -23,7 +23,7 @@ from .models import (
     TopicAssignment,
 )
 
-SCHEMA_VERSION = "1.1.0"
+SCHEMA_VERSION = "1.2.0"
 ReviewStatus = Literal[
     "PROVISIONAL", "ACCEPTED", "REJECTED", "REVISED", "CANONICAL", "SUPERSEDED"
 ]
@@ -174,6 +174,18 @@ class Relation(Model):
     review_status: ReviewStatus = "PROVISIONAL"
 
 
+class RelationChain(Model):
+    """Explicit ordered chain for equivalence/difference without inferring one from co-occurrence."""
+
+    chain_id: str
+    chain_type: Literal["equivalence", "difference"]
+    member_refs: list[str] = Field(default_factory=list)
+    evidence_ids: list[str] = Field(default_factory=list)
+    provenance_id: str = ""
+    review_status: ReviewStatus = "PROVISIONAL"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class AnalysisSection(Model):
     status: str = "collection-only"
     started_at: datetime | None = None
@@ -184,19 +196,27 @@ class AnalysisSection(Model):
     entity_mentions: list[EntityMention] = Field(default_factory=list)
     topics: list[Topic] = Field(default_factory=list)
     topic_assignments: list[TopicAssignment] = Field(default_factory=list)
+    themes: list[DiscourseObject] = Field(default_factory=list)
     classifications: list[ClassificationResult] = Field(default_factory=list)
     embeddings: list[EmbeddingResult] = Field(default_factory=list)
     formations: list[DiscourseObject] = Field(default_factory=list)
     signifiers: list[DiscourseObject] = Field(default_factory=list)
     nodal_points: list[DiscourseObject] = Field(default_factory=list)
+    floating_signifiers: list[DiscourseObject] = Field(default_factory=list)
+    empty_signifier_candidates: list[DiscourseObject] = Field(default_factory=list)
     discourses: list[DiscourseObject] = Field(default_factory=list)
     imaginaries: list[DiscourseObject] = Field(default_factory=list)
     relations: list[Relation] = Field(default_factory=list)
+    equivalence_chains: list[RelationChain] = Field(default_factory=list)
+    difference_chains: list[RelationChain] = Field(default_factory=list)
+    antagonisms: list[Relation] = Field(default_factory=list)
+    actor_entity_relations: list[Relation] = Field(default_factory=list)
     us: list[DiscourseObject] = Field(default_factory=list)
     them: list[DiscourseObject] = Field(default_factory=list)
     frontier: list[DiscourseObject] = Field(default_factory=list)
     affects: list[DiscourseObject] = Field(default_factory=list)
     sentiments: list[DiscourseObject] = Field(default_factory=list)
+    stances: list[DiscourseObject] = Field(default_factory=list)
     formula_of_populism: dict[str, Any] | None = None
     uncertainty: list[str] = Field(default_factory=list)
     abstentions: list[str] = Field(default_factory=list)
