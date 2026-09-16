@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from laclaugpt_data_analysis.plugin_pipeline import LegacyLaclauPlugin, PluginSpec
 from laclaugpt_data_analysis.prompt_library import (
     PromptLibrary,
     PromptNotFoundError,
@@ -66,3 +67,14 @@ def test_prompt_provenance_contains_resources_and_rendered_hash() -> None:
     assert provenance["prompt_resources"][0]["prompt_id"] == "laclau.system"
     assert provenance["prompt_resources"][1]["prompt_sha256"] == task.sha256
     assert provenance["rendered_prompt_sha256"] == rendered.sha256
+
+
+def test_plugin_can_declare_prompt_resources() -> None:
+    assert "laclau.system:v1" in LegacyLaclauPlugin.spec.prompt_ids
+    LegacyLaclauPlugin.spec.validate()
+
+
+def test_prompt_free_plugin_spec_remains_valid() -> None:
+    spec = PluginSpec(name="network", version="1.0", deterministic=True)
+    assert spec.prompt_ids == ()
+    spec.validate()
