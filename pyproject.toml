@@ -88,7 +88,9 @@ src = ["src", "tests"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
-ignore = ["E501"]
+# Keep currently valid Python 3.11 spellings stable across Ruff releases.
+# These can be removed once the minimum Python version and legacy DNA code are modernized together.
+ignore = ["E501", "UP017", "UP035", "UP037"]
 
 [tool.coverage.run]
 source = ["laclaugpt_data_analysis"]
