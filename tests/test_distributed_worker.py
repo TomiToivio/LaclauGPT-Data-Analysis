@@ -5,10 +5,12 @@ from pathlib import Path
 import pytest
 
 from laclaugpt_data_analysis.canonical import SCHEMA_VERSION
+from laclaugpt_data_analysis.config import Settings
 from laclaugpt_data_analysis.distributed_worker import (
     AI26_MODEL,
     FrozenRunManifest,
     WorkerBinding,
+    collection_records_name,
     enforce_local_model,
 )
 from laclaugpt_data_analysis.task_queue import TaskEnvelope
@@ -95,6 +97,41 @@ def test_task_revisions_must_match_frozen_manifest(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="run_id"):
         binding.validate_task(task)
+
+
+def test_collection_ready_handoff_becomes_reference_only_analysis_task(tmp_path: Path) -> None:
+    binding = make_binding(tmp_path)
+    task = binding.task_from_handoff(
+        {
+            "status": "ready",
+            "handoff_key": "handoff-123",
+            "run_id": "run-001",
+            "source_url": "https://example.invalid/source/1",
+        }
+    )
+    assert task.idempotency_key == "handoff-123"
+    assert task.record_ref == "https://example.invalid/source/1"
+    assert task.config_revision == binding.manifest.config_sha256
+    assert task.codebook_revision == binding.manifest.codebook_sha256
+    assert "payload" not in task.to_fields()
+
+
+def test_collection_mongo_contract_uses_records_collection() -> None:
+    settings = Settings(project_id="ai26")
+    assert collection_records_name(settings) == "ai26__records"
+
+
+def test_wrong_collection_handoff_run_is_rejected(tmp_path: Path) -> None:
+    binding = make_binding(tmp_path)
+    with pytest.raises(ValueError, match="handoff run"):
+        binding.task_from_handoff(
+            {
+                "status": "ready",
+                "handoff_key": "handoff-123",
+                "run_id": "other-run",
+                "source_url": "https://example.invalid/source/1",
+            }
+        )
 
 
 def test_provenance_contains_worker_run_model_and_hashes(tmp_path: Path) -> None:
