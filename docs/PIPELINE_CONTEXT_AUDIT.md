@@ -2,131 +2,139 @@
 
 This document answers the operational question: **what did each LLM-assisted model call know, where did that information come from, and was it source evidence or contextual memory?**
 
-It was created for issue #55 after auditing the production paths on `main`. The durable contract is `AnalysisContextBundle` in `src/laclaugpt_data_analysis/analysis_context.py`, with production-facing selection in `context_orchestration.py`. It composes the existing `ContextItem` / `ContextSnapshot`, `PromptEnvelope`, `PipelineContext`, periodic-summary and RAG mechanisms rather than creating a parallel memory system.
+Issue #55 establishes `AnalysisContextBundle` as the typed context contract, `context_orchestration.py` as the production selector/policy layer, and the existing `PromptEnvelope` as the canonical rendered model-call surface. The implementation composes the existing `ContextItem` / `ContextSnapshot`, `PipelineContext`, periodic-summary and RAG mechanisms rather than creating a parallel memory system.
 
 ## Context contract
 
-Every LLM-assisted stage should be describable through these fragments:
-
-| Fragment | Evidence role | Typical source | Notes |
+| Fragment | Evidence role | Typical source | Rule |
 |---|---|---|---|
-| project background | context | versioned project resource/private overlay | compact study background; never proof of the current document |
-| theory/method | context | versioned theory resource | selected by task; OCR/entity extraction should not receive unnecessary theory |
-| source profile | context | source metadata/researcher profile | source/actor prior knowledge; may be contradicted by the current item |
-| codebook | context | public/private project codebook | researcher prior, not current-source evidence |
-| situational summary | context | preceding compatible periodic summary | explicitly `context_not_evidence`; must precede the current item/window |
-| memory | context | reviewed/corpus context via `context_runtime` | bounded by context profile; rejected memory is excluded |
-| RAG | context | MongoDB/Neo4j/vector/graph/hybrid retrieval | bounded and provenance tracked; current-record self retrieval is removed |
-| current source | **source evidence** | canonical record | source metadata, content, raw capture and raw metadata |
-| previous analysis | provisional context | canonical intermediate/stage outputs | ASR, OCR, frames, frame analysis, translations and earlier stage outputs |
-| task contract | instruction | versioned prompt library | detailed task plus structured output contract |
+| project background | context | versioned project resource/private overlay | study prior, never proof of a current document |
+| theory/method | context | versioned theory resource | selected by task, not dumped into every stage |
+| source profile | context | source metadata/researcher profile | may guide interpretation but may be contradicted |
+| codebook | context | public/private project codebook | researcher prior, not source evidence |
+| situational summary | context | preceding compatible periodic summary | `context_not_evidence`; must precede the item/window |
+| memory | context | reviewed/corpus context | bounded by context profile; rejected memory excluded |
+| RAG | context | MongoDB/Neo4j/vector/graph retrieval | bounded, audited, self-retrieval removed |
+| current source | **source evidence** | canonical record | source metadata/content/raw capture |
+| multimodal attachment | **source evidence** | readable local frame media | actual pixels only when attached to provider request |
+| previous analysis | provisional context | ASR/OCR/frame analysis/translations/stage outputs | visible as previous analysis, not raw source evidence |
+| task contract | instruction | versioned prompt library | explicit task + structured output contract |
 
-`AnalysisContextFragment` records kind, source, revision, trust, evidence role, record IDs, metadata, character length and SHA-256. `AnalysisContextBundle.audit_snapshot()` provides one inspectable machine-readable answer to “what did this call know?”
+`AnalysisContextFragment` records kind, source, revision, trust, evidence role, record IDs, metadata, size and SHA-256. `AnalysisContextBundle.audit_snapshot()` gives one machine-readable answer to “what did this call know?”
 
 ## Audited baseline before issue #55
 
-| Stage/runtime | Project background | Theory | Codebook/source profile | RAG/memory | Periodic summary | Current evidence | Previous stages | Task/schema | Baseline problem |
-|---|---|---|---|---|---|---|---|---|---|
-| old `pipeline.py::analyze_record()` | none | `laclau.system:v1` only | codebook relevance block | none | none | text + URL only | no | `laclau.document_analysis:v1` + Pydantic schema | compatibility path bypassed canonical envelope |
-| canonical frame analysis | caller-populated | brief system guardrails | flat codebook + optional source context | no RAG by design | caller-dependent | canonical serialization + frame metadata | preprocessing outputs | versioned prompt + `FrameProposal` | actual image attachment was not demonstrated by this path |
-| canonical summary | caller-populated | brief guardrails | flat codebook labels/aliases | only via RAG wrapper/caller | caller-dependent | full canonical serialization | yes | versioned prompt + `SummaryProposal` | context architecture existed but runtime loading was not centralized |
-| canonical discourse | caller-populated | brief guardrails | flat codebook labels/aliases | only via RAG wrapper/caller | caller-dependent | full canonical serialization | yes | versioned prompt + `DiscourseProposal` | rich method/project/situational context depended on caller strings |
-| restricted reprocessing / Roihu | project ID string | indirect | codebook passed | not centralized | not automatically loaded | canonical record + preprocess output | yes | canonical prompts | production context population was thin |
-| distributed worker | static/minimal project note | indirect | frozen codebook | path-dependent | not automatically loaded | canonical record | yes | canonical prompts | production population was minimal/static |
-| periodic summary synthesis | project/scope/window | summary prompt guardrails | aggregates | previous summaries only | native stage | aggregate evidence refs | prior summaries | `periodic_summary.narrative:v1` | already correctly separated historical context from evidence |
-| plugins | plugin-specific | plugin-specific | plugin-specific | plugin-specific | usually absent | varied | varied | varied | no common declaration/audit surface |
+| Stage/runtime | Baseline state | Main problem |
+|---|---|---|
+| old `pipeline.py::analyze_record()` | text + URL + codebook relevance block | bypassed canonical envelope and omitted richer context classes |
+| canonical frame | canonical envelope + frame metadata | provider contract had no image attachment field, so pixels were not demonstrably visible |
+| canonical summary/discourse | good eight-section envelope | project/theory/RAG/periodic context depended on caller-populated strings |
+| reprocessing / Roihu | `PipelineContext(project_context=<project id>)` | production context population too thin |
+| distributed worker | minimal/static project context | same scientific call could see less context than local/manual paths |
+| periodic summary | structured temporal context already separated from evidence | needed systematic injection into later analysis |
+| RAG | retrieval abstraction and audit existed | stage policy/self-retrieval/rejected-memory rules were not centralized |
 
 ## After issue #55
 
-| Stage/runtime | Context assembly | Evidence/context separation | Retrieval/time policy | Provenance / remaining caveat |
-|---|---|---|---|---|
-| `pipeline.py::analyze_record()` | `AnalysisContextBundle` -> canonical `PromptEnvelope` | current canonical source is `source_evidence`; project/theory/codebook/summary/memory/RAG are contextual | optional project, theory, situational, memory and RAG arguments use the same envelope semantics | records `context_audit`, profile and envelope provenance; no longer a scientifically distinct text-only prompt path |
-| production context orchestration | `assemble_analysis_context()` with `AnalysisContextPolicy` + `StageContextPolicy` | source/codebook formation hints explicitly labelled priors; rejected memory removed | stage-specific RAG; self-retrieval removed; periodic summary selected with `before=record_timestamp` | retrieval audit, context hashes and multimodal visibility declaration included |
-| canonical frame | canonical envelope remains the execution surface | source vs previous analysis stay separate | default policy disables theory/summary/memory/RAG for frame description | current provider call is conservatively recorded as `textual_derivatives_only` unless an adapter explicitly attaches pixels/audio; textual frame metadata is not claimed as visual perception |
-| canonical summary/discourse | canonical envelope plus production bundle adapter | codebook and source profile are priors; current canonical source remains evidence | `high_accuracy` enables bounded theory/summary/RAG; `fast_local` is an explicit ablation profile | rich context can be assembled consistently by local, distributed and batch callers without duplicating RAG/memory systems |
-| periodic summary | `PeriodicDiscourseSummary` / repository | `historical_summary_context`, `context_not_evidence` | historical selection is by record/corpus timestamp, not wall clock | summary ID/hash/window appear in context metadata/provenance |
-| RAG/memory | existing `RetrievalBackend` + `context_runtime` | retrieved text remains context; rejected memory is excluded | per-stage mode/top-k/depth; current canonical ID removed from results | `RetrievalAudit.to_dict()` retained in bundle provenance |
-| project resources | versioned Markdown resources plus private overlay path | all project resources are context | public-safe AI26, EP24 and Hungary26 examples; project selected by config/path | generic engine has no mandatory AI26 semantics |
-| theory | versioned `contexts/theory/evidence_first_v1.md` | method context only | high-accuracy/validation profiles include it; fast-local omits it | task-specific richer resources can be added without dumping the whole paper into every task |
-
-## Context profiles and ablation
-
-The existing `context_runtime.py` remains the deterministic budget/policy layer. `high_accuracy` and `validation` now enable the theory/RAG classes they are intended to exercise. `fast_local` intentionally suppresses theory, periodic-summary injection and RAG, providing a useful source-oriented ablation baseline rather than accidental low-context behavior.
-
-This makes comparative research runs possible along a simple ladder: source-only/minimal -> project -> theory -> codebook/source profile -> previous-stage outputs -> situational summary -> RAG. Context should be judged empirically rather than assumed to improve results simply because it is larger.
+| Stage/runtime | Context assembly | Retrieval/time/evidence policy | Provenance |
+|---|---|---|---|
+| compatibility `analyze_record()` | `AnalysisContextBundle` -> canonical `PromptEnvelope` | current source is evidence; project/theory/codebook/summary/memory/RAG are contextual | context audit, profile, prompt/envelope hashes and model provenance recorded |
+| production reprocessing + worker entrypoints | `contextual_entrypoints.py` -> `run_contextual_canonical_pipeline()` | same staged scientific runner for local/batch/distributed entrypoints | existing queue/storage behavior preserved; stage audits added |
+| frame analysis | stage-specific bundle + `FrameAwareProvider` | no RAG/theory by default; readable local `media_ref` is attached as actual pixels; remote refs require materialization first | audit says `direct_image_pixels` only when an image was attached and records frame ID/path; otherwise `textual_derivatives_only` |
+| summary/discourse | stage-specific bundle | `high_accuracy` enables theory, periodic context and bounded RAG; self/current record and rejected retrieval memory excluded | per-stage context hashes and retrieval audit retained |
+| periodic summary | existing `PeriodicDiscourseSummary` repository | selected with `before=record_timestamp`, so historical EP24/Hungary26 runs cannot receive future summaries | summary ID/hash/window retained and rendered as `context_not_evidence` |
+| project resources | public-safe versioned resources + explicit private overlay path | AI26/EP24/Hungary26 are configuration, not generic-engine hard-coding | resource path/revision can be recorded with context audit |
+| theory | `contexts/theory/evidence_first_v1.md` | high-accuracy/validation include method context; `fast_local` is an intentional ablation | theory fragment hash/revision recorded |
 
 ## Project and theory resources
 
-Public-safe versioned project resources live under `contexts/projects/`:
+Public-safe project resources live under `contexts/projects/`:
 
 - `ai26_v1.md`
 - `ep24_generic_v1.md`
 - `hungary26_generic_v1.md`
 
-Private source lists, annotations, codebooks and operational settings remain outside the public repository and can be supplied as configured overlays. Generic code contains no mandatory project-specific formation labels.
+Private source lists, researcher annotations, private codebooks and operational settings remain outside the public repository and may be supplied with `LACLAUGPT_PROJECT_CONTEXT_PATH` or other approved private configuration. The generic context engine contains no mandatory AI26 formation labels.
 
-`contexts/theory/evidence_first_v1.md` supplies the shared evidence-first methodological floor: articulation is relational, frequency is not hegemony, ambiguity is not empty signification, negative sentiment is not antagonism, affect is not sentiment, formation labels are provisional, corpus claims need corpus evidence, and abstention is valid.
+`contexts/theory/evidence_first_v1.md` provides the shared methodological floor: articulation is relational; frequency is not hegemony; ambiguity is not automatically floating/empty signification; negative sentiment is not antagonism; affect is not sentiment; formation labels are provisional; corpus claims require corpus comparison; and abstention is valid.
 
-## Source/codebook trust semantics
+## Source and codebook trust semantics
 
-`source_profile_text()` can expose platform, source type, author/account, language, country, arena/actor type, organization/party and an optional researcher source/formation hint. It always states that these are contextual priors. `analysis_context.codebook_context()` similarly tells the model that codebook entries are not proof that the current item expresses a formation or stance, and that contradiction, hybridity and abstention are valid.
+`source_profile_text()` exposes source/platform, actor/account, language, country, arena/actor type, organization/party and optional researcher hints as **contextual priors**. `codebook_context()` likewise tells the model that codebook entries are not proof that the current item expresses a formation or stance and that contradiction, hybridity and abstention are allowed.
 
-A formation hint can therefore guide interpretation without becoming an evidence reference. Quotations and current-document claims must still come from current canonical source evidence.
+Quotations and source-level theoretical claims must remain grounded in the current canonical source or direct multimodal attachment, never in source-profile priors, codebooks, old summaries or retrieved model prose.
 
 ## RAG and context memory
 
-`assemble_analysis_context()` uses the existing retrieval and context-runtime abstractions. It applies stage policy, project filters, top-k/depth, excludes the current record from retrieved results, and filters memory marked `rejected`. Accepted/reviewed memory remains trust-labelled. The full retrieval audit is retained separately from rendered text.
+`assemble_analysis_context()` uses the existing `RetrievalBackend` and `context_runtime` abstractions. It applies stage policy, project filtering, top-k/depth, removes the current record from retrieved results, and excludes items with `review_status=rejected` or trust `rejected`. Reviewed/model-proposed memory remains trust-labelled. `RetrievalAudit.to_dict()` is retained separately from rendered text.
 
-The default `high_accuracy` policy enables bounded RAG for summary, discourse, validation and compatibility/document analysis while leaving frame description without RAG by default. `fast_local` disables RAG through the existing profile policy.
+`high_accuracy` and `validation` now enable the theory/RAG context classes they are intended to exercise. `fast_local` suppresses theory, periodic-summary injection and RAG, making it a deliberate context-ablation profile rather than an accidental lower-quality production mode.
 
-## Periodic summary integration and historical time
+## Periodic summary integration and historical corpus time
 
-The context orchestrator calls `PeriodicSummaryRepository.latest(project_id, scope, before=record_timestamp)`. The timestamp is the source event/creation time, falling back to collection time, so EP24/Hungary26 historical reprocessing cannot accidentally receive a summary from the future merely because the batch is executing today.
+The orchestrator selects the latest compatible summary with `PeriodicSummaryRepository.latest(project_id, scope, before=record_timestamp)`. Record timestamp means source creation/event time, falling back to collection time. Historical reprocessing therefore uses corpus time rather than the date on which a Roihu job happens to execute.
 
-The selected summary is rendered with the explicit banner `HISTORICAL SUMMARY CONTEXT — NOT CURRENT-SOURCE EVIDENCE` and carries summary ID/hash/window metadata. It remains situational memory, never a quotation source for the current item.
+The selected summary carries the explicit banner `HISTORICAL SUMMARY CONTEXT — NOT CURRENT-SOURCE EVIDENCE` and remains situational memory only.
 
 ## Multimodal evidence audit
 
-The canonical source and previous-analysis sections expose frame records, OCR, ASR, translations and prior frame analysis. That proves visibility of textual derivatives, **not** direct visibility of pixels or audio. The unified context provenance therefore defaults to:
+The provider-neutral `ChatRequest` now has an `images` attachment field. `FrameAwareProvider` inspects canonical frame references and, when a `media_ref` resolves to a readable local file, attaches that exact image to the matching frame-analysis request. Ollama requests place the image on the user message.
+
+Each frame-stage context audit records one of two states:
+
+```text
+multimodal_visibility.declared = direct_image_pixels
+```
+
+when actual image pixels were attached, including the frame ID and materialized path, or:
 
 ```text
 multimodal_visibility.declared = textual_derivatives_only
 ```
 
-A provider adapter must change/augment this provenance only when it actually attaches image/frame/audio bytes to the model request. A frame ID, file path or OCR transcript is not equivalent to the model seeing the image. This prevents the pipeline from making a false multimodal claim.
+when the model saw only canonical frame metadata/OCR/other textual derivatives. An `s3://`, Allas or other remote reference is **not** falsely counted as direct visual access; preprocessing/storage must materialize it locally first. A filename, OCR transcript or frame ID is not equivalent to seeing the image.
+
+Audio remains represented through ASR unless a future provider adapter explicitly attaches audio and records that fact.
+
+## Stage order and previous-stage visibility
+
+The contextual production ladder is:
+
+1. deterministic/preprocessing enrichment;
+2. frame analysis with a lean context policy and direct pixels when available;
+3. summary/pre-analysis after frame results are present;
+4. discourse analysis after summary/frame results are present;
+5. postprocessing and discourse graph projection.
+
+`previous_analysis_text()` serializes ASR, OCR, frames, frame analysis, translations, stage outputs, human-readable outputs and existing analysis, so later stages can explicitly use earlier results without those outputs being mislabelled as raw source evidence.
 
 ## Prompt/context injection hygiene
 
-Current source text, RAG text and memory remain inside structurally named user/context sections. They are never interpolated into the trusted system/method resource. Their provenance carries a trust class and evidence role. External instructions encountered inside source/RAG material are therefore data, not pipeline instructions.
+Source, memory and retrieved material stay in named user/context sections. They are not interpolated into the trusted system/method resource. Their provenance carries trust and evidence role. Instructions encountered inside source/RAG text therefore remain data rather than pipeline instructions.
 
-Task contracts continue to come from the versioned prompt library and machine fields remain Pydantic/provider-structured. Human-readable Markdown remains a separate narrative surface where the analysis stage provides it.
+Task contracts stay in the versioned prompt library, and machine-facing fields remain provider/Pydantic structured. Human-readable narratives remain separate surfaces.
 
-## Budgeting and truncation
+## Budgeting and ablation
 
-`ContextProfile` supplies deterministic `max_context_chars`, `max_records` and token hints. `context_runtime.assemble_context()` remains the bounded renderer for theory, previous summaries, memory and RAG. The typed bundle keeps current canonical source evidence in its own fragment instead of silently mixing it into that historical-context budget.
+`ContextProfile` supplies deterministic context character/record/token-hint budgets. `context_runtime.assemble_context()` remains the bounded renderer for theory, previous summaries, memory and RAG. Current canonical source evidence remains a distinct fragment and is not silently truncated by a historical-memory budget.
 
-An oversized current source must not be silently truncated by the memory budget. Model-specific source chunking/hierarchical synthesis should be explicit and recorded by the caller/provider path when needed.
+This supports comparative runs along a controlled ladder: source/minimal -> project -> theory -> codebook/source profile -> previous-stage outputs -> periodic summary -> RAG. Richer context should be evaluated empirically rather than presumed superior merely because it is larger.
 
-## Reproducibility and provenance
+## Reproducibility checklist
 
 For each model-assisted stage retain, where applicable:
 
-- prompt resource IDs, versions and hashes;
-- rendered prompt hash;
-- model/provider/endpoint/fallback provenance;
-- `AnalysisContextBundle.audit_snapshot()` fragment hashes, sizes, trust and evidence roles;
+- prompt resource IDs, versions, hashes and rendered prompt hash;
+- actual model/provider/endpoint/fallback provenance;
 - context profile;
+- fragment kind/source/revision/trust/evidence-role/hash/size;
+- canonical source identity;
+- codebook/config/project resource revisions;
 - RAG request ID/mode/filters/selected IDs/scores/paths;
 - periodic-summary ID/hash/window;
-- codebook/config/project-context revisions;
-- canonical source URL/record identity;
 - previous-stage outputs;
-- declared multimodal visibility.
+- direct multimodal attachment audit or explicit textual-derivatives-only declaration.
 
-The compatibility path now writes the context audit into both the model-run and analysis provenance records. Canonical staged paths already retain envelope provenance and can consume the same `PipelineContext` adapter from the production orchestrator.
-
-## Remaining operational boundary
-
-`AnalysisContextBundle` and `assemble_analysis_context()` are the canonical context contract. Production local, distributed and Roihu launchers should construct their `PipelineContext` through this assembler rather than manually writing ad-hoc strings. Existing canonical execution functions intentionally remain backwards compatible with an explicitly supplied `PipelineContext`; this is useful for tests and ablation runs, but manual caller strings should not be treated as the preferred production configuration.
+The production console entrypoints `laclaugpt-reprocess` and `laclaugpt-analysis-worker` are routed through the contextual staged pipeline. The lower-level canonical functions remain callable with explicit `PipelineContext` for tests and ablation experiments, but ad-hoc manually assembled caller strings are no longer the preferred production configuration.
 
 The rule is simple: **a future researcher should be able to reconstruct not only what the model answered, but what evidence it saw, what contextual knowledge it was allowed to use, and what analytical task it was instructed to perform.**
