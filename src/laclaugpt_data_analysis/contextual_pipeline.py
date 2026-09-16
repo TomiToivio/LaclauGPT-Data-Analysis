@@ -11,7 +11,7 @@ from .canonical_pipeline import (
     analyze_frames,
     build_discourse_graph,
     discourse_analysis,
-    postprocess_analysis,
+    postprocess_record,
     preprocess_record,
     summarize_record,
 )
@@ -126,8 +126,9 @@ def run_contextual_canonical_pipeline(
         allow_cloud_fallback=allow_cloud_fallback,
     )
 
-    record = postprocess_analysis(record, summary, discourse)
+    record = postprocess_record(record, summary, discourse)
     graph = build_discourse_graph(record)
+    record.intermediate.stage_outputs.setdefault("discourse_graph", []).append(graph)
     if graph_sink is not None:
         graph_sink.write_graph(record.source_url, graph)
     if vector_sink is not None:
