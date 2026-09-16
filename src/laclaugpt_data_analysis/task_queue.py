@@ -101,11 +101,7 @@ class DurableTaskStore(Protocol):
 
 
 class SqliteTaskStore:
-    """Tiny durable store for local/direct mode and offline tests.
-
-    ``write_result`` uses a primary key so retries and duplicate deliveries cannot
-    create more than one durable result for an idempotency key.
-    """
+    """Tiny durable store for local/direct mode and offline tests."""
 
     def __init__(self, path: str | Path):
         self.path = Path(path)
@@ -174,6 +170,96 @@ class SqliteTaskStore:
             )
 
 
+class MongoTaskStore:
+    """Durable distributed result/failure history with atomic idempotency."""
+
+    def __init__(
+        self,
+        url: str,
+        *,
+        database: str,
+        results_collection: str,
+        failures_collection: str,
+        project_id: str,
+        run_id: str,
+    ):
+        try:
+            from pymongo import MongoClient
+        except ImportError as exc:
+            raise RuntimeError("MongoDB task support requires: pip install '.[remote]'") from exc
+        client = MongoClient(url)
+        db = client[database]
+        self.results = db[results_collection]
+        self.failures = db[failures_collection]
+        self.project_id = project_id
+        self.run_id = run_id
+        self.results.create_index(
+            [("project_id", 1), ("run_id", 1), ("idempotency_key", 1)],
+            unique=True,
+            name="project_run_idempotency",
+        )
+        self.failures.create_index(
+            [("project_id", 1), ("run_id", 1), ("idempotency_key", 1)],
+            name="project_run_failure",
+        )
+
+    def has_result(self, idempotency_key: str) -> bool:
+        return (
+            self.results.find_one(
+                {
+                    "project_id": self.project_id,
+                    "run_id": self.run_id,
+                    "idempotency_key": idempotency_key,
+                },
+                {"_id": 1},
+            )
+            is not None
+        )
+
+    def write_result(
+        self,
+        idempotency_key: str,
+        result: Mapping[str, Any],
+        provenance: Mapping[str, Any],
+    ) -> bool:
+        try:
+            from pymongo.errors import DuplicateKeyError
+        except ImportError as exc:
+            raise RuntimeError("MongoDB task support requires: pip install '.[remote]'") from exc
+        document = {
+            "project_id": self.project_id,
+            "run_id": self.run_id,
+            "idempotency_key": idempotency_key,
+            "result": dict(result),
+            "provenance": dict(provenance),
+            "created_at": time.time(),
+        }
+        try:
+            self.results.insert_one(document)
+            return True
+        except DuplicateKeyError:
+            return False
+
+    def write_failure(
+        self,
+        task: TaskEnvelope,
+        error: str,
+        provenance: Mapping[str, Any],
+    ) -> None:
+        self.failures.insert_one(
+            {
+                "project_id": self.project_id,
+                "run_id": self.run_id,
+                "task_id": task.task_id,
+                "idempotency_key": task.idempotency_key,
+                "attempt": task.attempt,
+                "error": error,
+                "provenance": dict(provenance),
+                "created_at": time.time(),
+            }
+        )
+
+
 class RedisStreamQueue:
     """Redis Streams adapter using consumer groups and pending-entry reclaim."""
 
@@ -191,6 +277,7 @@ class RedisStreamQueue:
             import redis
         except ImportError as exc:
             raise RuntimeError("Redis task support requires: pip install '.[remote]'") from exc
+        self._redis = redis
         self.client = redis.Redis.from_url(url, decode_responses=True)
         self.stream = stream
         self.group = group
@@ -320,8 +407,8 @@ class TaskWorker:
 
         try:
             result = self.handler(task)
-            # Durable uniqueness is the idempotency gate. The queue is acknowledged
-            # only after this write returns.
+            # Durable uniqueness is the idempotency gate. Queue acknowledgement
+            # only happens after the durable write returns.
             self.durable_store.write_result(task.idempotency_key, result, self.provenance)
             self.queue.ack(claimed.message_id)
             return "completed"
@@ -332,10 +419,39 @@ class TaskWorker:
                 self.queue.dead_letter(task, error)
                 self.queue.ack(claimed.message_id)
                 return "dead-letter"
-            # Leave the message pending. A later worker can reclaim it after the
-            # configured idle/lease period. Redis remains non-durable coordination.
             return "retry"
 
     def heartbeat(self, **metadata: str) -> None:
         payload = {"worker_id": self.worker_id, **metadata}
         self.queue.heartbeat(payload)
+
+
+def redis_queue_from_settings(settings: Any, *, run_id: str, worker_id: str) -> RedisStreamQueue:
+    if not settings.redis_url:
+        raise ValueError("LACLAUGPT_REDIS_URL is required for Redis task mode")
+    namespace = settings.distributed_namespace
+    stream = namespace.stream_key(f"analysis:{run_id}:tasks")
+    return RedisStreamQueue(
+        settings.redis_url,
+        stream=stream,
+        group="analysis-workers",
+        consumer=worker_id,
+        dead_letter_stream=namespace.stream_key(f"analysis:{run_id}:dead"),
+        heartbeat_key=namespace.worker_key("analysis", worker_id),
+    )
+
+
+def durable_store_from_settings(settings: Any, *, run_id: str) -> DurableTaskStore:
+    if settings.data_backend == "mongodb":
+        if not settings.mongo_url:
+            raise ValueError("LACLAUGPT_MONGO_URL is required for distributed task results")
+        namespace = settings.distributed_namespace
+        return MongoTaskStore(
+            settings.mongo_url,
+            database=settings.mongo_database,
+            results_collection=namespace.mongo_collection("analyzed"),
+            failures_collection=namespace.mongo_collection("processing"),
+            project_id=settings.project_id,
+            run_id=run_id,
+        )
+    return SqliteTaskStore(settings.data_path("database", f"tasks-{run_id}.sqlite3"))
