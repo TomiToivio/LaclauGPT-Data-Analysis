@@ -21,8 +21,8 @@ from .context_envelope import PromptEnvelope, build_prompt_envelope
 from .context_profiles import ContextProfile, available_context_profiles, load_context_profile
 from .context_runtime import ContextItem, ContextSnapshot, assemble_context
 from .derived_structures import (
-    GeocodeResult,
     Geocoder,
+    GeocodeResult,
     LocationEntity,
     NetworkRelation,
     TimelineEvent,
