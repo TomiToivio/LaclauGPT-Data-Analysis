@@ -37,7 +37,7 @@ class StageContextPolicy(BaseModel):
 
 
 class AnalysisContextPolicy(BaseModel):
-    profile: str = "balanced"
+    profile: str = "high_accuracy"
     project_background_path: str | None = None
     theory_path: str | None = None
     history_context: int = Field(default=1, ge=0, le=30)
@@ -111,7 +111,11 @@ def _load_resource(path: str | None, kind: str) -> ContextItem | None:
     source = Path(path)
     if not source.exists():
         return None
-    return load_text_context(source, kind=kind, trust="method" if kind == "theory_context" else "context")
+    return load_text_context(
+        source,
+        kind=kind,
+        trust="method" if kind == "theory_context" else "context",
+    )
 
 
 def _bounded_items(
@@ -174,7 +178,7 @@ def _rag_items(
         )
         if len(items) >= policy.rag_top_k:
             break
-    return items, context.audit.model_dump(mode="json") if hasattr(context.audit, "model_dump") else {}
+    return items, context.audit.to_dict()
 
 
 def assemble_analysis_context(
@@ -208,16 +212,23 @@ def assemble_analysis_context(
         if stage_policy.use_situational_summary
         else None
     )
-    summary_items = [
-        ContextItem(
-            kind="historical_summary_context",
-            text=summary.context_text(),
-            source="periodic_summary",
-            record_id=summary.id,
-            trust="context_not_evidence",
-            metadata={"sha256": summary.sha256, "window_end": summary.window_end.isoformat()},
-        )
-    ] if summary else []
+    summary_items = (
+        [
+            ContextItem(
+                kind="historical_summary_context",
+                text=summary.context_text(),
+                source="periodic_summary",
+                record_id=summary.id,
+                trust="context_not_evidence",
+                metadata={
+                    "sha256": summary.sha256,
+                    "window_end": summary.window_end.isoformat(),
+                },
+            )
+        ]
+        if summary
+        else []
+    )
     situational_text = ""
     summary_provenance: dict[str, Any] = {}
     if summary_items:
@@ -226,7 +237,8 @@ def assemble_analysis_context(
         )
 
     positive_memory = [
-        item for item in (memory_items or [])
+        item
+        for item in (memory_items or [])
         if item.record_id != record.source_url and item.trust.casefold() != "rejected"
     ]
     memory_text = ""
@@ -245,7 +257,9 @@ def assemble_analysis_context(
     rag_text = ""
     rag_provenance: dict[str, Any] = {}
     if rag_items:
-        rag_text, rag_provenance = _bounded_items(rag_items, profile=active.profile, kind="rag")
+        rag_text, rag_provenance = _bounded_items(
+            rag_items, profile=active.profile, kind="rag"
+        )
 
     bundle = build_analysis_context_bundle(
         record,
@@ -253,7 +267,7 @@ def assemble_analysis_context(
         project_background=project_text,
         theory_context=theory_text,
         source_profile=source_profile_text(record),
-        codebook_entries=codebook_entries or [] if stage_policy.use_codebook else [],
+        codebook_entries=(codebook_entries or []) if stage_policy.use_codebook else [],
         situational_summary=situational_text,
         memory_context=memory_text,
         rag_context=rag_text,
@@ -274,17 +288,27 @@ def assemble_analysis_context(
     )
     adapter = PipelineContext(
         project_context="\n\n".join(
-            value for value in (bundle.project_background.text, bundle.theory_context.text) if value
+            value
+            for value in (bundle.project_background.text, bundle.theory_context.text)
+            if value
         ),
         source_context="\n\n".join(
-            value for value in (bundle.source_profile.text, bundle.codebook_context.text) if value
+            value
+            for value in (bundle.source_profile.text, bundle.codebook_context.text)
+            if value
         ),
         situational_context=bundle.situational_summary.text,
         memory_context=bundle.memory_context.text,
         rag_context=bundle.rag_context.text,
         provenance={
-            "project": [bundle.project_background.provenance_token(), bundle.theory_context.provenance_token()],
-            "source": [bundle.source_profile.provenance_token(), bundle.codebook_context.provenance_token()],
+            "project": [
+                bundle.project_background.provenance_token(),
+                bundle.theory_context.provenance_token(),
+            ],
+            "source": [
+                bundle.source_profile.provenance_token(),
+                bundle.codebook_context.provenance_token(),
+            ],
             "situational": [bundle.situational_summary.provenance_token()],
             "memory": [bundle.memory_context.provenance_token()],
             "rag": [bundle.rag_context.provenance_token()],
