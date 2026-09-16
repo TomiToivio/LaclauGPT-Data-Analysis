@@ -21,7 +21,11 @@ from typing import Any, Iterable
 
 from .canonical import CanonicalRecord
 from .codebooks import Codebook, CodebookEntry, load_codebook, merge_codebooks
+from .research_record import legacy_projection
 
+# Exact field order observed in the historical Finland/Poland dashboard dataframes.
+# Keep this separate from the broader generic LEGACY_RESEARCH_COLUMNS contract because
+# the old EP24 dashboard code expects these names and ordering.
 EP24_LEGACY_COLUMNS: tuple[str, ...] = (
     "country", "author_username", "account_type", "source_type", "source_recording",
     "video_filename", "video_file", "whisper_transcript", "whisper_language",
@@ -69,9 +73,8 @@ def load_private_ep24_human_codebook(path: str | Path) -> Codebook:
     """Adapt the private workbook compiler output into the public Codebook contract.
 
     The source JSON is expected to be the country payload produced by the private EP24
-    workbook compiler. The adapter deliberately keeps researcher notes in private runtime
-    sections and never serializes them unless the caller explicitly writes the merged book
-    outside the repository.
+    workbook compiler. Research notes remain runtime context and are not promoted into
+    source evidence or public codebook entries.
     """
     source = Path(path)
     payload = json.loads(source.read_text(encoding="utf-8"))
@@ -143,55 +146,45 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True)
 
 
-def _labels(items: Iterable[Any]) -> str:
-    labels: list[str] = []
-    for item in items:
-        label = getattr(item, "label", None)
-        if label:
-            labels.append(str(label))
-    return ", ".join(dict.fromkeys(labels))
+def _formula_value(formula: dict[str, Any], *keys: str) -> str:
+    for key in keys:
+        value = formula.get(key)
+        if value not in (None, "", [], {}):
+            return value if isinstance(value, str) else _json(value)
+    return ""
 
 
 def project_ep24_dashboard_row(record: CanonicalRecord) -> dict[str, str]:
-    """Project one canonical record into old-dashboard-compatible + modern columns.
+    """Project one canonical record into exact old-dashboard + modern columns.
 
-    Existing legacy values always win. Missing legacy fields are backfilled from canonical
-    evidence where the mapping is deterministic. No interpretive result is fabricated.
+    The shared research-record projector supplies canonical EP24-era aliases. The exact
+    historical FI/PL columns are then selected in their original order, with imported
+    study-specific extras retained from ``record.legacy``. No missing interpretation is
+    fabricated merely to fill an old column.
     """
-    row = {name: str(record.legacy.get(name, "") or "") for name in EP24_LEGACY_COLUMNS}
-    row["country"] = row["country"] or record.source.country
-    row["author_username"] = row["author_username"] or record.source.author
-    row["source_type"] = row["source_type"] or record.source.platform or record.source.source_type
-    row["video_id"] = row["video_id"] or record.source_native_ids.get("video_id", "")
-    row["whisper_language"] = row["whisper_language"] or (record.content.language or record.source.language)
-    row["whisper_transcript"] = row["whisper_transcript"] or record.content.text
-    row["whisper_translated"] = row["whisper_translated"] or (record.content.translated_text or "")
-    row["summary_analysis"] = row["summary_analysis"] or record.human_readable.summary or (record.analysis.summary or "")
-    row["entities"] = row["entities"] or _labels(record.analysis.entities)
-    row["topics"] = row["topics"] or _labels(record.analysis.topics)
-    row["us"] = row["us"] or _labels(record.analysis.us)
-    row["them"] = row["them"] or _labels(record.analysis.them)
-    row["political_themes"] = row["political_themes"] or _labels(record.analysis.themes)
+    projected = legacy_projection(record)
+    row = {name: str(projected.get(name, record.legacy.get(name, "")) or "") for name in EP24_LEGACY_COLUMNS}
 
-    if not row["formula_of_populism_analysis"] and record.analysis.formula_of_populism:
-        row["formula_of_populism_analysis"] = _json(record.analysis.formula_of_populism)
+    # The exact historical dataframes had four additional Formula-of-Populism
+    # decomposition columns that the generic projector predates. Populate them only when
+    # the current structured formula actually provides matching components.
+    formula = record.analysis.formula_of_populism or {}
+    formula_mapping = {
+        "formula_of_populism_us_elements": ("us_elements", "people_elements"),
+        "formula_of_populism_frontier_elements": ("frontier_elements", "them_elements"),
+        "formula_of_populism_us_affects": ("us_affects", "people_affects"),
+        "formula_of_populism_frontier_affects": ("frontier_affects", "them_affects"),
+    }
+    for column, keys in formula_mapping.items():
+        if not row[column]:
+            row[column] = _formula_value(formula, *keys)
 
-    ocr = list(record.intermediate.ocr)
-    frame_analysis = list(record.intermediate.frame_analysis)
-    for index in range(6):
-        ocr_key = f"ocr_{index + 1}"
-        frame_key = f"frame_{index + 1}"
-        if not row[ocr_key] and index < len(ocr):
-            item = ocr[index]
-            row[ocr_key] = str(item.get("text") if isinstance(item, dict) else item)
-        if not row[frame_key] and index < len(frame_analysis):
-            item = frame_analysis[index]
-            if isinstance(item, dict):
-                row[frame_key] = str(item.get("analysis") or item.get("description") or _json(item))
-            else:
-                row[frame_key] = str(item)
-    if not row["frames"] and record.intermediate.frames:
-        row["frames"] = _json(record.intermediate.frames)
+    # Some migrated historical frame rows use ``analysis`` rather than the generic
+    # projector's ``description``/``text`` keys. Support both without interpreting them.
+    for index, item in enumerate(record.intermediate.frame_analysis[:6], start=1):
+        key = f"frame_{index}"
+        if not row[key] and isinstance(item, dict):
+            row[key] = str(item.get("analysis") or item.get("description") or item.get("text") or "")
 
     payload = record.model_dump(mode="json")
     row.update(
@@ -226,8 +219,17 @@ def write_ep24_dashboard_csv(records: Iterable[CanonicalRecord], output: str | P
 
 
 def _load_records(path: str | Path) -> list[CanonicalRecord]:
+    """Load canonical JSONL or a Roihu checkpoint CSV containing canonical_json."""
+    source = Path(path)
     records: list[CanonicalRecord] = []
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
+    if source.suffix.casefold() == ".csv":
+        with source.open(encoding="utf-8", newline="") as handle:
+            for row in csv.DictReader(handle):
+                raw = str(row.get("canonical_json") or "").strip()
+                if raw:
+                    records.append(CanonicalRecord.model_validate(json.loads(raw)))
+        return records
+    for line in source.read_text(encoding="utf-8").splitlines():
         if line.strip():
             records.append(CanonicalRecord.model_validate(json.loads(line)))
     return records
@@ -243,12 +245,13 @@ def main(argv: list[str] | None = None) -> int:
     merge.add_argument("--output", required=True)
 
     export = sub.add_parser("export-dashboard")
-    export.add_argument("--records", required=True, help="Canonical JSONL input")
+    export.add_argument("--records", required=True, help="Canonical JSONL or checkpoint CSV")
     export.add_argument("--output", required=True)
 
     args = parser.parse_args(argv)
     if args.command == "merge-codebooks":
         book = build_effective_ep24_codebook(public_path=args.public, private_path=args.private)
+        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
         Path(args.output).write_text(
             json.dumps(book.model_dump(mode="json"), ensure_ascii=False, indent=2), encoding="utf-8"
         )
