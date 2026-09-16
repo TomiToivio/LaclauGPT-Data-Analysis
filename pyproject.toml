@@ -19,6 +19,7 @@ dependencies = [
 laclaugpt-analysis-worker = "laclaugpt_data_analysis.distributed_worker:main"
 laclaugpt-reprocess = "laclaugpt_data_analysis.reprocessing:main"
 laclaugpt-ep24 = "laclaugpt_data_analysis.ep24_reprocessing:main"
+laclaugpt-summarize-period = "laclaugpt_data_analysis.periodic_summary:main"
 
 [project.optional-dependencies]
 analysis = [
