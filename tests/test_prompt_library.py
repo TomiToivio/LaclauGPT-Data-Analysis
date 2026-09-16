@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from importlib import resources
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,17 @@ def test_load_known_prompt_by_id_and_version() -> None:
     assert prompt.version == "v1"
     assert prompt.path == "laclau/system_v1.md"
     assert len(prompt.sha256) == 64
+
+
+def test_packaged_prompt_resource_is_available_through_importlib_resources() -> None:
+    prompt_path = (
+        resources.files("laclaugpt_data_analysis")
+        .joinpath("prompts")
+        .joinpath("laclau")
+        .joinpath("system_v1.md")
+    )
+    assert prompt_path.is_file()
+    assert "Evidence-first" in prompt_path.read_text(encoding="utf-8")
 
 
 def test_missing_prompt_version_fails_clearly() -> None:
