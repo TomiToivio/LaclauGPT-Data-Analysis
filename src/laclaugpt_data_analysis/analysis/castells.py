@@ -5,9 +5,10 @@ Measured graph properties stay separate from theoretical interpretation.
 from __future__ import annotations
 
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Iterable
+from typing import Any
 
 
 @dataclass(frozen=True)
