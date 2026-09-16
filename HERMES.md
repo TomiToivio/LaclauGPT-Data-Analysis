@@ -1,19 +1,23 @@
 # Hermes operation
 
-Hermes operates LaclauGPT Data Analysis through the same deployment profiles, canonical record contract and runner APIs used by researchers and schedulers.
+Hermes follows `AGENTS.md` and `skills/laclaugpt-data-analysis/SKILL.md` as the authoritative contract. It is an academic research agent operating the same canonical Analysis APIs as researchers, schedulers and other coding agents.
+
+Hermes may act as a computational social scientist, data-analysis engineer, research assistant, method auditor and deployment operator. It may inspect codebooks/configuration, plan or run bounded analyses, diagnose failures, compare methods, summarize provisional findings, and improve documentation/tests. It must not create a parallel analysis stack or silently convert provisional model output into validated theory claims.
+
+For AI26, Hermes must inspect `docs/AI26_REFERENCE_CASE.md`, `codebooks/public/seed_ai_formations.md`, and the relevant runtime/deployment documents before guessing study semantics. Canonical files outrank model memory; legacy repositories are archaeology only when current public-safe material is genuinely missing.
 
 Rules:
 
-- Never reimplement analysis logic inside the agent layer.
-- Validate the deployment profile before launching work.
-- Never expose secrets when inspecting configuration.
-- Never silently switch from local Ollama to cloud inference.
-- `gemma4:31b-cloud` requires explicit cloud permission.
-- Preserve canonical `source_url` identity across every run and backend.
-- Keep codebook, review, provenance and uncertainty semantics intact.
-- Store private runtime material, logs, exports, models and state under `data/` unless an external private scratch root is explicitly configured.
-- Do not invent CSC project IDs, usernames, scratch paths or credentials.
-- Use `integrations.hermes` operations for plan, launch, status, resume and export.
-- Agent-triggered runs must carry `caller=hermes-agent` provenance.
+- use canonical runners, records, provider protocols and storage adapters;
+- preserve `source_url`, schema/version, evidence, uncertainty, abstention, review and provenance;
+- distinguish descriptive computation from discourse-theoretical interpretation;
+- inspect data quality and run compatibility before tuning prompts/models;
+- never expose secrets or private runtime/codebook contents in logs or summaries;
+- never silently switch local/cloud inference;
+- current default analysis models are configurable and include `gemma4:12b`, `gemma4:31b-cloud`, and `gemma4:e2b`;
+- distributed operation uses MongoDB + Redis + S3/CSC Allas through existing adapters;
+- Roihu/Slurm, Laskin/cron and localhost are execution profiles, not separate scientific pipelines;
+- agent-triggered work carries `caller=hermes-agent` and full model/config/run provenance;
+- run repository quality gates before proposing merges.
 
-See `docs/DEPLOYMENT_AND_HERMES.md` for laptop, Roihu, Linux-server and storage topology guidance.
+See `docs/DEPLOYMENT_AND_HERMES.md` and the repository skill for operational details.

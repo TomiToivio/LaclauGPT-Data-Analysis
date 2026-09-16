@@ -1,58 +1,79 @@
 # LaclauGPT Data Analysis agent skill
 
-Use this skill when an agent operates the Analysis module.
+Use this skill when an agent operates the Analysis module. The agent is not only a coding assistant: it may act as a computational social scientist, data-analysis engineer, research assistant, method auditor, deployment operator, and documentation maintainer, while remaining inside Analysis boundaries.
+
+## First-read order
+
+Before guessing study settings or codebooks, inspect canonical repository material. For AI26 use:
+
+1. `docs/AI26_REFERENCE_CASE.md`
+2. `codebooks/public/seed_ai_formations.md` and explicitly referenced codebooks
+3. `docs/AI26_DISTRIBUTED_WORKER.md`, `docs/ANALYSIS_RUNTIME.md`, and deployment docs
+4. authorized ignored/private runtime copies when available
+5. legacy repositories only as archaeology for genuinely missing public-safe patterns
+
+Do not reconstruct authoritative settings from model memory when repository files exist.
 
 ## Scope
 
-This module owns canonical analysis over `CanonicalRecord`. Collection and Visualization are sibling modules. Do not reproduce their logic here.
+Analysis owns canonical enrichment of `CanonicalRecord`: NLP, embeddings, topic/statistical methods, multimodal evidence handling, LLM-assisted interpretation, context memory, codebooks, orchestration, validation, provenance, review semantics, and analysis exports. Collection, Visualization, Storage, Simulation, and umbrella project governance remain sibling responsibilities.
+
+## Research-assistant capabilities
+
+Agents may:
+
+- inspect and explain datasets, codebooks, pipeline stages, model runs and provenance;
+- run bounded analyses and compare methods/models;
+- investigate failed or surprising outputs;
+- create reproducible notebooks/scripts/tests where appropriate;
+- summarize provisional findings with explicit uncertainty;
+- review relevant literature or current methodology when method choices need evidence;
+- propose codebook/method changes without silently applying theoretical conclusions;
+- prepare deployment/run instructions for localhost, Roihu/Slurm, Laskin/cron and other supported environments.
+
+Computational outputs remain candidates/evidence. Topic clusters are not automatically discourses, embeddings are not equivalence relations, and model confidence is not theoretical confidence.
+
+## AI26 semantics
+
+AI26 is the realistic public reference case. Formation labels such as `accelerationism`, `doomerism`, `left-wing accelerationism`, `ai safety`, `ai critical`, and `anti-ai` are provisional sensitising/aggregation categories, not actor identities or keyword classifiers. Preserve overlap, uncertainty and abstention. Candidate signifiers and collection hints are context, not proof.
 
 ## Deployment dimensions
 
-Compose these independently:
+Compose independently:
 
 - machine: `laptop`, `roihu`, `linux-server`, `custom`
 - execution: `cli`, `slurm`, `cron`, `systemd`, `agent`, `custom`
 - storage: `local`, `distributed`, `custom`
-- LLM: `local-ollama`, `ollama-cloud`, `custom`
+- LLM/provider: local Ollama, explicitly configured cloud Ollama/provider, or custom
 
-Convenience profiles are in `deployment.py`. They are suggestions, not hostname inference.
+Machine/execution settings must not fork scientific semantics.
 
-## Storage
+## Storage and distributed operation
 
-Local means SQLite + CSV/JSONL/Pandas + local filesystem under private `data/`. Distributed means MongoDB for canonical records/queryable state, Redis for coordination/cache/worker messages, and S3-compatible storage such as CSC Allas for large objects. `source_url` remains canonical identity everywhere.
+Local operation uses SQLite + CSV/JSONL/Pandas + filesystem under private `data/`. Distributed operation uses MongoDB for durable canonical records/results, Redis for configuration/coordination/task/lease state, and S3-compatible storage such as CSC Allas for large artifacts. `source_url` remains canonical identity everywhere.
 
-## Ollama
+Redis is infrastructure, not the scientific schema. Large blobs belong in object storage with references/checksums in canonical provenance.
 
-Supported example tags include `gemma4:e2b`, `gemma4:e4b`, `gemma4:12b`, `gemma4:26b`, `gemma4:31b`, and explicit cloud-only `gemma4:31b-cloud`. Never silently fall back to cloud. Cloud use requires explicit permission and must be represented in provenance.
+## Models
 
-## Operations
+Use the provider abstraction, not direct Ollama calls from scientific modules. Current default analysis model family includes `gemma4:12b`, `gemma4:31b-cloud`, and `gemma4:e2b`. Never silently fall back between local and cloud. Record actual model/provider/prompt/config versions in provenance.
 
-Use `laclaugpt_data_analysis.integrations.hermes` to:
+## Hermes / agent operations
 
-1. inspect redacted effective deployment configuration;
-2. validate capabilities/profile constraints;
-3. explicitly discover Ollama models when requested;
-4. dry-run/plan through the canonical runner;
-5. launch analysis through the canonical runner;
-6. inspect or resume runs;
-7. export canonical results under `data/`;
-8. stamp `hermes-agent` provenance.
+Use `laclaugpt_data_analysis.integrations.hermes` and canonical runners to inspect redacted configuration, validate profiles, plan/dry-run, launch bounded analysis, inspect/resume runs, export canonical results, and stamp agent provenance. Agents must not bypass codebooks, validation, review, uncertainty, privacy or provenance controls.
 
-Never bypass codebooks, canonical validation, review state, uncertainty, provenance or privacy checks.
+## Scientific and data-quality checks
 
-## Agent-controlled pipeline
-
-A normal same-host flow is:
-
-```text
-Collection/data -> configured Analysis collection_data_dir
-                -> canonical Analysis runner
-                -> Analysis/data exports
-                -> configured Visualization input
-```
-
-Across machines, move canonical records through MongoDB or CSV/JSONL and referenced objects through S3/Allas. Redis coordinates work but does not carry a competing schema.
+Before interpreting results, check data grain, missingness, duplicate identities, stale/incompatible run configuration, schema versions, source revisions, model failures, and evidence availability. Prefer diagnosing data or pipeline defects before prompt-tuning around them.
 
 ## Privacy
 
-Real corpora, target lists, codebooks, researcher annotations, credentials, machine paths, CSC project identifiers and run state stay outside Git. Public SLURM/systemd/cron material uses placeholders only.
+Real corpora, private source lists, corpus-derived codebooks, researcher annotations, credentials, machine paths, CSC project identifiers and run state stay outside Git. Public Slurm/cron/systemd material uses placeholders. Tests use synthetic data and fake providers.
+
+## Handoff
+
+Same-host flow may read Collection's configured `data/` tree directly. Distributed flow uses canonical MongoDB records, Redis coordination and S3/Allas references. Visualization consumes canonical analysis results, not Analysis implementation internals.
+
+## Quality standard
+
+Keep changes typed, reproducible, evidence-aware and reviewable. Add synthetic tests for behavior changes. Run configured public-tree, lint, type and test gates before proposing a merge, and report unresolved failures explicitly.
