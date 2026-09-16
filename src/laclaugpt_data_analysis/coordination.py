@@ -344,6 +344,30 @@ class InMemoryMessageBus:
         self.pending.pop(message_id, None)
 
 
+@dataclass(frozen=True, slots=True)
+class WorkerCapability:
+    worker_id: str
+    module: str = "analysis"
+    machine: str = "unknown"
+    platform: str = "unknown"
+    gpu: str = "none"
+    memory_gb: int = 0
+    models: tuple[str, ...] = ()
+    plugins: tuple[str, ...] = ()
+
+    def to_metadata(self) -> dict[str, str]:
+        return {
+            "worker_id": self.worker_id,
+            "module": self.module,
+            "machine": self.machine,
+            "platform": self.platform,
+            "gpu": self.gpu,
+            "memory_gb": str(self.memory_gb),
+            "models": ",".join(self.models),
+            "plugins": ",".join(self.plugins),
+        }
+
+
 def config_store_from_settings(settings: Any) -> ConfigStore:
     """Use Redis when configured; otherwise retain durable local-only semantics."""
     snapshots = FileConfigStore(settings.data_path("config", "snapshots"), project_id=settings.project_id)
@@ -353,4 +377,16 @@ def config_store_from_settings(settings: Any) -> ConfigStore:
         settings.redis_url,
         namespace=settings.distributed_namespace,
         snapshots=snapshots,
+    )
+
+
+def message_bus_from_settings(settings: Any, *, service: str, consumer: str) -> MessageBus:
+    """Create a reliable Redis bus when configured, otherwise an offline local bus."""
+    if not settings.redis_url:
+        return InMemoryMessageBus()
+    return RedisMessageBus(
+        settings.redis_url,
+        namespace=settings.distributed_namespace,
+        service=service,
+        consumer=consumer,
     )
