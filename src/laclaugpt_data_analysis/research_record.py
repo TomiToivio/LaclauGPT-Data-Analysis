@@ -108,6 +108,16 @@ def _semicolon(values: list[str]) -> str:
     return "; ".join(value for value in values if value)
 
 
+def _relations(values: list[Any]) -> str:
+    return _semicolon(
+        [f"{item.source_ref} -[{item.relation_type}]-> {item.target_ref}" for item in values]
+    )
+
+
+def _chains(values: list[Any]) -> str:
+    return _semicolon([" ≡ ".join(item.member_refs) for item in values if item.member_refs])
+
+
 def _first_native(record: CanonicalRecord, *names: str) -> str:
     for name in names:
         value = record.source_native_ids.get(name)
@@ -178,7 +188,7 @@ def legacy_projection(record: CanonicalRecord) -> dict[str, Any]:
         "political_preference": str(record.source.raw_metadata.get("political_preference") or ""),
         "manifestoberta_predicted_class": classifications.get("manifestoberta", ""),
         "new_entity": _semicolon(entities),
-        "new_theme": _semicolon(topics),
+        "new_theme": _semicolon(_labels(record.analysis.themes) or topics),
         "new_id": new_id,
         "old_id": _first_native(record, "old_id"),
         "raw_ref": record.raw_capture.ref or record.source.raw_ref or "",
@@ -192,8 +202,6 @@ def legacy_projection(record: CanonicalRecord) -> dict[str, Any]:
         derived[f"ocr_{index}"] = ocr_values[index - 1] if index <= len(ocr_values) else ""
         derived[f"frame_{index}"] = frame_values[index - 1] if index <= len(frame_values) else ""
 
-    # Canonical values win when present, but imported historical values survive when the
-    # newer pipeline has no equivalent result yet.
     for key, value in derived.items():
         if value not in (None, "", [], {}):
             legacy[key] = value
@@ -205,7 +213,6 @@ def legacy_projection(record: CanonicalRecord) -> dict[str, Any]:
 
 
 def _stable_generated_at(record: CanonicalRecord) -> str | None:
-    """Choose a research-event timestamp without changing on serialization/export."""
     if record.human_readable.generated_at:
         return record.human_readable.generated_at
     if record.analysis.completed_at:
@@ -221,7 +228,9 @@ def render_human_readable(record: CanonicalRecord) -> HumanReadableSection:
     """Render a deterministic researcher report containing all analysis categories."""
     sync_intermediate_from_content(record)
     transcript = "\n\n".join(item.text for item in record.content.transcripts if item.text)
-    ocr = "\n".join(str(item.get("text") or "") for item in record.intermediate.ocr if item.get("text"))
+    ocr = "\n".join(
+        str(item.get("text") or "") for item in record.intermediate.ocr if item.get("text")
+    )
     frames = "\n".join(
         f"- {item.get('id', 'frame')}: {item.get('description') or item.get('text') or ''}"
         for item in record.intermediate.frame_analysis
@@ -245,16 +254,24 @@ def render_human_readable(record: CanonicalRecord) -> HumanReadableSection:
         "analysis_summary": record.analysis.summary or "",
         "entities": _semicolon(_labels(record.analysis.entities)),
         "topics": _semicolon(_labels(record.analysis.topics)),
+        "themes": _semicolon(_labels(record.analysis.themes)),
         "formations": _semicolon(_labels(record.analysis.formations)),
         "signifiers": _semicolon(_labels(record.analysis.signifiers)),
         "nodal_points": _semicolon(_labels(record.analysis.nodal_points)),
+        "floating_signifiers": _semicolon(_labels(record.analysis.floating_signifiers)),
+        "empty_signifier_candidates": _semicolon(_labels(record.analysis.empty_signifier_candidates)),
         "discourses": _semicolon(_labels(record.analysis.discourses)),
         "imaginaries": _semicolon(_labels(record.analysis.imaginaries)),
+        "equivalence_chains": _chains(record.analysis.equivalence_chains),
+        "difference_chains": _chains(record.analysis.difference_chains),
+        "antagonisms": _relations(record.analysis.antagonisms),
+        "actor_entity_relations": _relations(record.analysis.actor_entity_relations),
         "us": _semicolon(_labels(record.analysis.us)),
         "them": _semicolon(_labels(record.analysis.them)),
         "frontier": _semicolon(_labels(record.analysis.frontier)),
         "affects": _semicolon(_labels(record.analysis.affects)),
         "sentiments": _semicolon(_labels(record.analysis.sentiments)),
+        "stances": _semicolon(_labels(record.analysis.stances)),
         "uncertainty": _semicolon(record.analysis.uncertainty),
         "abstentions": _semicolon(record.analysis.abstentions),
     }
@@ -268,18 +285,25 @@ def render_human_readable(record: CanonicalRecord) -> HumanReadableSection:
         f"## OCR\n{ocr or 'n/a'}\n\n"
         f"## Frame / multimodal analysis\n{frames or 'n/a'}\n\n"
         f"## Analysis summary\n{sections['analysis_summary'] or 'n/a'}\n\n"
-        f"## Entities\n{sections['entities'] or 'n/a'}\n\n"
-        f"## Topics\n{sections['topics'] or 'n/a'}\n\n"
-        f"## Formations / signifiers / discourses\n"
-        f"Formations: {sections['formations'] or 'n/a'}\n\n"
+        f"## Entities, topics and themes\nEntities: {sections['entities'] or 'n/a'}\n\n"
+        f"Topics: {sections['topics'] or 'n/a'}\n\nThemes: {sections['themes'] or 'n/a'}\n\n"
+        f"## Sentiment and stance\nSentiment: {sections['sentiments'] or 'n/a'}\n\n"
+        f"Stance: {sections['stances'] or 'n/a'}\n\n"
+        f"## Signifiers and formations\nFormations: {sections['formations'] or 'n/a'}\n\n"
         f"Signifiers: {sections['signifiers'] or 'n/a'}\n\n"
         f"Nodal points: {sections['nodal_points'] or 'n/a'}\n\n"
+        f"Floating signifiers: {sections['floating_signifiers'] or 'n/a'}\n\n"
+        f"Empty-signifier candidates: {sections['empty_signifier_candidates'] or 'n/a'}\n\n"
         f"Discourses: {sections['discourses'] or 'n/a'}\n\n"
         f"Imaginaries: {sections['imaginaries'] or 'n/a'}\n\n"
-        f"## Us / them / frontier / affects\n"
-        f"Us: {sections['us'] or 'n/a'}\n\nThem: {sections['them'] or 'n/a'}\n\n"
-        f"Frontier: {sections['frontier'] or 'n/a'}\n\nAffects: {sections['affects'] or 'n/a'}\n\n"
-        f"## Sentiment\n{sections['sentiments'] or 'n/a'}\n\n"
+        f"## Relational discourse structure\nEquivalence chains: {sections['equivalence_chains'] or 'n/a'}\n\n"
+        f"Difference chains: {sections['difference_chains'] or 'n/a'}\n\n"
+        f"Antagonisms: {sections['antagonisms'] or 'n/a'}\n\n"
+        f"Actor/entity relations: {sections['actor_entity_relations'] or 'n/a'}\n\n"
+        f"## Us / them / frontier / affects\nUs: {sections['us'] or 'n/a'}\n\n"
+        f"Them: {sections['them'] or 'n/a'}\n\n"
+        f"Frontier: {sections['frontier'] or 'n/a'}\n\n"
+        f"Affects: {sections['affects'] or 'n/a'}\n\n"
         f"## Uncertainty / abstentions\nUncertainty: {sections['uncertainty'] or 'n/a'}\n\n"
         f"Abstentions: {sections['abstentions'] or 'n/a'}\n\n"
         "## Complete structured analysis\n```json\n"
@@ -299,7 +323,6 @@ def ensure_research_layers(record: CanonicalRecord) -> CanonicalRecord:
     sync_intermediate_from_content(record)
     record.human_readable = render_human_readable(record)
     record.legacy = legacy_projection(record)
-    # refresh legacy human-readable aliases after assigning the freshly rendered report
     record.legacy["human_readable_summary"] = record.human_readable.summary
     record.legacy["human_readable_markdown"] = record.human_readable.markdown
     return record

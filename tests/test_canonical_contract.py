@@ -222,9 +222,19 @@ def test_schema_version_transition_is_explicit() -> None:
     payload.pop("intermediate")
     payload.pop("human_readable")
     migrated = normalize_schema_version(payload)
-    assert migrated.schema_version == "1.1.0"
+    assert migrated.schema_version == "1.2.0"
     assert "intermediate" in migrated.canonical_dict()
     assert "human_readable" in migrated.canonical_dict()
+
+
+def test_schema_1_1_records_upgrade_additively() -> None:
+    payload = sample_record().canonical_dict()
+    payload["schema_version"] = "1.1.0"
+    migrated = normalize_schema_version(payload)
+    assert migrated.schema_version == "1.2.0"
+    assert migrated.analysis.floating_signifiers == []
+    assert migrated.analysis.equivalence_chains == []
+    assert migrated.analysis.stances == []
 
 
 def test_unknown_schema_version_is_rejected() -> None:
