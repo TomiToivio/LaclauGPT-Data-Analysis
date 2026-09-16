@@ -190,6 +190,14 @@ class RedisCache:
 
 
 def record_store(settings: Settings, name: str = "analysis") -> RecordStore:
+    """Create a storage adapter for a named pipeline state.
+
+    Local backends use the name as a file/table stem. Distributed MongoDB uses
+    explicit project-scoped collections. ``raw`` is normally written by Data
+    Collection, ``processing`` by Data Analysis while work is in flight, and
+    ``analyzed`` is the visualization-ready handoff. Legacy ``analysis`` maps to
+    ``annotations`` for backwards compatibility.
+    """
     if settings.data_backend == "csv":
         return CsvStore(settings.data_dir / f"{name}.csv")
     if settings.data_backend == "sqlite":
@@ -198,7 +206,8 @@ def record_store(settings: Settings, name: str = "analysis") -> RecordStore:
     if settings.data_backend == "mongodb":
         if not settings.mongo_url:
             raise ValueError("LACLAUGPT_MONGO_URL is required for data_backend=mongodb")
-        collection = settings.distributed_namespace.mongo_collection("annotations")
+        kind = {"analysis": "annotations"}.get(name, name)
+        collection = settings.distributed_namespace.mongo_collection(kind)
         return MongoStore(
             settings.mongo_url,
             settings.mongo_database,

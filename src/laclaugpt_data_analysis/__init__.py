@@ -15,7 +15,9 @@ from .canonical import (
     ReviewSection,
     SourceSection,
 )
+from .canonical_pipeline import PipelineContext, run_canonical_pipeline
 from .config import Settings, load_settings
+from .context_envelope import PromptEnvelope, build_prompt_envelope
 from .models import (
     ClassificationResult,
     EmbeddingResult,
@@ -27,17 +29,21 @@ from .models import (
     TopicAssignment,
     TopicModelResult,
 )
+from .reporting import DailyReport, build_daily_report
 
 __all__ = [
     "AnalysisSection",
     "CanonicalRecord",
     "ClassificationResult",
     "ContentSection",
+    "DailyReport",
     "DiscourseObject",
     "EmbeddingResult",
     "EntityMention",
     "Evidence",
     "NlpDocument",
+    "PipelineContext",
+    "PromptEnvelope",
     "Provenance",
     "Representation",
     "ReviewSection",
@@ -47,5 +53,8 @@ __all__ = [
     "Topic",
     "TopicAssignment",
     "TopicModelResult",
+    "build_daily_report",
+    "build_prompt_envelope",
     "load_settings",
+    "run_canonical_pipeline",
 ]
