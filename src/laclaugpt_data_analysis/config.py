@@ -31,6 +31,13 @@ def _int_env(name: str, default: int) -> int:
     return int(raw) if raw not in (None, "") else default
 
 
+def _csv_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
+    raw = _env(name)
+    if raw in (None, ""):
+        return default
+    return tuple(value.strip() for value in raw.split(",") if value.strip())
+
+
 @dataclass(frozen=True)
 class Settings:
     project_id: str = "default"
@@ -76,6 +83,14 @@ class Settings:
     neo4j_vector_index: str = "laclaugpt_record_embedding"
     embedding_model: str = ""
     embedding_endpoint: str = ""
+
+    periodic_summary_enabled: bool = False
+    periodic_summary_interval_hours: int = 24
+    periodic_summary_history_context: int = 7
+    periodic_summary_use_latest_as_context: bool = True
+    periodic_summary_scopes: tuple[str, ...] = (
+        "overall", "formation", "signifier", "source", "author"
+    )
 
     luhmann_enabled: bool = False
     luhmann_codebook: Path = Path("codebooks/public/luhmann_social_systems_v1.yaml")
@@ -144,6 +159,14 @@ def load_settings() -> Settings:
         neo4j_vector_index=_env("NEO4J_VECTOR_INDEX", "laclaugpt_record_embedding") or "laclaugpt_record_embedding",
         embedding_model=_env("EMBEDDING_MODEL", "") or "",
         embedding_endpoint=_env("EMBEDDING_ENDPOINT", "") or "",
+        periodic_summary_enabled=_bool_env("PERIODIC_SUMMARY_ENABLED", False),
+        periodic_summary_interval_hours=_int_env("PERIODIC_SUMMARY_INTERVAL_HOURS", 24),
+        periodic_summary_history_context=_int_env("PERIODIC_SUMMARY_HISTORY_CONTEXT", 7),
+        periodic_summary_use_latest_as_context=_bool_env("PERIODIC_SUMMARY_USE_LATEST_AS_CONTEXT", True),
+        periodic_summary_scopes=_csv_env(
+            "PERIODIC_SUMMARY_SCOPES",
+            ("overall", "formation", "signifier", "source", "author"),
+        ),
         luhmann_enabled=_bool_env("LUHMANN_ENABLED", False),
         luhmann_codebook=Path(_env("LUHMANN_CODEBOOK", "codebooks/public/luhmann_social_systems_v1.yaml") or "codebooks/public/luhmann_social_systems_v1.yaml"),
         castells_enabled=_bool_env("CASTELLS_ENABLED", False),
@@ -163,6 +186,12 @@ def load_settings() -> Settings:
         errors.append("vector/hybrid RAG requires LACLAUGPT_EMBEDDING_MODEL")
     if settings.storage_backend.casefold() == "mongodb" and not settings.mongo_url:
         errors.append("storage_backend=mongodb requires LACLAUGPT_MONGODB_URI or LACLAUGPT_MONGO_URL")
+    if settings.periodic_summary_interval_hours < 1:
+        errors.append("periodic summary interval hours must be >= 1")
+    if settings.periodic_summary_history_context < 0:
+        errors.append("periodic summary history context must be >= 0")
+    if not settings.periodic_summary_scopes:
+        errors.append("periodic summary scopes must not be empty")
     if errors:
         raise ValueError("invalid deployment configuration: " + "; ".join(errors))
     settings.ensure_local_directories()
