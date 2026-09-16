@@ -52,7 +52,7 @@ class TaskEnvelope:
         return {key: str(value) for key, value in values.items()}
 
     @classmethod
-    def from_fields(cls, fields: Mapping[str, Any]) -> "TaskEnvelope":
+    def from_fields(cls, fields: Mapping[str, Any]) -> TaskEnvelope:
         task = cls(
             task_id=str(fields["task_id"]),
             idempotency_key=str(fields["idempotency_key"]),
@@ -277,7 +277,6 @@ class RedisStreamQueue:
             import redis
         except ImportError as exc:
             raise RuntimeError("Redis task support requires: pip install '.[remote]'") from exc
-        self._redis = redis
         self.client = redis.Redis.from_url(url, decode_responses=True)
         self.stream = stream
         self.group = group
@@ -407,8 +406,6 @@ class TaskWorker:
 
         try:
             result = self.handler(task)
-            # Durable uniqueness is the idempotency gate. Queue acknowledgement
-            # only happens after the durable write returns.
             self.durable_store.write_result(task.idempotency_key, result, self.provenance)
             self.queue.ack(claimed.message_id)
             return "completed"
