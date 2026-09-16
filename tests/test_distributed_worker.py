@@ -8,19 +8,20 @@ from laclaugpt_data_analysis.canonical import SCHEMA_VERSION
 from laclaugpt_data_analysis.config import Settings
 from laclaugpt_data_analysis.distributed_worker import (
     AI26_MODEL,
+    AI26TaskWorker,
     FrozenRunManifest,
     WorkerBinding,
     collection_records_name,
     enforce_local_model,
 )
-from laclaugpt_data_analysis.task_queue import TaskEnvelope
+from laclaugpt_data_analysis.task_queue import InMemoryTaskQueue, SqliteTaskStore, TaskEnvelope
 
 
 def sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def make_binding(tmp_path: Path) -> WorkerBinding:
+def make_binding(tmp_path: Path, *, public_git_sha: str = "abc123") -> WorkerBinding:
     private = tmp_path / "private"
     private.mkdir()
     config = private / "ai26.json"
@@ -30,7 +31,7 @@ def make_binding(tmp_path: Path) -> WorkerBinding:
         '{"codebook_id":"ai26-test","version":"1","title":"Synthetic","entries":[]}',
         encoding="utf-8",
     )
-    manifest = tmp_path / "run.json"
+    manifest = private / "run.json"
     manifest.write_text(
         json.dumps(
             {
@@ -40,7 +41,7 @@ def make_binding(tmp_path: Path) -> WorkerBinding:
                 "config_sha256": sha(config),
                 "codebook_sha256": sha(codebook),
                 "model": AI26_MODEL,
-                "public_git_sha": "abc123",
+                "public_git_sha": public_git_sha,
             }
         ),
         encoding="utf-8",
@@ -61,7 +62,7 @@ def test_private_runtime_files_must_be_inside_private_root(tmp_path: Path) -> No
     outside.write_text("{}", encoding="utf-8")
     codebook = private / "codebook.json"
     codebook.write_text("{}", encoding="utf-8")
-    manifest = tmp_path / "run.json"
+    manifest = private / "run.json"
     manifest.write_text("{}", encoding="utf-8")
 
     with pytest.raises(ValueError, match="inside"):
@@ -73,12 +74,45 @@ def test_private_runtime_files_must_be_inside_private_root(tmp_path: Path) -> No
         )
 
 
+def test_run_manifest_must_also_be_inside_private_root(tmp_path: Path) -> None:
+    private = tmp_path / "private"
+    private.mkdir()
+    config = private / "ai26.json"
+    codebook = private / "codebook.json"
+    outside_manifest = tmp_path / "run.json"
+    config.write_text("{}", encoding="utf-8")
+    codebook.write_text("{}", encoding="utf-8")
+    outside_manifest.write_text("{}", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="inside"):
+        WorkerBinding.build(
+            manifest_path=outside_manifest,
+            private_root=private,
+            private_config=config,
+            codebook=codebook,
+        )
+
+
 def test_manifest_hashes_and_schema_are_frozen(tmp_path: Path) -> None:
     binding = make_binding(tmp_path)
     binding.private_config.write_text('{"arena":"changed"}', encoding="utf-8")
 
     with pytest.raises(ValueError, match="config hash"):
         binding.validate_files()
+
+
+def test_runtime_git_sha_must_match_frozen_manifest(tmp_path: Path, monkeypatch) -> None:
+    binding = make_binding(tmp_path, public_git_sha="frozen-sha")
+    monkeypatch.setenv("LACLAUGPT_PUBLIC_GIT_SHA", "different-sha")
+
+    with pytest.raises(ValueError, match="public Git SHA"):
+        binding.validate_runtime_code()
+
+
+def test_runtime_git_sha_accepts_explicit_matching_revision(tmp_path: Path, monkeypatch) -> None:
+    binding = make_binding(tmp_path, public_git_sha="frozen-sha")
+    monkeypatch.setenv("LACLAUGPT_PUBLIC_GIT_SHA", "frozen-sha")
+    binding.validate_runtime_code()
 
 
 def test_task_revisions_must_match_frozen_manifest(tmp_path: Path) -> None:
@@ -180,3 +214,70 @@ def test_cloud_mode_is_rejected(monkeypatch) -> None:
 
     with pytest.raises(ValueError, match="forbids cloud"):
         enforce_local_model(manifest)
+
+
+def test_ai26_retry_requeues_with_incremented_attempt(tmp_path: Path) -> None:
+    queue = InMemoryTaskQueue()
+    store = SqliteTaskStore(tmp_path / "tasks.sqlite3")
+    calls = 0
+
+    def flaky(task: TaskEnvelope):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("temporary")
+        return {"task_id": task.task_id, "attempt": task.attempt}
+
+    task = TaskEnvelope(
+        task_id="task-1",
+        idempotency_key="id-1",
+        project_id="ai26",
+        run_id="run-001",
+        task_type="analyze-record",
+        record_ref="https://example.invalid/source/1",
+        schema_version=SCHEMA_VERSION,
+        config_revision="cfg",
+        codebook_revision="cb",
+    )
+    queue.publish(task)
+    worker = AI26TaskWorker(queue, store, flaky, "worker-1", {}, max_attempts=3)
+
+    assert worker.run_once() == "retry"
+    assert not queue.pending
+    assert len(queue.ready) == 1
+    assert queue.ready[0].task.attempt == 2
+    assert worker.run_once() == "completed"
+    assert store.has_result("id-1")
+
+
+def test_ai26_retry_reaches_dead_letter_instead_of_looping_forever(tmp_path: Path) -> None:
+    queue = InMemoryTaskQueue()
+    store = SqliteTaskStore(tmp_path / "tasks.sqlite3")
+    task = TaskEnvelope(
+        task_id="task-1",
+        idempotency_key="id-1",
+        project_id="ai26",
+        run_id="run-001",
+        task_type="analyze-record",
+        record_ref="https://example.invalid/source/1",
+        schema_version=SCHEMA_VERSION,
+        config_revision="cfg",
+        codebook_revision="cb",
+    )
+    queue.publish(task)
+    worker = AI26TaskWorker(
+        queue,
+        store,
+        lambda _: (_ for _ in ()).throw(RuntimeError("still broken")),
+        "worker-1",
+        {},
+        max_attempts=3,
+    )
+
+    assert worker.run_once() == "retry"
+    assert worker.run_once() == "retry"
+    assert worker.run_once() == "dead-letter"
+    assert len(queue.dead) == 1
+    assert queue.dead[0][0].attempt == 3
+    assert not queue.pending
+    assert not queue.ready

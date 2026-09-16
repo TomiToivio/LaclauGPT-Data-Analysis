@@ -11,7 +11,8 @@ import hashlib
 import json
 import os
 import socket
-from dataclasses import dataclass
+import subprocess
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -29,6 +30,7 @@ from .task_queue import (
 )
 
 AI26_MODEL = "gemma4:12b"
+AI26_NOT_BEFORE = "2026-09-01T00:00:00+00:00"
 
 
 def _sha256(path: Path) -> str:
@@ -49,6 +51,30 @@ def _inside(root: Path, path: Path) -> Path:
     if not resolved.is_file():
         raise ValueError(f"private runtime file does not exist: {resolved}")
     return resolved
+
+
+def _runtime_public_git_sha() -> str:
+    """Resolve the checked-out public code revision without leaking repository data."""
+    explicit = os.environ.get("LACLAUGPT_PUBLIC_GIT_SHA", "").strip()
+    if explicit:
+        return explicit
+    repo_root = Path(__file__).resolve().parents[2]
+    try:
+        completed = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=repo_root,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise ValueError(
+            "cannot determine public Git SHA; set LACLAUGPT_PUBLIC_GIT_SHA explicitly"
+        ) from exc
+    sha = completed.stdout.strip()
+    if not sha:
+        raise ValueError("cannot determine public Git SHA")
+    return sha
 
 
 def collection_records_name(settings: Settings) -> str:
@@ -75,6 +101,7 @@ class FrozenRunManifest:
 @dataclass(frozen=True, slots=True)
 class WorkerBinding:
     manifest: FrozenRunManifest
+    manifest_path: Path
     private_config: Path
     codebook: Path
     worker_id: str
@@ -92,11 +119,13 @@ class WorkerBinding:
         root = Path(private_root)
         if not root.exists() or not root.is_dir():
             raise ValueError("LACLAUGPT_PRIVATE_CONFIG_DIR must name an existing directory")
+        manifest_file = _inside(root, Path(manifest_path))
         config_path = _inside(root, Path(private_config))
         codebook_path = _inside(root, Path(codebook))
-        manifest = FrozenRunManifest.load(manifest_path)
+        manifest = FrozenRunManifest.load(manifest_file)
         binding = cls(
             manifest=manifest,
+            manifest_path=manifest_file,
             private_config=config_path,
             codebook=codebook_path,
             worker_id=worker_id or f"{socket.gethostname()}-{os.getpid()}",
@@ -118,6 +147,14 @@ class WorkerBinding:
             raise ValueError("private config hash does not match frozen run manifest")
         if _sha256(self.codebook) != manifest.codebook_sha256:
             raise ValueError("codebook hash does not match frozen run manifest")
+
+    def validate_runtime_code(self) -> None:
+        runtime_sha = _runtime_public_git_sha()
+        if runtime_sha != self.manifest.public_git_sha:
+            raise ValueError(
+                "public Git SHA does not match frozen run manifest: "
+                f"manifest={self.manifest.public_git_sha} runtime={runtime_sha}"
+            )
 
     def validate_task(self, task: TaskEnvelope) -> None:
         manifest = self.manifest
@@ -210,8 +247,6 @@ class MongoCollectionHandoff:
         row = self.collection.find_one({"project_id": self.project_id, "source_url": source_url})
         if row is None:
             raise KeyError(f"canonical source not found: {source_url}")
-        # Collection persists the canonical record at the top level, adding only
-        # backend routing + handoff fields. Filter those away using Analysis' schema.
         clean = {key: value for key, value in row.items() if key in CanonicalRecord.model_fields}
         return CanonicalRecord.model_validate(clean)
 
@@ -223,6 +258,7 @@ class MongoCollectionHandoff:
                 "project_id": self.project_id,
                 "handoff.status": "ready",
                 "handoff.run_id": run_id,
+                "handoff.published_at": {"$gte": AI26_NOT_BEFORE},
             },
             {"handoff": 1, "_id": 0},
         ).sort(
@@ -264,6 +300,50 @@ class AI26Handler:
         return analyzed.model_dump(mode="json")
 
 
+class AI26TaskWorker(TaskWorker):
+    """Task worker with explicit retry requeue so attempt counters actually advance."""
+
+    def run_once(self, *, reclaim_idle_ms: int | None = None) -> str:
+        claimed = None
+        if reclaim_idle_ms is not None:
+            claimed = self.queue.reclaim(min_idle_ms=reclaim_idle_ms)
+        if claimed is None:
+            claimed = self.queue.claim()
+        if claimed is None:
+            return "idle"
+
+        task = claimed.task
+        if self.validator is not None:
+            self.validator(task)
+
+        if self.durable_store.has_result(task.idempotency_key):
+            self.queue.ack(claimed.message_id)
+            return "duplicate"
+
+        try:
+            result = self.handler(task)
+            inserted = self.durable_store.write_result(
+                task.idempotency_key,
+                result,
+                self.provenance,
+            )
+            self.queue.ack(claimed.message_id)
+            return "completed" if inserted else "duplicate"
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
+            self.durable_store.write_failure(task, error, self.provenance)
+            if task.attempt >= self.max_attempts:
+                self.queue.dead_letter(task, error)
+                self.queue.ack(claimed.message_id)
+                return "dead-letter"
+
+            retry_task = replace(task, attempt=task.attempt + 1)
+            retry_task.validate()
+            self.queue.publish(retry_task)
+            self.queue.ack(claimed.message_id)
+            return "retry"
+
+
 def seed_ready_tasks(
     binding: WorkerBinding,
     handoff: MongoCollectionHandoff,
@@ -280,6 +360,7 @@ def seed_ready_tasks(
 
 
 def build_worker(binding: WorkerBinding, settings: Settings) -> tuple[TaskWorker, MongoCollectionHandoff]:
+    binding.validate_runtime_code()
     enforce_local_model(binding.manifest)
     if settings.project_id != binding.manifest.project_id:
         raise ValueError("settings project_id does not match frozen run manifest")
@@ -290,7 +371,7 @@ def build_worker(binding: WorkerBinding, settings: Settings) -> tuple[TaskWorker
     )
     durable = durable_store_from_settings(settings, run_id=binding.manifest.run_id)
     handoff = MongoCollectionHandoff(settings)
-    worker = TaskWorker(
+    worker = AI26TaskWorker(
         queue=queue,
         durable_store=durable,
         handler=AI26Handler(binding, settings, handoff),
