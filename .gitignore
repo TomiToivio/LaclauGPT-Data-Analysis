@@ -28,6 +28,7 @@ cache/
 *.sqlite3
 *.db
 *.db-journal
+*.dna
 *.csv
 *.tsv
 *.parquet
