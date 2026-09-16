@@ -8,4 +8,6 @@ Before changing AI26 behavior, read `docs/AI26_REFERENCE_CASE.md`, `codebooks/pu
 
 Keep scientific and infrastructure concerns separated: one analysis pipeline should run under localhost, Roihu/Slurm, Laskin/cron or agent execution with the same canonical record/result semantics. Use existing MongoDB, Redis and S3/CSC Allas adapters for distributed work. Preserve `source_url`, evidence, uncertainty, review and provenance.
 
+Before editing LLM scientific instructions, read `docs/PROMPT_LIBRARY.md` and the versioned files under `src/laclaugpt_data_analysis/prompts/`. Reuse canonical prompt IDs/versions instead of inventing or reconstructing prompts in Python. Any prompt wording/format change that may alter model behavior gets a new version and must retain exact resource/rendered hashes in provenance.
+
 Do not hard-code provider calls into scientific modules, expose secrets, invent CSC/runtime values, commit private corpora/codebooks, or silently change model/provider semantics. Add synthetic tests and run configured lint/type/test/public-tree gates before proposing a merge.
