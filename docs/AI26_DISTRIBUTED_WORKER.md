@@ -45,6 +45,12 @@ Create a private JSON manifest for the bounded run with this shape:
 
 Workers fail closed if the project, run, schema, model, config hash or codebook hash does not match. The manifest, private config and codebook should live in the private runtime/config location rather than this repository.
 
+## Collection -> Analysis handoff
+
+Collection persists canonical records at the top level of the project-scoped `<project>__records` MongoDB collection and adds a `handoff` envelope. Analysis reads only records with `handoff.status=ready` and the same frozen run ID. `--seed-ready` mirrors a bounded set of those durable handoffs into the Analysis Redis task stream. Redis receives only `source_url`, handoff/idempotency identity and frozen revisions, not the research payload.
+
+The worker orders the bounded seed by Collection's handoff priority, newest publication time and stable source identity. The Collection `handoff_key`, which incorporates source revision, becomes the Analysis idempotency key.
+
 ## Linux server
 
 Install the package with the remote and Ollama extras, export the runtime variables above, and run a bounded worker:
@@ -62,10 +68,11 @@ laclaugpt-analysis-worker \
   --run-manifest "$LACLAUGPT_PRIVATE_CONFIG_DIR/run-manifest.json" \
   --private-config "$LACLAUGPT_PRIVATE_CONFIG_DIR/analysis.json" \
   --codebook "$LACLAUGPT_PRIVATE_CONFIG_DIR/codebook.json" \
+  --seed-ready \
   --max-tasks 25
 ```
 
-The process is suitable for a service/cron wrapper. Keep secrets in the host's private environment file or secret store, not in a tracked service unit.
+The process is suitable for a service/cron wrapper. Keep secrets in the host's private environment file or secret store, not in a tracked service unit. In a multi-worker run, normally only one bounded launcher needs to use `--seed-ready`; additional workers can consume the shared task stream without reseeding.
 
 ## CSC Roihu
 
@@ -75,7 +82,7 @@ Each machine uses its own `OLLAMA_HOST`; there is no requirement for Roihu and t
 
 ## Task and result semantics
 
-A Redis task contains references and frozen revisions, not full research payloads. The worker resolves the canonical record from MongoDB by stable `source_url`, validates the task against the run manifest, and calls `run_canonical_pipeline(..., project_profile="ai26")`.
+A Redis task contains references and frozen revisions, not full research payloads. The worker resolves the canonical record from Collection's MongoDB `records` collection by stable `source_url`, validates the task against the run manifest, and calls `run_canonical_pipeline(..., project_profile="ai26")`.
 
 The durable result is keyed by `(project_id, run_id, idempotency_key)` in MongoDB. Queue acknowledgement happens only after the durable write, so a killed worker can leave a pending task that another worker later reclaims without creating a second durable result.
 
@@ -83,4 +90,4 @@ Worker heartbeat/status is ephemeral Redis state. Run/model/schema/config/codebo
 
 ## Current integration boundary
 
-This first worker slice covers text/canonical-record analysis available from MongoDB and the existing canonical pipeline. Large artifacts remain referenced externally by the canonical record and Collection's Allas/S3 handoff. A bounded live smoke test should verify the exact Collection-to-Analysis record shape and any media staging needed before expanding beyond text-ready records.
+This first worker slice covers text/canonical-record analysis available from MongoDB and the existing canonical pipeline. Large artifacts remain referenced externally by the canonical record and Collection's Allas/S3 handoff. A bounded live smoke test should verify media staging for media-bearing records before expanding beyond text-ready records.
