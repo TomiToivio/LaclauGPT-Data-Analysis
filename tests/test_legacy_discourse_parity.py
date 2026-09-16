@@ -11,8 +11,11 @@ from laclaugpt_data_analysis.pipeline import (
 
 
 class ParityProvider:
+    def __init__(self):
+        self.requests: list[ChatRequest] = []
+
     def chat(self, request: ChatRequest) -> LLMResponse:
-        assert "RETRIEVED CODEBOOK CANDIDATES (NOT EVIDENCE)" in request.user
+        self.requests.append(request)
         proposal = AnalysisProposal(
             summary="Synthetic parity summary",
             entities=["Synthetic Lab", "Researcher A"],
@@ -130,14 +133,16 @@ def test_expanded_discourse_fields_survive_pipeline_serialization_and_rendering(
             definition="Synthetic public fixture",
         )
     ]
+    provider = ParityProvider()
 
     result = analyze_record(
         record,
-        provider=ParityProvider(),
+        provider=provider,
         codebook_entries=codebook,
         model="fake-model",
     )
 
+    assert "RETRIEVED CODEBOOK CANDIDATES (NOT EVIDENCE)" in provider.requests[0].user
     assert result.source_url == source_url
     assert result.analysis.topics[0].canonical_label == "AI governance"
     assert result.analysis.themes[0].label == "democratic control"
@@ -187,7 +192,9 @@ def test_text_only_parity_does_not_manufacture_multimodal_evidence():
         source_url="https://example.invalid/text-only",
         content={"text": "AI should be governed democratically."},
     )
-    result = analyze_record(record, provider=ParityProvider(), model="fake-model")
+    provider = ParityProvider()
+    result = analyze_record(record, provider=provider, model="fake-model")
+    assert "RETRIEVED CODEBOOK CANDIDATES (NOT EVIDENCE)" not in provider.requests[0].user
     assert result.content.frames == []
     assert result.content.ocr == []
     assert result.content.transcripts == []
