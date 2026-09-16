@@ -31,7 +31,7 @@ def test_packaged_prompt_resource_is_available_through_importlib_resources() -> 
         .joinpath("system_v1.md")
     )
     assert prompt_path.is_file()
-    assert "Evidence-first" in prompt_path.read_text(encoding="utf-8")
+    assert "evidence-first" in prompt_path.read_text(encoding="utf-8")
 
 
 def test_missing_prompt_version_fails_clearly() -> None:
