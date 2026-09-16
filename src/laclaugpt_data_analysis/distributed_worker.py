@@ -1,9 +1,8 @@
 """AI26 distributed worker built on the generic task-queue contract.
 
-This module is intentionally thin: Redis coordinates work, MongoDB owns durable
-record/result state, and the existing canonical pipeline performs analysis. Private
-configuration and codebooks are supplied at runtime and verified against a frozen run
-manifest before any task is processed.
+Redis is coordination only, MongoDB owns durable canonical/result state, and the
+existing canonical pipeline performs analysis. Private configuration and codebooks are
+verified against a frozen run manifest before any task is processed.
 """
 from __future__ import annotations
 
@@ -23,6 +22,7 @@ from .config import Settings, load_settings
 from .llm.ollama import OllamaProvider
 from .task_queue import (
     TaskEnvelope,
+    TaskQueue,
     TaskWorker,
     durable_store_from_settings,
     redis_queue_from_settings,
@@ -51,6 +51,11 @@ def _inside(root: Path, path: Path) -> Path:
     return resolved
 
 
+def collection_records_name(settings: Settings) -> str:
+    """Collection's published Mongo handoff lives in the project ``records`` collection."""
+    return settings.distributed_namespace.mongo_collection("records")
+
+
 @dataclass(frozen=True, slots=True)
 class FrozenRunManifest:
     project_id: str
@@ -62,7 +67,7 @@ class FrozenRunManifest:
     public_git_sha: str
 
     @classmethod
-    def load(cls, path: str | Path) -> "FrozenRunManifest":
+    def load(cls, path: str | Path) -> FrozenRunManifest:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
         return cls(**payload)
 
@@ -83,7 +88,7 @@ class WorkerBinding:
         private_config: str | Path,
         codebook: str | Path,
         worker_id: str | None = None,
-    ) -> "WorkerBinding":
+    ) -> WorkerBinding:
         root = Path(private_root)
         if not root.exists() or not root.is_dir():
             raise ValueError("LACLAUGPT_PRIVATE_CONFIG_DIR must name an existing directory")
@@ -129,6 +134,29 @@ class WorkerBinding:
         if task.task_type != "analyze-record":
             raise ValueError(f"unsupported task type: {task.task_type}")
 
+    def task_from_handoff(self, handoff: dict[str, Any]) -> TaskEnvelope:
+        """Translate Collection's durable handoff envelope into a reference-only task."""
+        if str(handoff.get("status") or "") != "ready":
+            raise ValueError("only ready Collection handoffs may be queued")
+        source_url = str(handoff.get("source_url") or "")
+        handoff_key = str(handoff.get("handoff_key") or "")
+        run_id = str(handoff.get("run_id") or "")
+        if run_id != self.manifest.run_id:
+            raise ValueError("Collection handoff run does not match frozen run manifest")
+        task = TaskEnvelope(
+            task_id=f"analysis:{handoff_key}",
+            idempotency_key=handoff_key,
+            project_id=self.manifest.project_id,
+            run_id=self.manifest.run_id,
+            task_type="analyze-record",
+            record_ref=source_url,
+            schema_version=self.manifest.schema_version,
+            config_revision=self.manifest.config_sha256,
+            codebook_revision=self.manifest.codebook_sha256,
+        )
+        task.validate()
+        return task
+
     def provenance(self) -> dict[str, str]:
         manifest = self.manifest
         return {
@@ -163,8 +191,8 @@ def enforce_local_model(manifest: FrozenRunManifest) -> None:
     os.environ["LACLAUGPT_OLLAMA_MODEL"] = AI26_MODEL
 
 
-class MongoCanonicalResolver:
-    """Resolve one canonical Collection record by stable source identity."""
+class MongoCollectionHandoff:
+    """Read Collection's durable canonical records and ready handoff envelopes."""
 
     def __init__(self, settings: Settings):
         if not settings.mongo_url:
@@ -173,31 +201,50 @@ class MongoCanonicalResolver:
             from pymongo import MongoClient
         except ImportError as exc:
             raise RuntimeError("MongoDB worker support requires: pip install '.[remote]'") from exc
-        collection = settings.distributed_namespace.mongo_collection("raw")
-        self.collection = MongoClient(settings.mongo_url)[settings.mongo_database][collection]
+        self.collection = MongoClient(settings.mongo_url)[settings.mongo_database][
+            collection_records_name(settings)
+        ]
         self.project_id = settings.project_id
 
     def resolve(self, source_url: str) -> CanonicalRecord:
-        row = self.collection.find_one(
-            {"project_id": self.project_id, "source_url": source_url}
-        )
+        row = self.collection.find_one({"project_id": self.project_id, "source_url": source_url})
         if row is None:
             raise KeyError(f"canonical source not found: {source_url}")
-        payload: dict[str, Any] = row.get("canonical_record") or row.get("record") or row
-        clean = {key: value for key, value in payload.items() if key in CanonicalRecord.model_fields}
+        # Collection persists the canonical record at the top level, adding only
+        # backend routing + handoff fields. Filter those away using Analysis' schema.
+        clean = {key: value for key, value in row.items() if key in CanonicalRecord.model_fields}
         return CanonicalRecord.model_validate(clean)
+
+    def ready_handoffs(self, run_id: str, *, limit: int) -> list[dict[str, Any]]:
+        if limit < 1:
+            return []
+        cursor = self.collection.find(
+            {
+                "project_id": self.project_id,
+                "handoff.status": "ready",
+                "handoff.run_id": run_id,
+            },
+            {"handoff": 1, "_id": 0},
+        ).sort(
+            [
+                ("handoff.source_priority", 1),
+                ("handoff.published_at", -1),
+                ("source_url", 1),
+            ]
+        ).limit(limit)
+        return [dict(row.get("handoff") or {}) for row in cursor]
 
 
 class AI26Handler:
-    def __init__(self, binding: WorkerBinding, settings: Settings):
+    def __init__(self, binding: WorkerBinding, settings: Settings, handoff: MongoCollectionHandoff):
         self.binding = binding
         self.settings = settings
-        self.resolver = MongoCanonicalResolver(settings)
+        self.handoff = handoff
         self.codebook = load_codebook(binding.codebook)
         self.provider = OllamaProvider(host=os.environ.get("OLLAMA_HOST") or None)
 
     def __call__(self, task: TaskEnvelope) -> dict[str, Any]:
-        record = self.resolver.resolve(task.record_ref)
+        record = self.handoff.resolve(task.record_ref)
         context = PipelineContext(
             project_context="AI26 distributed bounded test",
             provenance={
@@ -217,7 +264,22 @@ class AI26Handler:
         return analyzed.model_dump(mode="json")
 
 
-def build_worker(binding: WorkerBinding, settings: Settings) -> TaskWorker:
+def seed_ready_tasks(
+    binding: WorkerBinding,
+    handoff: MongoCollectionHandoff,
+    queue: TaskQueue,
+    *,
+    limit: int,
+) -> int:
+    """Boundedly mirror durable Collection-ready handoffs into the worker task stream."""
+    count = 0
+    for envelope in handoff.ready_handoffs(binding.manifest.run_id, limit=limit):
+        queue.publish(binding.task_from_handoff(envelope))
+        count += 1
+    return count
+
+
+def build_worker(binding: WorkerBinding, settings: Settings) -> tuple[TaskWorker, MongoCollectionHandoff]:
     enforce_local_model(binding.manifest)
     if settings.project_id != binding.manifest.project_id:
         raise ValueError("settings project_id does not match frozen run manifest")
@@ -227,14 +289,16 @@ def build_worker(binding: WorkerBinding, settings: Settings) -> TaskWorker:
         worker_id=binding.worker_id,
     )
     durable = durable_store_from_settings(settings, run_id=binding.manifest.run_id)
-    return TaskWorker(
+    handoff = MongoCollectionHandoff(settings)
+    worker = TaskWorker(
         queue=queue,
         durable_store=durable,
-        handler=AI26Handler(binding, settings),
+        handler=AI26Handler(binding, settings, handoff),
         worker_id=binding.worker_id,
         provenance=binding.provenance(),
         validator=binding.validate_task,
     )
+    return worker, handoff
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -245,6 +309,11 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--worker-id")
     parser.add_argument("--max-tasks", type=int, default=1)
     parser.add_argument("--reclaim-idle-ms", type=int, default=300_000)
+    parser.add_argument(
+        "--seed-ready",
+        action="store_true",
+        help="seed a bounded batch from Collection's Mongo handoff before consuming tasks",
+    )
     return parser
 
 
@@ -266,7 +335,9 @@ def main(argv: list[str] | None = None) -> int:
     if env_run_id != binding.manifest.run_id:
         raise ValueError("LACLAUGPT_RUN_ID does not match frozen run manifest")
     settings = load_settings()
-    worker = build_worker(binding, settings)
+    worker, handoff = build_worker(binding, settings)
+    if args.seed_ready:
+        seed_ready_tasks(binding, handoff, worker.queue, limit=max(args.max_tasks, 0))
     worker.heartbeat(run_id=binding.manifest.run_id, status="starting")
     processed = 0
     for _ in range(max(args.max_tasks, 0)):
