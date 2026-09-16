@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from laclaugpt_data_analysis.canonical import CanonicalRecord, DiscourseObject, Relation
 from laclaugpt_data_analysis.canonical_pipeline import PipelineContext
