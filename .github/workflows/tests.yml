@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   lint:
-    name: lint changed Python files
+    name: lint new Python violations
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -23,7 +23,7 @@ jobs:
           cache: pip
       - name: Install lint tooling
         run: python -m pip install --upgrade pip && python -m pip install -e '.[dev]'
-      - name: Lint changed Python files
+      - name: Lint new violations in changed Python files
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -46,9 +46,81 @@ jobs:
             exit 0
           fi
 
-          echo "Linting changed Python files:"
+          echo "Checking changed Python files for newly introduced Ruff violations:"
           printf '  %s\n' "${FILES[@]}"
-          ruff check -- "${FILES[@]}"
+
+          # Capture Ruff diagnostics for HEAD. Ruff exits non-zero when it finds
+          # violations, so do not let `set -e` abort before we can compare them.
+          ruff check --output-format=json -- "${FILES[@]}" > /tmp/ruff-head.json || true
+
+          # Recreate the base versions of changed files in a temporary tree and
+          # lint them with the same repository configuration. Files added by the
+          # current change have no baseline diagnostics.
+          BASE_TREE="$(mktemp -d)"
+          trap 'rm -rf "$BASE_TREE"' EXIT
+          git worktree add --detach "$BASE_TREE" "$BASE_SHA" >/dev/null
+          (
+            cd "$BASE_TREE"
+            BASE_FILES=()
+            for file in "${FILES[@]}"; do
+              if [[ -f "$file" ]]; then
+                BASE_FILES+=("$file")
+              fi
+            done
+            if (( ${#BASE_FILES[@]} == 0 )); then
+              printf '[]\n' > /tmp/ruff-base.json
+            else
+              ruff check --output-format=json -- "${BASE_FILES[@]}" > /tmp/ruff-base.json || true
+            fi
+          )
+          git worktree remove --force "$BASE_TREE" >/dev/null
+
+          # Legacy debt is a baseline, not a reason to reject a focused change.
+          # Compare diagnostics by file/rule/message and fail only when the new
+          # revision contains more instances than the base revision. This also
+          # avoids false positives when an unrelated edit merely shifts line
+          # numbers of pre-existing diagnostics.
+          python - <<'PY'
+          import collections
+          import json
+          import os
+          import sys
+
+          def load(path):
+              with open(path, encoding="utf-8") as handle:
+                  return json.load(handle)
+
+          def key(item):
+              filename = os.path.normpath(item["filename"])
+              return (filename, item.get("code"), item.get("message"))
+
+          base = load("/tmp/ruff-base.json")
+          head = load("/tmp/ruff-head.json")
+          base_counts = collections.Counter(key(item) for item in base)
+          seen = collections.Counter()
+          new = []
+
+          for item in head:
+              fingerprint = key(item)
+              seen[fingerprint] += 1
+              if seen[fingerprint] > base_counts[fingerprint]:
+                  new.append(item)
+
+          if not new:
+              print("No new Ruff violations introduced by this change.")
+              sys.exit(0)
+
+          print("New Ruff violations introduced by this change:")
+          for item in new:
+              location = item.get("location") or {}
+              row = location.get("row", "?")
+              column = location.get("column", "?")
+              code = item.get("code") or "ruff"
+              print(f"{item['filename']}:{row}:{column}: {code} {item.get('message', '')}")
+
+          print(f"\n{len(new)} new Ruff violation(s). Existing baseline debt is ignored.")
+          sys.exit(1)
+          PY
 
   test:
     name: test (${{ matrix.python-version }})
