@@ -311,6 +311,10 @@ class RedisStreamQueue:
                 raise
 
     @staticmethod
+    def _text(value: Any) -> str:
+        return value.decode("utf-8") if isinstance(value, bytes) else str(value)
+
+    @staticmethod
     def _field(values: Mapping[Any, Any], name: str) -> Any:
         return values.get(name) if name in values else values.get(name.encode())
 
@@ -319,12 +323,18 @@ class RedisStreamQueue:
         raw = cls._field(values, "task")
         if raw is None:
             raise ValueError("Redis task entry is missing task payload")
-        if isinstance(raw, bytes):
-            raw = raw.decode("utf-8")
-        return TaskEnvelope.from_dict(json.loads(str(raw)))
+        return TaskEnvelope.from_dict(json.loads(cls._text(raw)))
+
+    @classmethod
+    def _next_stream_id(cls, value: Any) -> str:
+        text = cls._text(value)
+        milliseconds, separator, sequence = text.rpartition("-")
+        if separator and milliseconds.isdigit() and sequence.isdigit():
+            return f"{milliseconds}-{int(sequence) + 1}"
+        return text
 
     def publish(self, task: TaskEnvelope) -> str:
-        return str(self.redis.xadd(self.stream, {"task": json.dumps(task.to_dict())}))
+        return self._text(self.redis.xadd(self.stream, {"task": json.dumps(task.to_dict())}))
 
     def claim(self) -> ClaimedTask | None:
         response = self.redis.xreadgroup(
@@ -338,7 +348,7 @@ class RedisStreamQueue:
             return None
         _, entries = response[0]
         message_id, values = entries[0]
-        return ClaimedTask(str(message_id), self._decode_task(values))
+        return ClaimedTask(self._text(message_id), self._decode_task(values))
 
     def reclaim(self, *, min_idle_ms: int) -> ClaimedTask | None:
         try:
@@ -353,14 +363,15 @@ class RedisStreamQueue:
         except (AttributeError, TypeError):
             response = None
         except RuntimeError as exc:
-            if "unknown command" not in str(exc).casefold() or "xautoclaim" not in str(exc).casefold():
+            message = str(exc).casefold()
+            if "unknown command" not in message or "xautoclaim" not in message:
                 raise
             response = None
         if response:
             entries = response[1] if len(response) > 1 else []
             if entries:
                 message_id, values = entries[0]
-                return ClaimedTask(str(message_id), self._decode_task(values))
+                return ClaimedTask(self._text(message_id), self._decode_task(values))
 
         start = "-"
         while True:
@@ -405,12 +416,12 @@ class RedisStreamQueue:
                 if not claimed:
                     return None
                 claimed_id, values = claimed[0]
-                return ClaimedTask(str(claimed_id), self._decode_task(values))
+                return ClaimedTask(self._text(claimed_id), self._decode_task(values))
             if not pending or len(pending) < self._LEGACY_PENDING_BATCH:
                 return None
             last = pending[-1]
             last_id = last["message_id"] if isinstance(last, dict) else last[0]
-            start = str(last_id)
+            start = self._next_stream_id(last_id)
 
     def ack(self, message_id: str) -> None:
         self.redis.xack(self.stream, self.group, message_id)
