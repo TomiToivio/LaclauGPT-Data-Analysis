@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 from laclaugpt_data_analysis.llm import routing
 from laclaugpt_data_analysis.llm.ollama import (
+    OllamaProvider,
     describe_routing,
     publish_llm_host,
     resolve_endpoint,
@@ -12,13 +13,20 @@ from laclaugpt_data_analysis.llm.ollama import (
 )
 
 
-def _clear_hosts(monkeypatch) -> None:
-    monkeypatch.delenv("OLLAMA_HOST", raising=False)
-    monkeypatch.delenv("LACLAUGPT_LLM_ENDPOINT", raising=False)
+def _clear_runtime(monkeypatch) -> None:
+    for name in (
+        "OLLAMA_HOST",
+        "LACLAUGPT_LLM_ENDPOINT",
+        "LACLAUGPT_LLM_MODEL",
+        "LACLAUGPT_OLLAMA_MODEL",
+        "OLLAMA_MODEL",
+        "LLM_LOCAL_MODEL",
+    ):
+        monkeypatch.delenv(name, raising=False)
 
 
 def test_prefixed_endpoint_is_used_when_ollama_host_is_absent(monkeypatch) -> None:
-    _clear_hosts(monkeypatch)
+    _clear_runtime(monkeypatch)
     monkeypatch.setenv("LACLAUGPT_LLM_ENDPOINT", "http://127.0.0.1:11500")
     monkeypatch.setenv("LACLAUGPT_LLM_MODE", "local-ollama")
 
@@ -28,7 +36,7 @@ def test_prefixed_endpoint_is_used_when_ollama_host_is_absent(monkeypatch) -> No
 
 
 def test_explicit_host_then_ollama_host_take_precedence(monkeypatch) -> None:
-    _clear_hosts(monkeypatch)
+    _clear_runtime(monkeypatch)
     monkeypatch.setenv("LACLAUGPT_LLM_ENDPOINT", "http://127.0.0.1:11500")
     monkeypatch.setenv("OLLAMA_HOST", "http://127.0.0.1:11600")
 
@@ -37,7 +45,7 @@ def test_explicit_host_then_ollama_host_take_precedence(monkeypatch) -> None:
 
 
 def test_publish_llm_host_never_overrides_native_setting(monkeypatch) -> None:
-    _clear_hosts(monkeypatch)
+    _clear_runtime(monkeypatch)
     monkeypatch.setenv("LACLAUGPT_LLM_ENDPOINT", "http://127.0.0.1:11500")
 
     assert publish_llm_host() == "http://127.0.0.1:11500"
@@ -48,8 +56,18 @@ def test_publish_llm_host_never_overrides_native_setting(monkeypatch) -> None:
     assert os.environ["OLLAMA_HOST"] == "http://127.0.0.1:11600"
 
 
+def test_provider_start_publishes_prefixed_endpoint(monkeypatch) -> None:
+    _clear_runtime(monkeypatch)
+    monkeypatch.setenv("LACLAUGPT_LLM_ENDPOINT", "http://127.0.0.1:11500")
+
+    provider = OllamaProvider()
+
+    assert provider._host_override == "http://127.0.0.1:11500"
+    assert os.environ["OLLAMA_HOST"] == "http://127.0.0.1:11500"
+
+
 def test_model_discovery_uses_prefixed_endpoint(monkeypatch) -> None:
-    _clear_hosts(monkeypatch)
+    _clear_runtime(monkeypatch)
     monkeypatch.setenv("LACLAUGPT_LLM_ENDPOINT", "http://127.0.0.1:11500/")
     seen: list[list[str]] = []
 
