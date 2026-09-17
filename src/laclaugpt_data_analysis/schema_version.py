@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from typing import Any
 
@@ -19,16 +20,16 @@ class UnsupportedSchemaVersion(ValueError):
 def _adapt_shared_parity_fixture(data: dict[str, Any]) -> dict[str, Any]:
     """Map the public cross-module parity fixture into the Analysis canonical model.
 
-    The shared fixture is deliberately module-neutral and slightly richer than the
-    Analysis model. Preserve every normative invariant while storing fixture-only
-    fields losslessly in canonical namespaces that survive all local adapters.
+    The fixture remains the normative contract. Analysis normalizes its richer neutral
+    shapes into local strict models while preserving the original values losslessly in
+    canonical extension namespaces that survive every supported local adapter.
     """
     source = dict(data.get("source") or {})
     content = dict(data.get("content") or {})
     analysis = dict(data.get("analysis") or {})
     review = dict(data.get("review") or {})
+    legacy = dict(data.get("legacy") or {})
 
-    # Cross-module multimodal field names are normalized to the Analysis model.
     transcripts = []
     for index, item in enumerate(content.get("transcripts") or [], start=1):
         value = dict(item)
@@ -65,16 +66,17 @@ def _adapt_shared_parity_fixture(data: dict[str, Any]) -> dict[str, Any]:
         media.append(value)
     content["media_references"] = media
 
-    # Preserve module-neutral analytical objects in the collision-safe plugin area.
     shared_plugin = dict((analysis.get("plugin_results") or {}).get("cross_module_fixture") or {})
     for key in ("analysis_objects", "events", "actors", "narrative_episodes"):
         if key in analysis:
             shared_plugin[key] = analysis.pop(key)
-    if shared_plugin:
-        analysis.setdefault("plugin_results", {})["cross_module_fixture"] = shared_plugin
 
-    # Convert simple shared vocabulary forms to Analysis discourse objects without
-    # inventing evidentiary claims. Original shared forms remain in plugin_results.
+    original_codebook_refs = list(analysis.get("codebook_refs") or [])
+    original_uncertainty = list(analysis.get("uncertainty") or [])
+    shared_plugin["codebook_refs"] = original_codebook_refs
+    shared_plugin["uncertainty"] = original_uncertainty
+    analysis.setdefault("plugin_results", {})["cross_module_fixture"] = shared_plugin
+
     for key, kind in (
         ("formations", "formation"),
         ("signifiers", "signifier"),
@@ -91,7 +93,9 @@ def _adapt_shared_parity_fixture(data: dict[str, Any]) -> dict[str, Any]:
         normalized = []
         for index, item in enumerate(values, start=1):
             if isinstance(item, str):
-                normalized.append({"object_id": f"fixture_{key}_{index}", "label": item, "kind": kind})
+                normalized.append(
+                    {"object_id": f"fixture_{key}_{index}", "label": item, "kind": kind}
+                )
             elif isinstance(item, Mapping):
                 value = dict(item)
                 value.setdefault("object_id", str(value.pop("id", f"fixture_{key}_{index}")))
@@ -99,7 +103,6 @@ def _adapt_shared_parity_fixture(data: dict[str, Any]) -> dict[str, Any]:
                 normalized.append(value)
         analysis[key] = normalized
 
-    # Topics in the shared fixture may be labels rather than full topic records.
     topics = []
     for index, item in enumerate(analysis.get("topics") or [], start=1):
         if isinstance(item, str):
@@ -108,19 +111,21 @@ def _adapt_shared_parity_fixture(data: dict[str, Any]) -> dict[str, Any]:
             topics.append(item)
     analysis["topics"] = topics
 
-    # Analysis keeps flexible provenance/reference details losslessly in JSON objects.
     analysis["codebook_refs"] = [
-        item if isinstance(item, str) else "@".join(
-            part for part in (str(item.get("id", "")), str(item.get("version", ""))) if part
+        item
+        if isinstance(item, str)
+        else "@".join(
+            part
+            for part in (str(item.get("id", "")), str(item.get("version", "")))
+            if part
         )
-        for item in analysis.get("codebook_refs") or []
+        for item in original_codebook_refs
     ]
     analysis["uncertainty"] = [
-        item if isinstance(item, str) else __import__("json").dumps(item, sort_keys=True)
-        for item in analysis.get("uncertainty") or []
+        item if isinstance(item, str) else json.dumps(item, sort_keys=True)
+        for item in original_uncertainty
     ]
 
-    # Shared evidence edges use graph terminology; preserve their full shape in metadata.
     evidence = []
     for item in data.get("evidence") or []:
         value = dict(item)
@@ -134,15 +139,12 @@ def _adapt_shared_parity_fixture(data: dict[str, Any]) -> dict[str, Any]:
             }
         )
 
-    # Preserve source units/alignments/review events as lossless legacy extension data.
-    legacy = dict(data.get("legacy") or {})
     for key in ("fixture_version", "source_units", "alignments"):
         if key in data:
             legacy[f"cross_module_{key}"] = data.get(key)
     if "review_events" in review:
         legacy["cross_module_review_events"] = review.pop("review_events")
 
-    # Keep raw reference reachable in both historical and current canonical layers.
     raw_ref = source.get("raw_ref")
     data.setdefault(
         "raw_capture",
