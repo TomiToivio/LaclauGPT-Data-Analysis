@@ -1,0 +1,13 @@
+# Optional Critical AI Studies stage for AI26.
+# The feature is disabled unless enabled=true is present in project settings.
+analysis:
+  critical_ai:
+    enabled: true
+    provider: ollama
+    model: gemma4:12b
+    prompt_version: v1
+    include_prior_laclau: true
+    include_prior_dna: true
+    include_rag: true
+    include_periodic_context: true
+    evidence_mode: strict
