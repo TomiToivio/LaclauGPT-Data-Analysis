@@ -1,0 +1,12 @@
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) < 2) stop("Usage: quanteda_interop.R input.parquet output.parquet")
+suppressPackageStartupMessages({library(arrow); library(quanteda)})
+df <- read_parquet(args[1])
+if (!("text" %in% names(df))) stop("input requires text column")
+corp <- corpus(df, text_field = "text")
+toks <- tokens(corp, remove_punct = TRUE)
+dfm_obj <- dfm(toks)
+out <- convert(dfm_obj, to = "data.frame")
+out$producer <- paste0("quanteda-", as.character(packageVersion("quanteda")))
+out$interpretation_status <- "DESCRIPTIVE_ONLY"
+write_parquet(out, args[2])
