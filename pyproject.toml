@@ -20,6 +20,8 @@ laclaugpt-analysis-worker = "laclaugpt_data_analysis.contextual_entrypoints:work
 laclaugpt-reprocess = "laclaugpt_data_analysis.contextual_entrypoints:reprocessing_main"
 laclaugpt-ep24 = "laclaugpt_data_analysis.ep24_reprocessing:main"
 laclaugpt-summarize-period = "laclaugpt_data_analysis.periodic_summary:main"
+laclaugpt-preflight = "laclaugpt_data_analysis.preflight:main"
+laclaugpt-freeze-ai26 = "laclaugpt_data_analysis.freeze_run:main"
 
 [project.optional-dependencies]
 analysis = [

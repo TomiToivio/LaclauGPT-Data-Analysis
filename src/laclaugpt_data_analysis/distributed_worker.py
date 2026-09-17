@@ -20,7 +20,19 @@ from .canonical import SCHEMA_VERSION, CanonicalRecord
 from .canonical_pipeline import PipelineContext, run_canonical_pipeline
 from .codebooks import load_codebook
 from .config import Settings, load_settings
-from .llm.ollama import OllamaProvider, configured_llm_modes
+from .llm.ollama import (
+    LLM_ENDPOINT_ENV_ALIAS,
+    LLM_HOST_ENV,
+    OllamaProvider,
+    configured_llm_modes,
+    resolve_llm_host,
+)
+from .staging import (
+    MediaStager,
+    ObjectUnavailableError,
+    StagingPolicy,
+)
+from .storage import artifact_store
 from .task_queue import (
     TaskEnvelope,
     TaskQueue,
@@ -233,6 +245,51 @@ def enforce_local_model(manifest: FrozenRunManifest) -> None:
     os.environ["LLM_ALLOW_CLOUD_FALLBACK"] = "0"
     os.environ["LACLAUGPT_LLM_MODEL"] = AI26_MODEL
     os.environ["LACLAUGPT_OLLAMA_MODEL"] = AI26_MODEL
+    # Endpoint resolution has two documented names; publish the prefixed one
+    # into the native name so the Ollama client, the multimodal adapter and
+    # model routing all agree on the same server.
+    endpoint = os.environ.get(LLM_ENDPOINT_ENV_ALIAS, "").strip()
+    if endpoint and not os.environ.get(LLM_HOST_ENV, "").strip():
+        os.environ[LLM_HOST_ENV] = endpoint
+
+
+def _int_env(name: str, default: int) -> int:
+    raw = os.environ.get(f"LACLAUGPT_{name}", "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def build_media_stager(settings: Settings) -> MediaStager | None:
+    """Build the multimodal staging cache for this run, or ``None`` when local-only.
+
+    Staging matters when canonical records may reference remote objects, which is
+    exactly the distributed/object-storage case. A local file backend is already
+    local, so it needs no staging step.
+    """
+    if settings.object_backend != "s3":
+        return None
+    # Pruning is operator-configurable; setting both bounds to 0/null disables it
+    # (Laskin retains staged objects until they are cleared manually).
+    cache_raw = os.environ.get("LACLAUGPT_STAGING_MAX_CACHE_BYTES", "").strip()
+    age_raw = os.environ.get("LACLAUGPT_STAGING_MAX_AGE_SECONDS", "").strip()
+    max_cache = int(cache_raw) if cache_raw else 8 * 1024**3
+    max_age = int(age_raw) if age_raw else 14 * 24 * 3600
+    if max_cache == 0 and max_age == 0:
+        max_cache = None
+    return MediaStager(
+        artifact_store(settings),
+        settings.data_path("cache", "media-staging"),
+        policy=StagingPolicy(
+            max_cache_bytes=max_cache,
+            max_object_bytes=_int_env("STAGING_MAX_OBJECT_BYTES", 512 * 1024**2),
+            max_age_seconds=max_age,
+        ),
+        project_id=settings.project_id,
+    )
 
 
 class MongoCollectionHandoff:
@@ -279,20 +336,44 @@ class MongoCollectionHandoff:
 
 
 class AI26Handler:
-    def __init__(self, binding: WorkerBinding, settings: Settings, handoff: MongoCollectionHandoff):
+    def __init__(
+        self,
+        binding: WorkerBinding,
+        settings: Settings,
+        handoff: MongoCollectionHandoff,
+        *,
+        stager: MediaStager | None = None,
+    ):
         self.binding = binding
         self.settings = settings
         self.handoff = handoff
         self.codebook = load_codebook(binding.codebook)
-        self.provider = OllamaProvider(host=os.environ.get("OLLAMA_HOST") or None)
+        self.provider = OllamaProvider(host=resolve_llm_host() or None)
+        self.stager = stager if stager is not None else build_media_stager(settings)
 
     def __call__(self, task: TaskEnvelope) -> dict[str, Any]:
         record = self.handoff.resolve(task.record_ref)
+        staging_provenance: dict[str, Any] = {}
+        if self.stager is not None:
+            # Materialise referenced Allas/S3 objects before any multimodal model
+            # call. A permanently missing object is recorded and the record still
+            # analyses text-only; a retriable transport failure aborts so the
+            # task retries instead of producing a degraded scientific result.
+            report = self.stager.stage_record(record)
+            staging_provenance = report.provenance()
+            retriable = [item for item in report.staged if item.retriable]
+            if retriable:
+                raise ObjectUnavailableError(
+                    "media staging failed (retriable): "
+                    + ", ".join(f"{item.cache_key}:{item.reason}" for item in retriable)
+                )
+            _publish_local_media_refs(record, report)
         context = PipelineContext(
             project_context="AI26 distributed bounded test",
             provenance={
                 "private_config_sha256": [self.binding.manifest.config_sha256],
                 "codebook_sha256": [self.binding.manifest.codebook_sha256],
+                **staging_provenance,
             },
         )
         analyzed = run_canonical_pipeline(
@@ -305,6 +386,25 @@ class AI26Handler:
             allow_cloud_fallback=False,
         )
         return analyzed.model_dump(mode="json")
+
+
+def _publish_local_media_refs(record: Any, report: Any) -> None:
+    """Point frames/media at staged local files so the multimodal adapter can attach them.
+
+    A staged path is local runtime state: it is written to the transient frame or
+    media reference only, never into canonical source identity.
+    """
+    by_ref = {item.ref: item for item in report.staged if item.local_available}
+    if not by_ref:
+        return
+    for frame in getattr(record.content, "frames", []) or []:
+        ref = getattr(frame, "media_ref", None)
+        if ref and ref in by_ref:
+            frame.media_ref = str(by_ref[ref].path)
+    for media in getattr(record.content, "media_references", []) or []:
+        ref = getattr(media, "object_ref", None)
+        if ref and ref in by_ref:
+            media.local_ref = str(by_ref[ref].path)
 
 
 class AI26TaskWorker(TaskWorker):

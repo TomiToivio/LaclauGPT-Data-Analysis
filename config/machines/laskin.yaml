@@ -1,0 +1,59 @@
+# Laskin machine layer (public-safe template).
+#
+# Declares WHAT THIS MACHINE CAN DO: local inference capability, paths and
+# backend roles. It must not define study semantics (that is the project layer)
+# nor scheduling (that is the execution layer).
+#
+# The real machine profile lives in the private repository; this template
+# documents the shape and carries no credentials, hostnames or private paths.
+
+machine: laskin
+machine_class: linux-server
+
+capabilities:
+  gpu: true
+  local_inference: true
+  browser_capture: false  # Laskin never runs Firefox/browser collection
+  cron: true
+
+llm:
+  # Local Ollama only. Cloud fallback stays explicitly disabled for research
+  # runs: a run must never silently change inference provider mid-corpus.
+  mode: local-ollama
+  model: gemma4:12b
+  endpoint: http://127.0.0.1:11500
+  allow_cloud_fallback: false
+  # Reasoning/thinking output is disabled by default for structured extraction.
+  think: false
+
+storage:
+  # Backend ROLES only. Connection details/credentials are injected by the
+  # private environment; never hard-code them here.
+  records: mongodb
+  objects: s3
+  cache: redis
+  distributed: true
+  object_roles:
+    canonical_records: mongodb
+    large_artifacts: s3
+
+paths:
+  # Relative to the private runtime root on the machine. The public template
+  # names the roles; the private profile binds real absolute paths.
+  data_root: data
+  artifact_root: data/artifacts
+  media_cache: data/cache/media-staging
+  logs: data/logs
+  tmp: data/tmp
+
+# Media staging bounds. Laskin retains staged objects until an operator clears
+# the cache (operator decision, 2026-09-17): pruning is disabled rather than
+# guessed. The remote canonical object is never deleted by staging.
+media_staging:
+  max_cache_bytes: null      # null = no automatic size eviction
+  max_age_seconds: 0         # 0 = no automatic age eviction
+  max_object_bytes: 536870912
+
+provenance:
+  # Machine identity is execution provenance, never scientific source identity.
+  caller: laskin-cron

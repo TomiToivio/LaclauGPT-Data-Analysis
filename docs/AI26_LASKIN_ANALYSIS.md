@@ -1,0 +1,300 @@
+# AI26 analysis on Laskin
+
+Operator guide for the unattended AI26 analysis run on **Laskin**, a Linux
+server that drains the distributed analysis queue from cron every few minutes.
+
+Private settings, credentials and research data never live in this repository.
+The real machine configuration lives in the private repository; this guide
+describes the public contract and the operator workflow.
+
+```text
+Laskin
+  cron (every 5 min)
+    └─ bounded AI26 analysis worker (claims N tasks, then exits)
+          ├─ reads ready handoffs from remote MongoDB
+          ├─ stages referenced multimodal objects from CSC Allas / S3
+          ├─ runs the AI26 stages on local gemma4:12b (http://127.0.0.1:11500)
+          └─ persists results + provenance to MongoDB
+
+Shared services: remote MongoDB · remote Redis · CSC Allas/S3 · one ai26 namespace
+```
+
+Machine identity is execution provenance. It is never part of scientific source
+identity, and Laskin does not create its own database, bucket or codebook.
+
+## Canonical lookup order
+
+Before guessing AI26 settings, inspect:
+
+1. `docs/AI26_REFERENCE_CASE.md`
+2. `codebooks/public/ai26_v2.yaml` and `codebooks/public/seed_ai_formations.md`
+3. `config/projects/ai26.yaml` — study semantics for this run
+4. `config/machines/laskin.yaml` + `config/execution/laskin-cron.yaml`
+5. `docs/AI26_DISTRIBUTED_WORKER.md` and `docs/ANALYSIS_RUNTIME.md`
+6. private runtime copies under the private root, when authorised
+
+## Layered configuration
+
+The repository composes three independent layers. Keep their responsibilities
+separate — do not put study semantics in a machine file or scheduling in a
+project file.
+
+| Layer | Public template | Owns |
+|---|---|---|
+| project | `config/projects/ai26.yaml` | study semantics, codebook/context/prompt selection, stages |
+| machine | `config/machines/laskin.yaml` | capability: local Ollama, model, backend roles, paths |
+| execution | `config/execution/laskin-cron.yaml` | cadence, bounds, overlap lock, logging |
+
+Effective settings for this run:
+
+```text
+project          ai26
+machine          laskin (linux-server)
+execution        cron
+llm mode         local-ollama
+model            gemma4:12b
+endpoint         http://127.0.0.1:11500
+records          mongodb      objects  s3      cache  redis
+stages           Laclau/Mouffe/Palonen + DNA statement coding + Critical AI
+cadence          every 5 minutes, bounded drain
+```
+
+Cloud inference is explicitly disabled: a research run must never silently
+change inference provider mid-corpus.
+
+## Expected private layout
+
+The real runtime lives in the private repository (never committed publicly):
+
+```text
+<private-root>/analysis/ai26/
+  laskin.env          runtime contract incl. credentials (0600, uncommitted)
+  analysis.json       frozen private analysis configuration
+  codebook.json       effective merged codebook
+  run-manifest.json   hash-bound run manifest
+  codebooks/          private overlays
+  logs/               operational logs
+  run/                lock files
+  cache/media-staging/  staged multimodal objects
+```
+
+## Install
+
+```bash
+cd /path/to/LaclauGPT-Data-Analysis
+python3.11 -m venv .venv
+.venv/bin/python -m pip install -e '.[remote,ollama]'
+```
+
+`remote` provides MongoDB/Redis/boto3; `ollama` provides the local client.
+
+## Ollama
+
+Laskin serves the analysis model locally:
+
+```bash
+curl -s http://127.0.0.1:11500/api/tags | head -c 200
+ollama pull gemma4:12b       # only if the model is missing
+```
+
+The wrapper fails fast when the endpoint is unreachable or the model is absent,
+so a misconfigured endpoint is caught during preflight rather than mid-corpus.
+
+## Freeze the run
+
+A distributed run is reproducible only if its private inputs are pinned by hash
+before any worker starts. Re-freeze whenever the analysis config, the codebook
+or the public revision changes:
+
+```bash
+.venv/bin/laclaugpt-freeze-ai26 \
+  --private-root /path/to/private-root/analysis/ai26 \
+  --public-codebook codebooks/public/ai26_v2.yaml \
+  --private-overlay /path/to/private-root/analysis/ai26/codebooks/ai26_overlay.yaml \
+  --analysis-config /path/to/private-root/analysis/ai26/analysis.json \
+  --run-id <shared-run-id> \
+  --model gemma4:12b
+```
+
+Omit `--private-overlay` when none exists. The tool writes the effective
+codebook and a `run-manifest.json` binding project, run, schema, model and the
+public Git revision. The worker **fails closed** when any pinned hash disagrees,
+so configuration drift is a hard error rather than a silent change of meaning.
+
+## Preflight
+
+```bash
+.venv/bin/laclaugpt-preflight
+```
+
+Reports the composed configuration and sanitized connectivity for MongoDB,
+Redis, the object store and Ollama. It never prints credentials or full
+authenticated URLs. Exit code `0` is healthy, `2` reports problems.
+
+## Run once
+
+```bash
+./scripts/run_ai26_laskin.sh --check          # preflight only, no work claimed
+./scripts/run_ai26_laskin.sh --debug --once   # verbose, one bounded cycle
+./scripts/run_ai26_laskin.sh --once           # normal bounded cycle
+```
+
+The wrapper resolves the repository, loads the **private** environment itself
+(cron inherits no interactive shell), verifies Ollama, takes `flock`, runs a
+bounded batch and exits. Exit codes:
+
+```text
+0  success
+2  configuration or preflight failure
+3  another tick holds the lock (benign; the previous run is still working)
+```
+
+## Debug mode
+
+```bash
+LACLAUGPT_DEBUG=1 ./scripts/run_ai26_laskin.sh --once
+```
+
+Debug mode adds operational detail: composed profile, connectivity checks,
+selected record, stage transitions with timings, prompt resource id/version/hash,
+staging status, model/endpoint, persistence state and final status.
+
+Credentials, tokens and authenticated URLs are redacted by pattern. **Full prompt
+and evidence bodies are withheld** even in debug mode because they may contain
+research data; emitting them requires the explicit opt-in:
+
+```bash
+LACLAUGPT_TRACE=1 LACLAUGPT_DEBUG=1 ./scripts/run_ai26_laskin.sh --once
+```
+
+Do not leave trace mode on for scheduled runs.
+
+## Multimodal staging from Allas
+
+Canonical records may reference images, video, audio, frames or transcripts held
+in CSC Allas/S3. Before any multimodal model call the worker stages each
+referenced object into the private cache:
+
+- an existing verified cache entry is reused rather than re-downloaded;
+- size is checked, and the record's checksum when one is supplied;
+- a **retriable** transport failure aborts the task so it retries, instead of
+  producing a degraded result;
+- a **permanently missing** object is recorded and the record still analyses
+  text-only;
+- object identity and staging outcome are recorded in provenance without
+  credentials.
+
+Staging **never** mutates or deletes the canonical remote object: Allas holds
+the canonical copy, the cache is a local performance concern.
+
+Cache pruning is operator-configurable. On Laskin it is **disabled by decision**
+(staged objects are retained until cleared manually), so monitor the cache
+directory size and clear it deliberately:
+
+```bash
+du -sh <private-root>/analysis/ai26/cache/media-staging
+```
+
+## Enable cron
+
+```cron
+2-59/5 * * * * /bin/bash /path/to/LaclauGPT-Data-Analysis/scripts/run_ai26_laskin.sh >> /path/to/private-root/analysis/ai26/logs/ai26-laskin-analysis.log 2>&1
+```
+
+Always back up the crontab first:
+
+```bash
+crontab -l > <private-root>/analysis/ai26/logs/crontab.backup.$(date -u +%Y%m%dT%H%M%SZ).txt
+crontab -e
+```
+
+Cron is the only scheduler. The worker is bounded, so nothing keeps a perpetual
+process or an internal scheduler alive.
+
+## Disable cron
+
+```bash
+crontab -l | grep -v 'run_ai26_laskin.sh' | crontab -
+```
+
+## Verify cron actually runs
+
+Cron provides a minimal environment, which is the usual cause of a job that
+works by hand but not on schedule:
+
+```bash
+env -i /bin/bash /path/to/LaclauGPT-Data-Analysis/scripts/run_ai26_laskin.sh --once
+tail -50 <private-root>/analysis/ai26/logs/ai26-laskin-analysis.log
+crontab -l | grep run_ai26_laskin
+```
+
+## Status and health
+
+```bash
+crontab -l | grep run_ai26_laskin                  # is it installed?
+tail -50 <private-root>/analysis/ai26/logs/ai26-laskin-analysis.log
+.venv/bin/laclaugpt-preflight                      # backends + model reachable
+```
+
+The presence of a lock file alone is not evidence of a live job; `flock`
+ownership is authoritative. Repeated exit code `3` means ticks are running
+longer than the interval — reduce `--max-tasks` or check the log.
+
+## Recovery after a failed run
+
+1. Read the tail of the log and identify the failing stage.
+2. If a hash mismatch is reported, re-freeze deliberately (see above) after
+   confirming the intended configuration — do not edit hashes by hand.
+3. If a backend is unreachable, restore it before re-enabling cron; the worker
+   fails closed rather than writing partial results.
+4. If a task exhausted its attempts it is dead-lettered with its durable failure
+   history preserved; requeue through the normal task contract rather than
+   editing Redis by hand.
+
+## Safe update / restart
+
+```bash
+crontab -l | grep -v 'run_ai26_laskin.sh' | crontab -   # pause
+cd /path/to/LaclauGPT-Data-Analysis
+git pull --ff-only origin main
+.venv/bin/python -m pip install -e '.[remote,ollama]'
+.venv/bin/laclaugpt-preflight
+./scripts/run_ai26_laskin.sh --once                     # verify manually
+# re-freeze if the analysis config or codebook changed
+crontab -e                                              # re-enable
+```
+
+## Test one synthetic record end to end
+
+Use a synthetic/public-safe record rather than private research material:
+
+1. Publish one synthetic canonical record with a `handoff.status=ready`
+   envelope for the run id.
+2. Run `./scripts/run_ai26_laskin.sh --debug --once`.
+3. Confirm the log shows: record resolved, staging outcome, stage transitions
+   with prompt identity, persistence, and a final status.
+4. Confirm the durable result in MongoDB carries the run id, model, public Git
+   SHA and config/codebook hashes.
+5. Re-run and confirm the idempotency key prevents a duplicate scientific
+   result.
+
+## Where results and provenance live
+
+- **MongoDB** — durable canonical records, analysis results and failure history.
+- **CSC Allas/S3** — large artifacts under the shared project prefix.
+- **Redis** — coordination only: task stream, leases, heartbeats. Redis is never
+  the canonical schema, and losing Redis must not erase a completed result.
+- **Provenance** — every model-assisted stage records prompt id/version/hash,
+  rendered-prompt hash, model, configuration revision, codebook revision and
+  the public Git SHA. Machine identity stays provenance-only.
+
+## Privacy boundaries
+
+- never commit credentials, connection strings, access keys or cookies;
+- keep logs, cache and staged media under the private root;
+- do not expose private source lists or row-level research data in any public
+  artifact;
+- treat prompt/evidence bodies as research data: `LACLAUGPT_TRACE=1` is a
+  deliberate opt-in;
+- the six formation anchors are provisional sensitising concepts, never actor
+  identities or ground truth.
