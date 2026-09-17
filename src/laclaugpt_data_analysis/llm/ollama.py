@@ -278,7 +278,7 @@ class OllamaProvider:
     """Local-first Ollama backend implementing LLMProvider."""
 
     def __init__(self, host: str | None = None, min_vram_gb: float | None = None):
-        self._host_override = host
+        self._host_override = publish_llm_host(host) or None
         self._min_vram_gb = min_vram_gb
 
     def chat(self, request: ChatRequest) -> LLMResponse:
