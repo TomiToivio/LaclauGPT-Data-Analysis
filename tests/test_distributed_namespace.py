@@ -27,6 +27,11 @@ def test_settings_expose_project_namespace() -> None:
     assert settings.distributed_namespace.mongo_collection("runs") == "hungary26__runs"
 
 
+def test_periodic_summary_collection_kind_is_supported() -> None:
+    ns = ProjectNamespace("ai26")
+    assert ns.mongo_collection("periodic_summaries") == "ai26__periodic_summaries"
+
+
 def test_unknown_collection_kind_is_rejected() -> None:
     ns = ProjectNamespace("ai26")
     try:
