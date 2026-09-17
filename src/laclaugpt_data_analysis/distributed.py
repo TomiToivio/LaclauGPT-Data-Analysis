@@ -16,6 +16,10 @@ _MONGO_KINDS = {
     "raw",
     "processing",
     "analyzed",
+    # Periodic (e.g. daily/weekly) researcher-readable summaries produced by the
+    # periodic summary stage. The kind must be declared here or the namespace
+    # helper rejects the collection the stage legitimately needs.
+    "periodic_summaries",
 }
 _S3_KINDS = {
     "raw",

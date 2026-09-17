@@ -14,6 +14,9 @@ LOCAL_MODELS = {
 CLOUD_MODELS = {"gemma4:31b-cloud"}
 
 
+SUPPORTED_MACHINES = {"laptop", "roihu", "laskin", "linux-server", "custom"}
+
+
 @dataclass(frozen=True)
 class DeploymentProfile:
     machine: str = "laptop"
@@ -33,7 +36,7 @@ class DeploymentProfile:
 
     def validate(self) -> list[str]:
         errors: list[str] = []
-        if self.machine not in {"laptop", "roihu", "linux-server", "custom"}:
+        if self.machine not in SUPPORTED_MACHINES:
             errors.append(f"unsupported machine: {self.machine}")
         if self.execution not in {"cli", "slurm", "cron", "systemd", "agent", "custom"}:
             errors.append(f"unsupported execution: {self.execution}")

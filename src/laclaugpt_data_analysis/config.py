@@ -147,7 +147,12 @@ def load_settings() -> Settings:
         redis_url=_env("REDIS_URL"),
         redis_key_prefix=_env("REDIS_KEY_PREFIX", "laclaugpt") or "laclaugpt",
         mongo_url=_env("MONGODB_URI") or _env("MONGO_URL"),
-        mongo_database=_env("MONGO_DATABASE", "laclaugpt") or "laclaugpt",
+        # ``LACLAUGPT_MONGODB_DATABASE`` is the documented contract shared with
+        # the Collection module and the AI26 runtime; keep the shorter historical
+        # ``LACLAUGPT_MONGO_DATABASE`` working as an alias.
+        mongo_database=(
+            _env("MONGODB_DATABASE") or _env("MONGO_DATABASE", "laclaugpt") or "laclaugpt"
+        ),
         mongo_vector_index=_env("MONGO_VECTOR_INDEX", "laclaugpt_record_embedding") or "laclaugpt_record_embedding",
         object_backend=_env("OBJECT_BACKEND", "local") or "local",
         s3_endpoint_url=_env("S3_ENDPOINT") or _env("S3_ENDPOINT_URL"),
