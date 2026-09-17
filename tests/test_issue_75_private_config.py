@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from laclaugpt_data_analysis.canonical import SCHEMA_VERSION, CanonicalRecord
+from laclaugpt_data_analysis.canonical import CanonicalRecord, SCHEMA_VERSION
 from laclaugpt_data_analysis.config import Settings
 from laclaugpt_data_analysis.critical_ai import critical_ai_enabled
 from laclaugpt_data_analysis.distributed_worker import AI26Handler, AI26_MODEL, WorkerBinding
