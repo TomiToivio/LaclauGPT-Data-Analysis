@@ -15,46 +15,38 @@ dataset:
   relevance:
     mode: retain_unjudged
 
-# Context layers are assembled in a fixed, auditable order (see
-# docs/PIPELINE_CONTEXT_AUDIT.md and the repository context-composition rule):
-#   1. public project context
-#   2. public AI26 codebook
-#   3. optional private codebook/source overlays
-#   4. source metadata / current source-family context
-#   5. latest periodic report / context memory
-#   6. RAG context
-#   7. current source evidence
-#   8. current stage instructions
-# Every layer must remain distinguishable in the context audit and provenance.
 context_profile: balanced
 contexts:
   project: contexts/projects/ai26_v1.md
 
 codebook:
   public: codebooks/public/ai26_v2.yaml
-  # Optional private overlay. Kept empty in the public repository; the real path
-  # is supplied by a private machine/project overlay outside Git.
   private_overlay: null
   merge_order: [public, private_overlay]
 
 analysis:
-  # Core Laclau/Mouffe/Palonen discourse stage. Always on for AI26.
+  # IMPLEMENTED and load-bearing. Enabling an unavailable top-level capability
+  # now fails closed in the canonical pipeline instead of silently doing nothing.
   laclau: true
   palonen: true
   sociotechnical_imaginaries: true
+  # Produced by the multimodal/light-sociology summary and projected into the
+  # canonical analysis section when enabled.
   sentiment: true
   topics: true
   entities: true
+  # Context/provenance capabilities used by the canonical staged pipeline.
   context_memory: true
   temporal: true
   multimodal: true
+
+  # DELIBERATELY EXCLUDED from AI26. These are not implemented as canonical
+  # AI26 stages; changing one to true is a configuration error until an actual
+  # implementation and projection contract exists.
   sna: false
   ant: false
   valueflows: false
 
-  # Optional specialised stages. AI26 runs all three on Laskin by operator
-  # decision (2026-09-17); each remains an explicit, individually switchable
-  # toggle so a run can be narrowed without editing code.
   dna_statement_coding:
     enabled: true
     prompt_version: v1
@@ -74,16 +66,11 @@ analysis:
     include_periodic_context: true
     evidence_mode: strict
 
-# Arena semantics are sampling provenance only. Arena must never be used as
-# evidence for ideological classification of an actor or document.
 arenas:
   - elites
   - grassroots
   - parliamentary
 
-# Provisional sensitising anchors for aggregation. Not a closed ontology and
-# never inferred from actor identity, source list, keywords or one statement.
-# Multi-label overlap, uncertainty and abstention are valid outputs.
 formations:
   - accelerationism
   - doomerism
@@ -92,8 +79,6 @@ formations:
   - ai critical
   - anti-ai
 
-# Cross-cutting dimensions keep every record from being forced into one of the
-# six formation anchors. Context for analysis, not ideological classes.
 dimensions:
   political_economy: [ownership, labour, concentration, redistribution, public infrastructure]
   governance: [regulation, liability, audits, standards, evaluation, democratic control]
@@ -103,9 +88,6 @@ dimensions:
   infrastructure: [compute, chips, data centres, energy, water, open weights]
   geopolitics: [AI race, sovereignty, national security, China, export controls]
 
-# Retrieval/discovery hints only. These are context, never evidence, and must
-# not silently become formations, nodal points, floating/empty signifiers,
-# antagonisms or imaginaries.
 signifier_hints:
   - safety
   - pacing
@@ -122,8 +104,6 @@ signifier_hints:
   - regulation
 
 prompts:
-  # Stage -> prompt resource reference. The registry resolves versions; a run
-  # records each resource id/version/sha256 and the rendered-prompt hash.
   frame: ["multimodal.system:v1", "multimodal.frame_analysis:v1"]
   summary: ["multimodal.system:v1", "multimodal.summary_analysis:v1"]
   discourse: ["laclau.system:v1", "laclau.discourse_analysis:v1"]
@@ -132,7 +112,6 @@ prompts:
   periodic_summary: ["periodic_summary.narrative:v1"]
 
 storage:
-  # Backend roles are declared by the machine layer; this only states intent.
   canonical_records: configured_runtime_backend
   raw_media: configured_runtime_object_store
   redis_required: false
