@@ -1,7 +1,7 @@
 # AI26 analysis on Laskin
 
 Operator guide for the unattended AI26 analysis run on **Laskin**, a Linux
-server that drains the distributed analysis queue from cron every few minutes.
+server that drains the distributed analysis queue from cron once per hour.
 
 Private settings, credentials and research data never live in this repository.
 The real machine configuration lives in the private repository; this guide
@@ -9,13 +9,14 @@ describes the public contract and the operator workflow.
 
 ```text
 Laskin
-  cron (every 5 min)
+  cron (hourly at :05)
     └─ bounded AI26 analysis worker (claims N tasks, then exits)
           ├─ reads ready handoffs from remote MongoDB
           ├─ stages referenced multimodal objects from CSC Allas / S3
           ├─ runs the AI26 stages on local gemma4:12b (http://127.0.0.1:11500)
           └─ persists results + provenance to MongoDB
 
+Collection is staggered separately at :10 and media processing at :30.
 Shared services: remote MongoDB · remote Redis · CSC Allas/S3 · one ai26 namespace
 ```
 
@@ -56,7 +57,7 @@ model            gemma4:12b
 endpoint         http://127.0.0.1:11500
 records          mongodb      objects  s3      cache  redis
 stages           Laclau/Mouffe/Palonen + DNA statement coding + Critical AI
-cadence          every 5 minutes, bounded drain
+cadence          hourly at :05, bounded drain
 ```
 
 Cloud inference is explicitly disabled: a research run must never silently
@@ -76,6 +77,13 @@ The real runtime lives in the private repository (never committed publicly):
   logs/               operational logs
   run/                lock files
   cache/media-staging/  staged multimodal objects
+```
+
+For the current Laskin deployment, operational logs should remain under the
+private runtime tree, for example:
+
+```text
+/mnt/workspace/LaclauGPT-Private/runtime/ai26/analysis/ai26-laskin-analysis.log
 ```
 
 ## Install
@@ -160,6 +168,9 @@ bounded batch and exits. Exit codes:
 3  another tick holds the lock (benign; the previous run is still working)
 ```
 
+A cycle that attempts work and completes none of it exits non-zero, so cron or
+monitoring can detect a broken analysis path instead of silently accepting it.
+
 ## Debug mode
 
 ```bash
@@ -208,14 +219,29 @@ du -sh <private-root>/analysis/ai26/cache/media-staging
 
 ## Enable cron
 
-```cron
-2-59/5 * * * * /bin/bash /path/to/LaclauGPT-Data-Analysis/scripts/run_ai26_laskin.sh >> /path/to/private-root/analysis/ai26/logs/ai26-laskin-analysis.log 2>&1
-```
-
-Always back up the crontab first:
+Preferred installation is the idempotent helper:
 
 ```bash
-crontab -l > <private-root>/analysis/ai26/logs/crontab.backup.$(date -u +%Y%m%dT%H%M%SZ).txt
+cd /mnt/workspace/LaclauGPT-Data-Analysis
+LACLAUGPT_PRIVATE_ROOT=/mnt/workspace/LaclauGPT-Private/runtime/ai26 \
+  bash scripts/install_ai26_laskin_cron.sh
+```
+
+It installs exactly one tagged entry and replaces older invocations of the same
+wrapper. The resulting canonical entry is:
+
+```cron
+5 * * * * /bin/bash /mnt/workspace/LaclauGPT-Data-Analysis/scripts/run_ai26_laskin.sh >> /mnt/workspace/LaclauGPT-Private/runtime/ai26/analysis/ai26-laskin-analysis.log 2>&1 # LaclauGPT AI26 analysis
+```
+
+This is intentionally staggered from the Collection jobs (`:10` collect,
+`:30` media). `LACLAUGPT_MAX_TASKS` bounds each cycle, and `flock` prevents
+accidental overlap.
+
+If installing manually, back up the crontab first:
+
+```bash
+crontab -l > /mnt/workspace/LaclauGPT-Private/runtime/ai26/analysis/crontab.backup.$(date -u +%Y%m%dT%H%M%SZ).txt
 crontab -e
 ```
 
@@ -234,22 +260,28 @@ Cron provides a minimal environment, which is the usual cause of a job that
 works by hand but not on schedule:
 
 ```bash
-env -i /bin/bash /path/to/LaclauGPT-Data-Analysis/scripts/run_ai26_laskin.sh --once
-tail -50 <private-root>/analysis/ai26/logs/ai26-laskin-analysis.log
+env -i LACLAUGPT_PRIVATE_ROOT=/mnt/workspace/LaclauGPT-Private/runtime/ai26 \
+  /bin/bash /mnt/workspace/LaclauGPT-Data-Analysis/scripts/run_ai26_laskin.sh --once
+
+tail -50 /mnt/workspace/LaclauGPT-Private/runtime/ai26/analysis/ai26-laskin-analysis.log
 crontab -l | grep run_ai26_laskin
 ```
+
+Confirm that an unattended tick creates new results in the effective AI26
+analysis collection (for the deployed run this is `ai26__analyzed`) and that a
+known failing cycle produces a non-zero exit.
 
 ## Status and health
 
 ```bash
-crontab -l | grep run_ai26_laskin                  # is it installed?
-tail -50 <private-root>/analysis/ai26/logs/ai26-laskin-analysis.log
-.venv/bin/laclaugpt-preflight                      # backends + model reachable
+crontab -l | grep run_ai26_laskin
+tail -50 /mnt/workspace/LaclauGPT-Private/runtime/ai26/analysis/ai26-laskin-analysis.log
+.venv/bin/laclaugpt-preflight
 ```
 
 The presence of a lock file alone is not evidence of a live job; `flock`
-ownership is authoritative. Repeated exit code `3` means ticks are running
-longer than the interval — reduce `--max-tasks` or check the log.
+ownership is authoritative. Repeated exit code `3` means a previous hourly tick
+is still running; inspect backlog, `LACLAUGPT_MAX_TASKS`, and the log.
 
 ## Recovery after a failed run
 
@@ -266,14 +298,15 @@ longer than the interval — reduce `--max-tasks` or check the log.
 
 ```bash
 crontab -l | grep -v 'run_ai26_laskin.sh' | crontab -   # pause
-cd /path/to/LaclauGPT-Data-Analysis
+cd /mnt/workspace/LaclauGPT-Data-Analysis
 git pull --ff-only origin main
 .venv/bin/python -m pip install -e '.[remote,ollama,dev]'
-.venv/bin/python -m pytest                              # verify updated checkout
+.venv/bin/python -m pytest
 .venv/bin/laclaugpt-preflight
-./scripts/run_ai26_laskin.sh --once                     # verify manually
+./scripts/run_ai26_laskin.sh --once
 # re-freeze if the analysis config or codebook changed
-crontab -e                                              # re-enable
+LACLAUGPT_PRIVATE_ROOT=/mnt/workspace/LaclauGPT-Private/runtime/ai26 \
+  bash scripts/install_ai26_laskin_cron.sh
 ```
 
 ## Test one synthetic record end to end
