@@ -1,50 +1,117 @@
-from __future__ import annotations
-
-from typing import Any
-
 from laclaugpt_data_analysis.canonical import CanonicalRecord
 from laclaugpt_data_analysis.codebooks import CodebookEntry
-from laclaugpt_data_analysis.llm.base import ChatRequest, ChatResponse, LLMProvider
-from laclaugpt_data_analysis.pipeline import analyze_record
+from laclaugpt_data_analysis.llm.base import ChatRequest, LLMCallProvenance, LLMResponse
+from laclaugpt_data_analysis.pipeline import (
+    AnalysisProposal,
+    ChainProposal,
+    EvidenceLinkedCandidate,
+    RelationProposal,
+    analyze_record,
+)
 
 
-class ParityProvider(LLMProvider):
-    def __init__(self) -> None:
+class ParityProvider:
+    def __init__(self):
         self.requests: list[ChatRequest] = []
 
-    def chat(self, request: ChatRequest) -> ChatResponse:
+    def chat(self, request: ChatRequest) -> LLMResponse:
         self.requests.append(request)
-        user = request.user
-        if "Return JSON with keys: summary" in user:
-            return ChatResponse(
-                content='{"summary":"AI governance summary","themes":["democratic control"],"sentiment":"concerned","stance":"supports democratic control"}',
-                model=request.model,
-            )
-        if "Return JSON with keys: signifiers" in user:
-            return ChatResponse(
-                content='{"signifiers":[{"label":"AI","kind":"floating_signifier","description":"contested meaning","evidence_quotes":["AI should be governed democratically."],"confidence":0.8},{"label":"progress","kind":"empty_signifier_candidate","description":"broadly available horizon","evidence_quotes":["Progress means AI that serves everyone."],"confidence":0.7}],"relations":[],"equivalence_chains":[{"members":["democracy","accountability","public control"],"evidence_quotes":["AI should be governed democratically."],"confidence":0.8}],"difference_chains":[{"members":["public control","unregulated systems"],"evidence_quotes":["Unregulated systems worry us."],"confidence":0.8}],"antagonisms":[],"us":[],"them":[],"frontier":[],"affects":[],"formula_of_populism":null}',
-                model=request.model,
-            )
-        if "Return JSON with keys: canonical_label" in user:
-            return ChatResponse(
-                content='{"canonical_label":"AI governance","keywords":["AI","governance"],"confidence":0.9}',
-                model=request.model,
-            )
-        if "Return JSON with keys: entities" in user:
-            return ChatResponse(content='{"entities":[]}', model=request.model)
-        if "Return JSON with keys: frames" in user:
-            return ChatResponse(content='{"frames":[]}', model=request.model)
-        if "Return JSON with keys: stances" in user:
-            return ChatResponse(
-                content='{"stances":[{"label":"supports democratic control","target":"AI","evidence_quotes":["AI should be governed democratically."],"confidence":0.8}]}',
-                model=request.model,
-            )
-        if "Return JSON with keys: sentiments" in user:
-            return ChatResponse(
-                content='{"sentiments":[{"label":"concerned","target":"unregulated systems","evidence_quotes":["Unregulated systems worry us."],"confidence":0.8}]}',
-                model=request.model,
-            )
-        return ChatResponse(content="{}", model=request.model)
+        proposal = AnalysisProposal(
+            summary="Synthetic parity summary",
+            entities=["Synthetic Lab", "Researcher A"],
+            topics=[
+                EvidenceLinkedCandidate(
+                    label="AI governance",
+                    evidence=["AI should be governed democratically."],
+                    confidence=0.8,
+                )
+            ],
+            themes=[
+                EvidenceLinkedCandidate(
+                    label="democratic control",
+                    evidence=["AI should be governed democratically."],
+                    confidence=0.8,
+                )
+            ],
+            sentiments=[
+                EvidenceLinkedCandidate(
+                    label="concerned",
+                    evidence=["Unregulated systems worry us."],
+                    confidence=0.7,
+                )
+            ],
+            stances=[
+                EvidenceLinkedCandidate(
+                    label="supports democratic AI governance",
+                    evidence=["AI should be governed democratically."],
+                    confidence=0.9,
+                )
+            ],
+            signifiers=["AI"],
+            nodal_points=["democracy"],
+            floating_signifiers=[
+                EvidenceLinkedCandidate(
+                    label="AI",
+                    evidence=["AI should be governed democratically."],
+                    confidence=0.5,
+                    uncertainty="Requires cross-document comparison.",
+                )
+            ],
+            empty_signifier_candidates=[
+                EvidenceLinkedCandidate(
+                    label="progress",
+                    evidence=["Progress means AI that serves everyone."],
+                    confidence=0.4,
+                    uncertainty="Candidate only.",
+                )
+            ],
+            formations=["democratic AI project"],
+            discourses=["democratic technology discourse"],
+            imaginaries=["democratically governed AI future"],
+            equivalence_chains=[
+                ChainProposal(
+                    chain_type="equivalence",
+                    members=["democracy", "accountability", "public control"],
+                    evidence=["Democracy, accountability and public control belong together."],
+                )
+            ],
+            difference_chains=[
+                ChainProposal(
+                    chain_type="difference",
+                    members=["public control", "private ownership"],
+                    evidence=["Public control differs from private ownership."],
+                )
+            ],
+            antagonisms=[
+                RelationProposal(
+                    relation_type="antagonism",
+                    source="democratic public",
+                    target="unaccountable monopoly",
+                    evidence=["An unaccountable monopoly blocks democratic control."],
+                )
+            ],
+            actor_entity_relations=[
+                RelationProposal(
+                    relation_type="ADVOCATES",
+                    source="Researcher A",
+                    target="democratic control",
+                    evidence=["Researcher A calls for democratic control."],
+                )
+            ],
+            uncertainty=["Formation requires corpus validation."],
+            abstentions=["No hegemonic finding from one document."],
+        )
+        return LLMResponse(
+            content=proposal.model_dump_json(),
+            provenance=LLMCallProvenance(
+                requested_mode="local",
+                requested_model="fake-model",
+                resolved_model="fake-model",
+                actual_mode="local",
+                actual_model="fake-model",
+                endpoint="fake",
+            ),
+        )
 
 
 def test_expanded_discourse_fields_survive_pipeline_serialization_and_rendering():
@@ -94,8 +161,49 @@ def test_expanded_discourse_fields_survive_pipeline_serialization_and_rendering(
     ]
     assert result.analysis.difference_chains[0].member_refs == [
         "public control",
-        "unregulated systems",
+        "private ownership",
     ]
-    serialized = result.canonical_dict()
-    assert serialized["analysis"]["floating_signifiers"][0]["label"] == "AI"
-    assert serialized["analysis"]["empty_signifier_candidates"][0]["label"] == "progress"
+    assert result.analysis.antagonisms[0].target_ref == "unaccountable monopoly"
+    assert result.analysis.actor_entity_relations[0].source_ref == "Researcher A"
+
+    assert result.evidence
+    assert all(item.source_url == source_url for item in result.evidence)
+    assert result.analysis.themes[0].evidence_ids
+    assert result.analysis.antagonisms[0].evidence_ids
+    assert result.analysis.themes[0].review_status == "PROVISIONAL"
+    assert result.analysis.antagonisms[0].review_status == "PROVISIONAL"
+    assert result.analysis.themes[0].provenance_id
+    assert result.analysis.equivalence_chains[0].provenance_id
+    assert result.provenance[-1].metadata["stage"] == "analysis"
+
+    payload = result.model_dump_json()
+    restored = CanonicalRecord.model_validate_json(payload)
+    assert restored.analysis.empty_signifier_candidates[0].label == "progress"
+    assert restored.analysis.actor_entity_relations[0].target_ref == "democratic control"
+
+    report = result.human_readable.markdown
+    assert "## Sentiment and stance" in report
+    assert "Floating signifiers: AI" in report
+    assert "Empty-signifier candidates: progress" in report
+    assert "Equivalence chains: democracy ≡ accountability ≡ public control" in report
+    assert "unaccountable monopoly" in report
+    assert "Researcher A" in report
+
+
+def test_text_only_parity_does_not_manufacture_multimodal_evidence():
+    record = CanonicalRecord(
+        source_url="https://example.invalid/text-only",
+        content={"text": "AI should be governed democratically."},
+    )
+    provider = ParityProvider()
+    result = analyze_record(record, provider=provider, model="fake-model")
+    assert all(
+        "RETRIEVED CODEBOOK CANDIDATES (NOT EVIDENCE)" not in request.user
+        for request in provider.requests
+    )
+    assert result.content.frames == []
+    assert result.content.ocr == []
+    assert result.content.transcripts == []
+    assert result.intermediate.frames == []
+    assert result.intermediate.ocr == []
+    assert result.intermediate.asr == []
