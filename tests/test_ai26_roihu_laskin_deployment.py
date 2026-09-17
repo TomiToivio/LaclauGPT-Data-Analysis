@@ -4,7 +4,6 @@ import pytest
 
 from laclaugpt_data_analysis.storage import S3ArtifactStore
 
-
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -66,7 +65,11 @@ def test_public_profiles_share_ai26_distributed_namespace():
         assert required in roihu
         assert required in laskin
     assert "LACLAUGPT_MACHINE=roihu" in roihu
-    assert "LACLAUGPT_MACHINE=linux-server" in laskin
+    # #79 made the deployment identifier open: the profile now records the
+    # real machine (`laskin`) rather than the former generic class value, so
+    # assert the identifier is present and project-scoped instead of
+    # hard-coding the old generic string.
+    assert "LACLAUGPT_MACHINE=laskin" in laskin
 
 
 def test_s3_artifact_store_stages_binary_files(tmp_path):

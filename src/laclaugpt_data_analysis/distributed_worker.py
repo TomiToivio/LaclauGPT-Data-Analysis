@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import os
 import socket
 import subprocess
@@ -41,6 +42,8 @@ from .task_queue import (
     durable_store_from_settings,
     redis_queue_from_settings,
 )
+
+logger = logging.getLogger(__name__)
 
 AI26_MODEL = "gemma4:12b"
 AI26_NOT_BEFORE = "2026-09-01T00:00:00+00:00"
@@ -363,10 +366,13 @@ class AI26Handler:
 
     def __call__(self, task: TaskEnvelope) -> dict[str, Any]:
         record = self.handoff.resolve(task.record_ref)
-        staging_provenance: dict[str, Any] = {}
+        staging_provenance: dict[str, list[str]] = {}
         if self.stager is not None:
             report = self.stager.stage_record(record)
-            staging_provenance = report.provenance()
+            # ``PipelineContext.provenance`` is ``dict[str, list[str]]``; the
+            # staging report is richer, so flatten it at this boundary instead
+            # of weakening either contract.
+            staging_provenance = _flatten_provenance(report.provenance())
             retriable = [item for item in report.staged if item.retriable]
             if retriable:
                 raise ObjectUnavailableError(
@@ -396,6 +402,30 @@ class AI26Handler:
             allow_cloud_fallback=False,
         )
         return analyzed.model_dump(mode="json")
+
+
+def _flatten_provenance(payload: Any) -> dict[str, list[str]]:
+    """Flatten a rich provenance mapping into ``dict[str, list[str]]``.
+
+    ``PipelineContext.provenance`` only accepts lists of strings, while staging
+    and other stages produce nested structures. Each top-level key becomes a
+    list of ``key=value`` strings, so no information is dropped and the value
+    stays within the declared contract.
+    """
+    def render(value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        if isinstance(value, bool | int | float) or value is None:
+            return str(value)
+        return json.dumps(value, sort_keys=True, ensure_ascii=False, default=str)
+
+    flattened: dict[str, list[str]] = {}
+    for key, value in dict(payload or {}).items():
+        if isinstance(value, list | tuple):
+            flattened[str(key)] = [render(item) for item in value]
+        else:
+            flattened[str(key)] = [render(value)]
+    return flattened
 
 
 def _publish_local_media_refs(record: Any, report: Any) -> None:
@@ -546,6 +576,34 @@ def _parser() -> argparse.ArgumentParser:
         help="seed a bounded batch from Collection's Mongo handoff before consuming tasks",
     )
     return parser
+
+
+def _cycle_exit_status(
+    *,
+    attempted: int,
+    completed: int,
+    duplicate: int = 0,
+    retry: int = 0,
+    dead_letter: int = 0,
+) -> int:
+    """Return the process exit status for one bounded analysis cycle.
+
+    An idle cycle and an all-duplicate cycle are both legitimate successes:
+    there was simply no new work. A cycle that attempted work and completed
+    none of it is a failure and must be visible to the scheduler, because the
+    task errors themselves are recorded only in the durable processing
+    collection.
+    """
+    if attempted <= 0:
+        return 0
+    if completed > 0:
+        return 0
+    if duplicate == attempted:
+        # Every claimed task was already analysed: an idle-equivalent cycle.
+        return 0
+    if retry == 0 and dead_letter == 0:
+        return 0
+    return 1
 
 
 def main(argv: list[str] | None = None) -> int:
