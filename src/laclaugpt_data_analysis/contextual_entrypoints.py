@@ -7,6 +7,7 @@ from .canonical import CanonicalRecord
 from .canonical_pipeline import PipelineContext
 from .config import load_settings
 from .contextual_pipeline import run_contextual_canonical_pipeline
+from .critical_ai import run_optional_critical_ai
 from .production_context import (
     production_context_policy,
     production_retrieval_backend,
@@ -34,12 +35,12 @@ def _contextual_run(
     policy = production_context_policy(settings, project_profile=project_profile)
     summary_repository = production_summary_repository(settings)
     retrieval_backend = production_retrieval_backend(settings)
+    entries = list(codebook_entries or [])
     result = run_contextual_canonical_pipeline(
         record,
         provider=provider,
         project_id=settings.project_id,
-        caller_context=context,
-        codebook_entries=list(codebook_entries or []),
+        codebook_entries=entries,
         policy=policy,
         summary_repository=summary_repository,
         retrieval_backend=retrieval_backend,
@@ -51,9 +52,20 @@ def _contextual_run(
         prompt_version=prompt_version,
         allow_cloud_fallback=allow_cloud_fallback,
     )
-    if context is not None and context.provenance:
-        result.intermediate.stage_outputs.setdefault("caller_context_provenance", []).append(
-            context.provenance
+    if context is not None:
+        if context.provenance:
+            result.intermediate.stage_outputs.setdefault("caller_context_provenance", []).append(
+                context.provenance
+            )
+        # The unified-context path must preserve the same optional-stage semantics
+        # as the canonical runner. The frozen worker config lives on caller context.
+        run_optional_critical_ai(
+            result,
+            provider=provider,
+            context=context,
+            codebook_entries=entries,
+            model=model,
+            allow_cloud_fallback=allow_cloud_fallback,
         )
     return result
 
