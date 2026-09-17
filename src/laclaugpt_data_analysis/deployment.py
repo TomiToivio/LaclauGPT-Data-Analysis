@@ -32,15 +32,23 @@ class DeploymentProfile:
         return replace(self, **changes)
 
     def validate(self) -> list[str]:
+        """Validate safety invariants, not deployment identifier vocabularies.
+
+        Machine, execution, storage and LLM mode names are intentionally open
+        strings. Public/private deployment layers may introduce new profile
+        identifiers (for example ``laskin``) without requiring a code change in
+        this generic dataclass. Components that require a specific backend or
+        capability must validate that requirement at the point of use.
+        """
         errors: list[str] = []
-        if self.machine not in {"laptop", "roihu", "linux-server", "custom"}:
-            errors.append(f"unsupported machine: {self.machine}")
-        if self.execution not in {"cli", "slurm", "cron", "systemd", "agent", "custom"}:
-            errors.append(f"unsupported execution: {self.execution}")
-        if self.storage not in {"local", "distributed", "custom"}:
-            errors.append(f"unsupported storage: {self.storage}")
-        if self.llm not in {"local-ollama", "ollama-cloud", "custom"}:
-            errors.append(f"unsupported llm mode: {self.llm}")
+        if not self.machine.strip():
+            errors.append("machine must not be empty")
+        if not self.execution.strip():
+            errors.append("execution must not be empty")
+        if not self.storage.strip():
+            errors.append("storage must not be empty")
+        if not self.llm.strip():
+            errors.append("llm mode must not be empty")
         if self.model in CLOUD_MODELS and not self.cloud_allowed:
             errors.append("cloud model requires explicit cloud_allowed=True")
         if self.llm == "ollama-cloud" and not self.cloud_allowed:
