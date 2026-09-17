@@ -12,8 +12,10 @@ import json
 import os
 import sys
 from typing import Any
+from uuid import uuid4
 
 from .debug_mode import sanitize_url
+from .s3_client import build_s3_client
 from .staging import StagingPolicy
 
 
@@ -57,33 +59,51 @@ def _check_object_store(settings: Any) -> dict[str, Any]:
         "backend": "s3",
         "configured": True,
         "bucket": settings.s3_bucket,
-        "endpoint": sanitize_url(settings.s3_endpoint_url or ""),
     }
     try:
-        import boto3
-    except ImportError:
-        report["error"] = "boto3_not_installed"
-        return report
-    try:
-        client = boto3.client(
-            "s3", endpoint_url=settings.s3_endpoint_url or None,
-            region_name=settings.s3_region or None,
+        client, spec = build_s3_client(
+            endpoint_url=settings.s3_endpoint_url,
+            region=settings.s3_region,
+            addressing_style=settings.s3_addressing_style,
+            signature_version=settings.s3_signature_version,
         )
-        # A HEAD on a project-scoped sentinel validates credentials without
-        # requiring list permission (Allas commonly denies ListBucket).
+        report.update(
+            {
+                "endpoint": sanitize_url(spec.endpoint_url or ""),
+                "provider": spec.provider,
+                "addressing_style": spec.addressing_style,
+                "signature_version": spec.signature_version or "auto",
+            }
+        )
+        # Verify the write operation the analysis pipeline actually needs. The
+        # object is tiny, project-scoped and deleted immediately after upload.
         prefix = settings.distributed_namespace.s3_key("analysis").rstrip("/")
-        client.head_object(Bucket=settings.s3_bucket, Key=f"{prefix}/.preflight")
+        object_key = f"{prefix}/.preflight/{uuid4().hex}"
+        client.put_object(
+            Bucket=settings.s3_bucket,
+            Key=object_key,
+            Body=b"laclaugpt-preflight\n",
+            ContentType="text/plain",
+        )
         report["reachable"] = True
+        report["writeable"] = True
+        try:
+            client.delete_object(Bucket=settings.s3_bucket, Key=object_key)
+            report["cleanup"] = True
+        except Exception as exc:  # noqa: BLE001 - write success is the required capability
+            report["cleanup"] = False
+            report["cleanup_error"] = type(exc).__name__
+    except RuntimeError as exc:
+        if "S3 support requires" in str(exc):
+            report["error"] = "boto3_not_installed"
+            return report
+        report["reachable"] = False
+        report["writeable"] = False
+        report["error"] = type(exc).__name__
     except Exception as exc:  # noqa: BLE001
-        code = str(getattr(exc, "response", {}).get("Error", {}).get("Code", ""))
-        if code in {"404", "NoSuchKey", "NotFound"} or getattr(
-            exc, "response", {}
-        ).get("ResponseMetadata", {}).get("HTTPStatusCode") == 404:
-            # Credentials work; the sentinel simply does not exist.
-            report["reachable"] = True
-        else:
-            report["reachable"] = False
-            report["error"] = type(exc).__name__
+        report["reachable"] = False
+        report["writeable"] = False
+        report["error"] = type(exc).__name__
     return report
 
 
@@ -162,6 +182,8 @@ def preflight_report() -> dict[str, Any]:
         problems.append("redis unreachable")
     if checks["object_store"].get("reachable") is False:
         problems.append("object store unreachable")
+    if checks["object_store"].get("writeable") is False:
+        problems.append("object store is not writeable")
     if checks["ollama"].get("reachable") is False:
         problems.append("ollama endpoint unreachable")
     if checks["ollama"].get("model_present") is False:
