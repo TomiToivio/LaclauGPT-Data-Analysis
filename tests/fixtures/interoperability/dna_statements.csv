@@ -1,0 +1,2 @@
+statement_id,actor_id,actor_label,concept_id,concept_label,qualifier,source_url,document_id,evidence_id,evidence_text,timestamp,actor_attributes,document_attributes,producer_type,producer_id,confidence,review_status
+s1,a1,Tutkija,c1,tekoäly,agreement,https://example.org/fi/1,doc-1,ev-1,tekoäly,2026-09-17T09:00:00+00:00,"{""country"":""FI""}","{""language"":""fi""}",human,coder-1,0.9,ACCEPTED
