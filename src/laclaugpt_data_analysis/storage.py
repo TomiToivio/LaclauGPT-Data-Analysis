@@ -1,8 +1,10 @@
 """Small storage ports for analysis inputs, outputs and caches.
 
 The module keeps local CSV/SQLite usable without remote services while allowing MongoDB
-as the preferred shared backend. ``auto`` only uses MongoDB when a URI is explicitly
-configured *and* reachable; it never silently invents or discovers a remote endpoint.
+as the preferred shared backend. ``auto`` delegates to the compatibility
+``data_backend`` setting first, so deployment profiles and all storage consumers agree
+on one effective backend. Distributed deployments fail closed rather than silently
+falling back to local persistence.
 """
 from __future__ import annotations
 
@@ -10,6 +12,7 @@ import csv
 import json
 import sqlite3
 from collections.abc import Iterable, Mapping
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -177,7 +180,9 @@ class RedisCache:
     def set(self, key: str, value: str) -> None: self.client.set(self._key(key), value)
 
 
+@lru_cache(maxsize=None)
 def _mongodb_reachable(settings: Settings) -> bool:
+    """Probe MongoDB once for an immutable settings value during a process lifetime."""
     if not settings.mongo_url: return False
     try:
         try: from pymongo import MongoClient
@@ -188,16 +193,46 @@ def _mongodb_reachable(settings: Settings) -> bool:
         return False
 
 
+def _requested_storage_backend(settings: Settings) -> str:
+    """Resolve the explicit selector first; ``auto`` delegates to ``data_backend``."""
+    explicit = (settings.storage_backend or "auto").strip().casefold()
+    if explicit != "auto":
+        return explicit
+    legacy = (settings.data_backend or "").strip().casefold()
+    return legacy or "auto"
+
+
 def resolved_storage_backend(settings: Settings) -> str:
-    """Resolve ``auto|mongodb|csv|sqlite`` without silently using remote services."""
-    requested = (settings.storage_backend or settings.data_backend or "csv").casefold()
+    """Return one effective data backend and enforce distributed-storage semantics.
+
+    Precedence is ``storage_backend`` when explicitly set, otherwise ``data_backend``.
+    A remaining ``auto`` may probe MongoDB only for local/custom deployments. A
+    deployment declaring ``storage=distributed`` must resolve to MongoDB and fails
+    closed if MongoDB is missing or unreachable.
+    """
+    requested = _requested_storage_backend(settings)
+    distributed = (settings.storage or "local").strip().casefold() == "distributed"
+
     if requested == "auto":
-        return "mongodb" if settings.mongo_url and _mongodb_reachable(settings) else "csv"
+        if distributed:
+            requested = "mongodb"
+        else:
+            requested = "mongodb" if settings.mongo_url and _mongodb_reachable(settings) else "csv"
+
     if requested == "mongodb":
-        if not settings.mongo_url: raise ValueError("storage_backend=mongodb requires a configured MongoDB URI")
-        if not _mongodb_reachable(settings): raise ConnectionError("MongoDB is required but unavailable")
+        if not settings.mongo_url:
+            raise ValueError("storage backend mongodb requires LACLAUGPT_MONGODB_URI or LACLAUGPT_MONGO_URL")
+        if not _mongodb_reachable(settings):
+            raise ConnectionError("MongoDB is required but unavailable")
         return "mongodb"
-    if requested in {"csv", "sqlite"}: return requested
+
+    if requested in {"csv", "sqlite"}:
+        if distributed:
+            raise ValueError(
+                f"LACLAUGPT_STORAGE=distributed requires a distributed data backend; resolved {requested}"
+            )
+        return requested
+
     raise ValueError(f"unsupported storage backend: {requested}")
 
 
