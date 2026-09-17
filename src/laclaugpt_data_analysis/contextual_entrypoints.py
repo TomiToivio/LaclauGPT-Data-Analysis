@@ -38,6 +38,7 @@ def _contextual_run(
         record,
         provider=provider,
         project_id=settings.project_id,
+        caller_context=context,
         codebook_entries=list(codebook_entries or []),
         policy=policy,
         summary_repository=summary_repository,
