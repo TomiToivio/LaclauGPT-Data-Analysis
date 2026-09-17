@@ -34,6 +34,7 @@ from .staging import (
 )
 from .storage import artifact_store
 from .task_queue import (
+    DurableTaskStore,
     TaskEnvelope,
     TaskQueue,
     TaskWorker,
@@ -245,9 +246,6 @@ def enforce_local_model(manifest: FrozenRunManifest) -> None:
     os.environ["LLM_ALLOW_CLOUD_FALLBACK"] = "0"
     os.environ["LACLAUGPT_LLM_MODEL"] = AI26_MODEL
     os.environ["LACLAUGPT_OLLAMA_MODEL"] = AI26_MODEL
-    # Endpoint resolution has two documented names; publish the prefixed one
-    # into the native name so the Ollama client, the multimodal adapter and
-    # model routing all agree on the same server.
     endpoint = os.environ.get(LLM_ENDPOINT_ENV_ALIAS, "").strip()
     if endpoint and not os.environ.get(LLM_HOST_ENV, "").strip():
         os.environ[LLM_HOST_ENV] = endpoint
@@ -264,16 +262,9 @@ def _int_env(name: str, default: int) -> int:
 
 
 def build_media_stager(settings: Settings) -> MediaStager | None:
-    """Build the multimodal staging cache for this run, or ``None`` when local-only.
-
-    Staging matters when canonical records may reference remote objects, which is
-    exactly the distributed/object-storage case. A local file backend is already
-    local, so it needs no staging step.
-    """
+    """Build the multimodal staging cache for this run, or ``None`` when local-only."""
     if settings.object_backend != "s3":
         return None
-    # Pruning is operator-configurable; setting both bounds to 0/null disables it
-    # (Laskin retains staged objects until they are cleared manually).
     cache_raw = os.environ.get("LACLAUGPT_STAGING_MAX_CACHE_BYTES", "").strip()
     age_raw = os.environ.get("LACLAUGPT_STAGING_MAX_AGE_SECONDS", "").strip()
     max_cache = int(cache_raw) if cache_raw else 8 * 1024**3
@@ -314,7 +305,14 @@ class MongoCollectionHandoff:
         clean = {key: value for key, value in row.items() if key in CanonicalRecord.model_fields}
         return CanonicalRecord.model_validate(clean)
 
-    def ready_handoffs(self, run_id: str, *, limit: int) -> list[dict[str, Any]]:
+    def ready_handoffs(
+        self,
+        run_id: str,
+        *,
+        limit: int,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """Return a stable page of ready handoffs for bounded forward scanning."""
         if limit < 1:
             return []
         cursor = self.collection.find(
@@ -331,7 +329,7 @@ class MongoCollectionHandoff:
                 ("handoff.published_at", -1),
                 ("source_url", 1),
             ]
-        ).limit(limit)
+        ).skip(max(offset, 0)).limit(limit)
         return [dict(row.get("handoff") or {}) for row in cursor]
 
 
@@ -355,10 +353,6 @@ class AI26Handler:
         record = self.handoff.resolve(task.record_ref)
         staging_provenance: dict[str, Any] = {}
         if self.stager is not None:
-            # Materialise referenced Allas/S3 objects before any multimodal model
-            # call. A permanently missing object is recorded and the record still
-            # analyses text-only; a retriable transport failure aborts so the
-            # task retries instead of producing a degraded scientific result.
             report = self.stager.stage_record(record)
             staging_provenance = report.provenance()
             retriable = [item for item in report.staged if item.retriable]
@@ -389,11 +383,7 @@ class AI26Handler:
 
 
 def _publish_local_media_refs(record: Any, report: Any) -> None:
-    """Point frames/media at staged local files so the multimodal adapter can attach them.
-
-    A staged path is local runtime state: it is written to the transient frame or
-    media reference only, never into canonical source identity.
-    """
+    """Point frames/media at staged local files so the multimodal adapter can attach them."""
     by_ref = {item.ref: item for item in report.staged if item.local_available}
     if not by_ref:
         return
@@ -455,14 +445,41 @@ def seed_ready_tasks(
     binding: WorkerBinding,
     handoff: MongoCollectionHandoff,
     queue: TaskQueue,
+    durable_store: DurableTaskStore,
     *,
     limit: int,
+    page_size: int | None = None,
 ) -> int:
-    """Boundedly mirror durable Collection-ready handoffs into the worker task stream."""
+    """Seed up to ``limit`` new handoffs while paging past completed results.
+
+    ``--max-tasks`` remains the consumption/seed bound, but completed handoffs no
+    longer consume that budget. Each cron cycle scans stable pages until it finds
+    new work or exhausts the ready handoff set.
+    """
+    if limit < 1:
+        return 0
+    batch_size = max(1, page_size or limit)
     count = 0
-    for envelope in handoff.ready_handoffs(binding.manifest.run_id, limit=limit):
-        queue.publish(binding.task_from_handoff(envelope))
-        count += 1
+    offset = 0
+    while count < limit:
+        envelopes = handoff.ready_handoffs(
+            binding.manifest.run_id,
+            limit=batch_size,
+            offset=offset,
+        )
+        if not envelopes:
+            break
+        offset += len(envelopes)
+        for envelope in envelopes:
+            task = binding.task_from_handoff(envelope)
+            if durable_store.has_result(task.idempotency_key):
+                continue
+            queue.publish(task)
+            count += 1
+            if count >= limit:
+                break
+        if len(envelopes) < batch_size:
+            break
     return count
 
 
@@ -525,7 +542,13 @@ def main(argv: list[str] | None = None) -> int:
     settings = load_settings()
     worker, handoff = build_worker(binding, settings)
     if args.seed_ready:
-        seed_ready_tasks(binding, handoff, worker.queue, limit=max(args.max_tasks, 0))
+        seed_ready_tasks(
+            binding,
+            handoff,
+            worker.queue,
+            worker.durable_store,
+            limit=max(args.max_tasks, 0),
+        )
     worker.heartbeat(run_id=binding.manifest.run_id, status="starting")
     processed = 0
     for _ in range(max(args.max_tasks, 0)):
