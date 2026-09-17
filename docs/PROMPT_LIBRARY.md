@@ -12,6 +12,11 @@ First-party prompts live under `src/laclaugpt_data_analysis/prompts/`. A filenam
 - `prompts/laclau/summary_analysis_v1.md` -> `laclau.summary_analysis:v1`
 - `prompts/laclau/discourse_analysis_v1.md` -> `laclau.discourse_analysis:v1`
 - `prompts/luhmann/extraction_v1.md` -> `luhmann.extraction:v1`
+- `prompts/multimodal/system_v1.md` -> `multimodal.system:v1`
+- `prompts/multimodal/frame_analysis_v1.md` -> `multimodal.frame_analysis:v1`
+- `prompts/multimodal/summary_analysis_v1.md` -> `multimodal.summary_analysis:v1`
+
+The multimodal prompt family is a pre-discourse layer. It uses Bateman/Wildfeuer/Hiippala-style problem-oriented multimodality and social-semiotic description for frames/items, followed by a deliberately light Castells-style sociological contextualisation. It must not perform the later dedicated Laclau/Mouffe/Palonen, DNA, Critical AI Studies or other deep theoretical stages.
 
 Load them with `load_prompt("laclau.system", version="v1")`. Missing IDs or versions fail explicitly and loading never requires the network.
 
