@@ -263,6 +263,8 @@ class MongoTaskStore:
 class RedisStreamQueue:
     """Redis Streams adapter using consumer groups and pending-entry reclaim."""
 
+    _LEGACY_PENDING_BATCH = 100
+
     def __init__(
         self,
         url: str,
@@ -289,6 +291,33 @@ class RedisStreamQueue:
             if "BUSYGROUP" not in str(exc):
                 raise
 
+    @staticmethod
+    def _decode(value: Any) -> Any:
+        if isinstance(value, bytes):
+            return value.decode("utf-8")
+        return value
+
+    @classmethod
+    def _decode_fields(cls, fields: Mapping[Any, Any]) -> dict[str, Any]:
+        return {str(cls._decode(key)): cls._decode(value) for key, value in fields.items()}
+
+    @classmethod
+    def _claimed_task(cls, message_id: Any, fields: Mapping[Any, Any]) -> ClaimedTask:
+        return ClaimedTask(
+            str(cls._decode(message_id)),
+            TaskEnvelope.from_fields(cls._decode_fields(fields)),
+        )
+
+    @staticmethod
+    def _next_stream_id(message_id: str) -> str:
+        milliseconds, sequence = message_id.split("-", maxsplit=1)
+        return f"{milliseconds}-{int(sequence) + 1}"
+
+    @staticmethod
+    def _is_xautoclaim_unknown_command(exc: Exception) -> bool:
+        message = str(exc).lower()
+        return "unknown command" in message and "xautoclaim" in message
+
     def publish(self, task: TaskEnvelope) -> str:
         return str(self.client.xadd(self.stream, task.to_fields()))
 
@@ -304,22 +333,70 @@ class RedisStreamQueue:
             return None
         _, messages = response[0]
         message_id, fields = messages[0]
-        return ClaimedTask(str(message_id), TaskEnvelope.from_fields(fields))
+        return self._claimed_task(message_id, fields)
 
     def reclaim(self, *, min_idle_ms: int) -> ClaimedTask | None:
-        response = self.client.xautoclaim(
-            self.stream,
-            self.group,
-            self.consumer,
-            min_idle_ms,
-            "0-0",
-            count=1,
-        )
+        try:
+            response = self.client.xautoclaim(
+                self.stream,
+                self.group,
+                self.consumer,
+                min_idle_ms,
+                "0-0",
+                count=1,
+            )
+        except Exception as exc:
+            if not self._is_xautoclaim_unknown_command(exc):
+                raise
+            return self._reclaim_legacy(min_idle_ms=min_idle_ms)
+
         messages = response[1] if len(response) > 1 else []
         if not messages:
             return None
         message_id, fields = messages[0]
-        return ClaimedTask(str(message_id), TaskEnvelope.from_fields(fields))
+        return self._claimed_task(message_id, fields)
+
+    def _reclaim_legacy(self, *, min_idle_ms: int) -> ClaimedTask | None:
+        """Redis 5/6.0 fallback using XPENDING + XCLAIM.
+
+        Redis 6.0 has neither XAUTOCLAIM nor XPENDING's IDLE filter, so inspect
+        ordinary pending-entry metadata client-side and claim the first entry
+        whose idle time meets the configured threshold.
+        """
+        start = "-"
+        while True:
+            pending = self.client.xpending_range(
+                self.stream,
+                self.group,
+                min=start,
+                max="+",
+                count=self._LEGACY_PENDING_BATCH,
+            )
+            if not pending:
+                return None
+
+            for raw_entry in pending:
+                entry = self._decode_fields(raw_entry)
+                idle_ms = int(entry.get("time_since_delivered", 0))
+                if idle_ms < min_idle_ms:
+                    continue
+                message_id = str(entry["message_id"])
+                claimed = self.client.xclaim(
+                    self.stream,
+                    self.group,
+                    self.consumer,
+                    min_idle_ms,
+                    [message_id],
+                )
+                if not claimed:
+                    continue
+                claimed_id, fields = claimed[0]
+                return self._claimed_task(claimed_id, fields)
+
+            if len(pending) < self._LEGACY_PENDING_BATCH:
+                return None
+            last = self._decode_fields(pending[-1])
+            start = self._next_stream_id(str(last["message_id"]))
 
     def ack(self, message_id: str) -> None:
         self.client.xack(self.stream, self.group, message_id)
