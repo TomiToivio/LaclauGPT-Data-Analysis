@@ -4,6 +4,20 @@ This module implements the shared LaclauGPT multi-project namespace in `schemas/
 
 Set `LACLAUGPT_PROJECT_ID` to `ai26`, `ep24`, `brazil26`, `hungary26`, or another validated project ID. `Settings.distributed_namespace` derives the same Redis keys, MongoDB collections and S3 prefixes as Collection and Visualization.
 
+## Storage mode and backend precedence
+
+`LACLAUGPT_STORAGE` describes the deployment storage mode (`local`, `distributed`, or `custom`). The effective record/result backend is resolved once through the storage resolver using this precedence:
+
+1. An explicit `LACLAUGPT_STORAGE_BACKEND` value other than `auto` wins. Supported values are `mongodb`, `csv`, and `sqlite`.
+2. When `LACLAUGPT_STORAGE_BACKEND` is unset or `auto`, `LACLAUGPT_DATA_BACKEND` is consulted as the compatibility/project setting.
+3. Only when both selectors are effectively `auto` may a local/custom deployment probe MongoDB and otherwise choose CSV.
+
+`LACLAUGPT_STORAGE=distributed` is fail-closed: it must resolve to `mongodb`. A missing or unreachable MongoDB endpoint raises an error, and `csv`/`sqlite` are rejected instead of becoming silent local fallbacks. The same resolver is used by normal record stores, periodic-summary persistence, and durable task-result storage, so these layers cannot independently choose conflicting backends.
+
+MongoDB reachability is cached for the immutable settings value during the process lifetime to avoid repeated blocking probes within one worker/cron cycle.
+
+The existing distributed deployment examples intentionally use `LACLAUGPT_DATA_BACKEND=mongodb`; setting `LACLAUGPT_STORAGE_BACKEND=mongodb` is also valid when an explicit override is desired.
+
 ## Redis-distributed analysis context
 
 Redis is the control plane for small versioned configuration documents. Analysis workers can resolve:
