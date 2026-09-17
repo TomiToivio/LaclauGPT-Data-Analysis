@@ -92,7 +92,10 @@ def test_worker_publishes_frozen_private_config_to_pipeline_context(
         return record
 
     monkeypatch.setattr("laclaugpt_data_analysis.distributed_worker.OllamaProvider", _Provider)
-    monkeypatch.setattr("laclaugpt_data_analysis.distributed_worker.run_canonical_pipeline", fake_pipeline)
+    monkeypatch.setattr(
+        "laclaugpt_data_analysis.distributed_worker.run_canonical_pipeline",
+        fake_pipeline,
+    )
 
     handler = AI26Handler(binding, Settings(project_id="ai26"), _Handoff())
     handler(_task(binding))
