@@ -17,7 +17,6 @@ from .base import ChatRequest, LLMCallProvenance, LLMResponse, ProviderError, me
 from .ollama import (
     LLM_CLOUD_ENV,
     LLM_DEFAULT_CLOUD,
-    LLM_HOST_ENV,
     OllamaProvider,
     _client,
     _fallback_allowed,
@@ -25,6 +24,7 @@ from .ollama import (
     _retryable_local_error,
     model_digest,
     resolve_endpoint,
+    resolve_llm_host,
 )
 
 logger = logging.getLogger(__name__)
@@ -63,7 +63,7 @@ def _ollama_chat_with_images(provider: OllamaProvider, request: ChatRequest) -> 
         {"role": "system", "content": request.system},
         user_message,
     ]
-    host = provider._host_override or os.environ.get(LLM_HOST_ENV, "").strip()
+    host = resolve_llm_host(provider._host_override)
     client = _client(host)
     try:
         response = client.chat(model=use_model, messages=messages, options=opts, **kwargs)

@@ -11,6 +11,7 @@ import subprocess
 from functools import lru_cache
 
 from ..deployment import CLOUD_MODELS, DeploymentProfile
+from .ollama import resolve_llm_host
 
 MODELS: dict[str, str] = {
     "e2b": "gemma4:e2b",
@@ -39,7 +40,7 @@ _TIER_VRAM_GB = {"e2b": 6, "e4b": 8, "12b": 13, "26b": 17, "31b": 20}
 
 @lru_cache(maxsize=1)
 def _loaded_models() -> set[str]:
-    host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
+    host = (resolve_llm_host() or "http://127.0.0.1:11434").rstrip("/")
     try:
         raw = subprocess.run(
             ["curl", "-s", f"{host}/api/tags"],
@@ -101,11 +102,7 @@ def resolve_profile_model(
 
 
 def pick_model(stage: str, text_len: int = 0) -> str:
-    """Legacy local availability routing retained for existing callers.
-
-    This function never chooses a cloud model. New deployment-aware code should
-    prefer :func:`resolve_profile_model` and record the result in provenance.
-    """
+    """Legacy local availability routing retained for existing callers."""
     override = _stage_override(stage)
     if override:
         if override in CLOUD_MODELS:
