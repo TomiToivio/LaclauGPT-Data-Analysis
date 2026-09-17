@@ -11,7 +11,6 @@ from .canonical import (
     CanonicalRecord,
     DiscourseObject,
     Entity,
-    Evidence,
     Relation,
     RelationChain,
 )
@@ -77,23 +76,15 @@ def _append_stage_output(record: CanonicalRecord, name: str, output: dict[str, A
 
 
 def _evidence_ids(record: CanonicalRecord, quotes: list[str], prefix: str) -> list[str]:
-    ids: list[str] = []
-    for quote in quotes:
-        text = quote.strip()
-        if not text:
-            continue
-        evidence_id = f"{prefix}:evidence:{len(record.evidence) + 1}"
-        record.evidence.append(
-            Evidence(
-                evidence_id=evidence_id,
-                kind="llm_proposed_source_evidence",
-                source_url=record.source_url,
-                quote=text,
-                metadata={"review_status": "PROVISIONAL"},
-            )
-        )
-        ids.append(evidence_id)
-    return ids
+    """Attach evidence, verifying each quote against the source.
+
+    Delegates to the canonical-pipeline implementation so both entry points
+    apply one policy: ``exact=True`` with offsets when a quote is found in the
+    source, ``exact=False`` when it is not, and never a silent drop.
+    """
+    from .canonical_pipeline import _evidence_ids as _canonical_evidence_ids
+
+    return _canonical_evidence_ids(record, quotes, prefix)
 
 
 def _candidate_objects(

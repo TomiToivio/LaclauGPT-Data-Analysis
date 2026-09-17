@@ -30,6 +30,11 @@ from .models import Topic
 from .prompt_library import load_prompt, prompt_provenance
 from .research_record import ensure_research_layers
 
+# Shortest quote that may count as verbatim evidence. Below this length a match
+# is likely coincidence (a stray "AI" appears in almost any AI26 source), and a
+# fragment masquerading as a substantiated quotation is worse than no evidence.
+_MIN_QUOTE_CHARS = 12
+
 
 class PipelineContext(BaseModel):
     project_context: str = ""
@@ -384,14 +389,89 @@ def discourse_analysis(record: CanonicalRecord, *, provider, context: PipelineCo
     return proposal
 
 
+def _locate_quote(source_text: str, quote: str) -> tuple[int | None, int | None]:
+    """Locate ``quote`` in ``source_text``, tolerant of whitespace differences.
+
+    Returns ``(start, end)`` offsets into ``source_text`` when the quote occurs
+    verbatim (whitespace-normalised), otherwise ``(None, None)``.
+
+    A model-proposed quote is evidence only when it can be pointed at in the
+    source. Paraphrases are common, so callers must record the outcome rather
+    than assume success; see ``_evidence_ids``.
+
+    Quotes shorter than ``_MIN_QUOTE_CHARS`` are refused even when they match:
+    a very short string occurs by chance and would let a fragment masquerade as
+    a substantiated quotation.
+    """
+    if not source_text or not quote:
+        return None, None
+    if len(quote.strip()) < _MIN_QUOTE_CHARS:
+        return None, None
+
+    # Direct hit first: the cheap, exact case.
+    exact_start = source_text.find(quote)
+    if exact_start >= 0:
+        return exact_start, exact_start + len(quote)
+
+    # Whitespace-normalised hit: models re-wrap and collapse spaces. Build a
+    # normalised index that maps each normalised character back to its offset,
+    # so the returned span still slices the ORIGINAL text.
+    normalised_chars: list[str] = []
+    positions: list[int] = []
+    previous_space = False
+    for index, char in enumerate(source_text):
+        if char.isspace():
+            if previous_space:
+                continue
+            normalised_chars.append(" ")
+            positions.append(index)
+            previous_space = True
+        else:
+            normalised_chars.append(char.lower())
+            positions.append(index)
+            previous_space = False
+    normalised_source = "".join(normalised_chars)
+    normalised_quote = " ".join(quote.split()).lower()
+    if not normalised_quote:
+        return None, None
+
+    start = normalised_source.find(normalised_quote)
+    if start < 0:
+        return None, None
+    end = start + len(normalised_quote) - 1
+    if end >= len(positions):
+        return None, None
+    return positions[start], positions[end] + 1
+
 def _evidence_ids(record: CanonicalRecord, quotes: list[str], prefix: str) -> list[str]:
+    """Attach evidence, verifying each quote against the source.
+
+    Policy: flag-and-count. ``exact=True`` with offsets when the quote is found
+    in the source text; ``exact=False`` when it is not. A non-verbatim quote is
+    never dropped silently — that would hide the rate at which the model
+    paraphrases instead of quoting, and it would destroy the audit trail.
+    """
     ids: list[str] = []
+    source_text = record.content.text or ""
     for quote in quotes:
         text = quote.strip()
-        if text:
-            evidence_id = f"{prefix}:evidence:{len(record.evidence) + 1}"
-            record.evidence.append(Evidence(evidence_id=evidence_id, kind="llm_proposed_source_evidence", source_url=record.source_url, quote=text, metadata={"review_status": "PROVISIONAL"}))
-            ids.append(evidence_id)
+        if not text:
+            continue
+        evidence_id = f"{prefix}:evidence:{len(record.evidence) + 1}"
+        start, end = _locate_quote(source_text, text)
+        exact = start is not None and end is not None
+        record.evidence.append(
+            Evidence(
+                evidence_id=evidence_id,
+                kind="llm_proposed_source_evidence",
+                source_url=record.source_url,
+                quote=text,
+                start_offset=start if exact else None,
+                end_offset=end if exact else None,
+                metadata={"review_status": "PROVISIONAL", "exact": exact},
+            )
+        )
+        ids.append(evidence_id)
     return ids
 
 
