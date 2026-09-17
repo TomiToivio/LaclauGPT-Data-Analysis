@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import time
 from dataclasses import asdict, dataclass, replace
+from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol
 
 from .config import Settings
@@ -176,6 +178,90 @@ class InMemoryTaskStore:
         )
 
 
+class SqliteTaskStore:
+    """Durable local task result/failure history for direct and offline operation."""
+
+    def __init__(self, path: str | Path) -> None:
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(self.path) as connection:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS task_results ("
+                "idempotency_key TEXT PRIMARY KEY, source_url TEXT, result_json TEXT NOT NULL, "
+                "provenance_json TEXT NOT NULL, created_at REAL NOT NULL)"
+            )
+            result_columns = {
+                str(row[1]) for row in connection.execute("PRAGMA table_info(task_results)")
+            }
+            if "source_url" not in result_columns:
+                connection.execute("ALTER TABLE task_results ADD COLUMN source_url TEXT")
+
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS task_failures ("
+                "id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL, "
+                "idempotency_key TEXT NOT NULL, source_url TEXT, attempt INTEGER NOT NULL, "
+                "error TEXT NOT NULL, provenance_json TEXT NOT NULL, created_at REAL NOT NULL)"
+            )
+            failure_columns = {
+                str(row[1]) for row in connection.execute("PRAGMA table_info(task_failures)")
+            }
+            if "source_url" not in failure_columns:
+                connection.execute("ALTER TABLE task_failures ADD COLUMN source_url TEXT")
+
+    def has_result(self, idempotency_key: str) -> bool:
+        with sqlite3.connect(self.path) as connection:
+            row = connection.execute(
+                "SELECT 1 FROM task_results WHERE idempotency_key = ?", (idempotency_key,)
+            ).fetchone()
+        return row is not None
+
+    def write_result(
+        self,
+        task: TaskEnvelope,
+        result: Mapping[str, Any],
+        provenance: Mapping[str, Any],
+    ) -> bool:
+        try:
+            with sqlite3.connect(self.path) as connection:
+                connection.execute(
+                    "INSERT INTO task_results "
+                    "(idempotency_key, source_url, result_json, provenance_json, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (
+                        task.idempotency_key,
+                        task.record_ref,
+                        json.dumps(dict(result), ensure_ascii=False, default=str),
+                        json.dumps(dict(provenance), ensure_ascii=False, default=str),
+                        time.time(),
+                    ),
+                )
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
+    def write_failure(
+        self,
+        task: TaskEnvelope,
+        error: str,
+        provenance: Mapping[str, Any],
+    ) -> None:
+        with sqlite3.connect(self.path) as connection:
+            connection.execute(
+                "INSERT INTO task_failures "
+                "(task_id, idempotency_key, source_url, attempt, error, provenance_json, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    task.task_id,
+                    task.idempotency_key,
+                    task.record_ref,
+                    task.attempt,
+                    error,
+                    json.dumps(dict(provenance), ensure_ascii=False, default=str),
+                    time.time(),
+                ),
+            )
+
+
 class MongoTaskStore:
     """Durable distributed result/failure history with canonical source identity."""
 
@@ -328,8 +414,6 @@ class RedisStreamQueue:
         return ClaimedTask(str(message_id), TaskEnvelope.from_dict(json.loads(values["task"])))
 
     def reclaim(self, *, min_idle_ms: int) -> ClaimedTask | None:
-        # Prefer XAUTOCLAIM where available, but retain an XPENDING/XCLAIM
-        # fallback for older Redis servers and redis-py clients.
         try:
             response = self.redis.xautoclaim(
                 self.stream,
@@ -469,13 +553,20 @@ def redis_queue_from_settings(
     )
 
 
-def durable_store_from_settings(settings: Settings, *, run_id: str) -> MongoTaskStore:
-    namespace = settings.distributed_namespace
-    return MongoTaskStore(
-        settings.mongodb_url,
-        database=settings.mongodb_database,
-        result_collection=namespace.mongo_collection("analysis_results"),
-        failure_collection=namespace.mongo_collection("analysis_failures"),
-        project_id=settings.project_id,
-        run_id=run_id,
-    )
+def durable_store_from_settings(settings: Settings, *, run_id: str) -> DurableTaskStore:
+    from .storage import resolved_storage_backend
+
+    backend = resolved_storage_backend(settings)
+    if backend == "mongodb":
+        if not settings.mongo_url:
+            raise ValueError("MongoDB task store requires LACLAUGPT_MONGODB_URI or LACLAUGPT_MONGO_URL")
+        namespace = settings.distributed_namespace
+        return MongoTaskStore(
+            settings.mongo_url,
+            database=settings.mongo_database,
+            result_collection=namespace.mongo_collection("analysis_results"),
+            failure_collection=namespace.mongo_collection("analysis_failures"),
+            project_id=settings.project_id,
+            run_id=run_id,
+        )
+    return SqliteTaskStore(settings.data_path("database", f"tasks-{run_id}.sqlite3"))
