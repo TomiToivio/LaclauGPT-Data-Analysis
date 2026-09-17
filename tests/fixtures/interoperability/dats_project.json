@@ -1,0 +1,29 @@
+{
+  "project_id": "synthetic-fi",
+  "documents": [
+    {
+      "id": "doc-1",
+      "source_url": "https://example.org/fi/1",
+      "text": "Tekoäly muuttaa yhteiskuntaa.",
+      "language": "fi"
+    }
+  ],
+  "codes": [
+    {"id": "c-root", "label": "AI"},
+    {"id": "c-child", "label": "change", "parent_id": "c-root"}
+  ],
+  "annotations": [
+    {
+      "id": "ann-1",
+      "document_id": "doc-1",
+      "code_id": "c-child",
+      "start": 0,
+      "end": 7,
+      "producer_type": "model",
+      "producer_id": "synthetic-model",
+      "producer_version": "1",
+      "confidence": 0.8,
+      "review_status": "PROVISIONAL"
+    }
+  ]
+}
