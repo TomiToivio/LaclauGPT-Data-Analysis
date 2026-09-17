@@ -7,6 +7,7 @@ def test_local_defaults_are_zero_config(monkeypatch):
     for name in (
         "PROFILE", "DATA_BACKEND", "DATABASE_URL", "DATA_DIR", "ARTIFACT_DIR",
         "CACHE_BACKEND", "REDIS_URL", "MONGO_URL", "MONGODB_URI", "MONGO_DATABASE",
+        "MONGODB_DATABASE", "MONGO_VECTOR_INDEX", "MONGODB_VECTOR_INDEX",
         "OBJECT_BACKEND", "S3_ENDPOINT", "S3_ENDPOINT_URL", "S3_BUCKET", "S3_REGION",
         "COLLECTION_DATA_DIR",
     ):
@@ -43,7 +44,31 @@ def test_remote_profile_is_environment_driven(monkeypatch):
 
 def test_umbrella_distributed_environment_names_are_supported(monkeypatch):
     monkeypatch.setenv("LACLAUGPT_MONGODB_URI", "mongodb://example.invalid:27017")
+    monkeypatch.setenv("LACLAUGPT_MONGODB_DATABASE", "spectacleScraper")
+    monkeypatch.setenv("LACLAUGPT_MONGODB_VECTOR_INDEX", "ai26_embeddings")
     monkeypatch.setenv("LACLAUGPT_S3_ENDPOINT", "https://object.example.invalid")
     settings = load_settings()
     assert settings.mongo_url == "mongodb://example.invalid:27017"
+    assert settings.mongo_database == "spectacleScraper"
+    assert settings.mongo_vector_index == "ai26_embeddings"
     assert settings.s3_endpoint_url == "https://object.example.invalid"
+
+
+def test_canonical_mongodb_names_win_over_legacy_aliases(monkeypatch):
+    monkeypatch.setenv("LACLAUGPT_MONGODB_DATABASE", "canonical-db")
+    monkeypatch.setenv("LACLAUGPT_MONGO_DATABASE", "legacy-db")
+    monkeypatch.setenv("LACLAUGPT_MONGODB_VECTOR_INDEX", "canonical-index")
+    monkeypatch.setenv("LACLAUGPT_MONGO_VECTOR_INDEX", "legacy-index")
+    settings = load_settings()
+    assert settings.mongo_database == "canonical-db"
+    assert settings.mongo_vector_index == "canonical-index"
+
+
+def test_legacy_mongo_names_remain_supported(monkeypatch):
+    monkeypatch.delenv("LACLAUGPT_MONGODB_DATABASE", raising=False)
+    monkeypatch.delenv("LACLAUGPT_MONGODB_VECTOR_INDEX", raising=False)
+    monkeypatch.setenv("LACLAUGPT_MONGO_DATABASE", "legacy-db")
+    monkeypatch.setenv("LACLAUGPT_MONGO_VECTOR_INDEX", "legacy-index")
+    settings = load_settings()
+    assert settings.mongo_database == "legacy-db"
+    assert settings.mongo_vector_index == "legacy-index"
