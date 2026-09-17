@@ -224,6 +224,54 @@ def _stable_generated_at(record: CanonicalRecord) -> str | None:
     return None
 
 
+def _latest_stage_proposal(record: CanonicalRecord, stage: str) -> dict[str, Any]:
+    """Return the latest structured proposal for a named intermediate stage."""
+    value = record.intermediate.stage_outputs.get(stage)
+    if isinstance(value, list):
+        value = value[-1] if value else None
+    if not isinstance(value, dict):
+        return {}
+    proposal = value.get("proposal")
+    return dict(proposal) if isinstance(proposal, dict) else {}
+
+
+def _multimodal_research_sections(record: CanonicalRecord) -> tuple[str, str, str]:
+    synthesis = _latest_stage_proposal(record, "multimodal_synthesis")
+    castells = _latest_stage_proposal(record, "castells_context")
+    if not synthesis and not castells:
+        return "", "", ""
+
+    synthesis_parts = [
+        str(synthesis.get("narrative") or synthesis.get("summary") or "").strip()
+    ]
+    relations = [str(item) for item in synthesis.get("cross_modal_relations", []) if str(item)]
+    if relations:
+        synthesis_parts.append("Cross-modal relations: " + "; ".join(relations))
+    synthesis_text = "\n\n".join(part for part in synthesis_parts if part)
+
+    castells_text = ""
+    if castells:
+        labels = (
+            ("Actors / organisations / institutions", "actors_organisations_institutions"),
+            ("Networks / relations", "networks_relations"),
+            ("Flows", "flows"),
+            ("Nodes / hubs / channels", "nodes_hubs_channels"),
+            ("Space of places", "space_of_places"),
+            ("Space of flows", "space_of_flows"),
+            ("Power / access / exclusion", "power_access_exclusion"),
+            ("Uncertainty", "uncertainty"),
+        )
+        rows = []
+        for label, key in labels:
+            values = [str(item) for item in castells.get(key, []) if str(item)]
+            if values:
+                rows.append(f"{label}: " + "; ".join(values))
+        castells_text = "\n".join(rows)
+
+    cues = [str(item) for item in synthesis.get("later_analysis_cues", []) if str(item)]
+    return synthesis_text, castells_text, "\n".join(f"- {cue}" for cue in cues)
+
+
 def render_human_readable(record: CanonicalRecord) -> HumanReadableSection:
     """Render a deterministic researcher report containing all analysis categories."""
     sync_intermediate_from_content(record)
@@ -235,6 +283,7 @@ def render_human_readable(record: CanonicalRecord) -> HumanReadableSection:
         f"- {item.get('id', 'frame')}: {item.get('description') or item.get('text') or ''}"
         for item in record.intermediate.frame_analysis
     )
+    multimodal_synthesis, castells_context, later_analysis_cues = _multimodal_research_sections(record)
     analysis_json = json.dumps(
         record.analysis.model_dump(mode="json", exclude_none=False),
         ensure_ascii=False,
@@ -251,6 +300,9 @@ def render_human_readable(record: CanonicalRecord) -> HumanReadableSection:
         "transcript": transcript,
         "ocr": ocr,
         "frame_analysis": frames,
+        "multimodal_synthesis": multimodal_synthesis,
+        "castells_context": castells_context,
+        "later_analysis_cues": later_analysis_cues,
         "analysis_summary": record.analysis.summary or "",
         "entities": _semicolon(_labels(record.analysis.entities)),
         "topics": _semicolon(_labels(record.analysis.topics)),
@@ -284,6 +336,9 @@ def render_human_readable(record: CanonicalRecord) -> HumanReadableSection:
         f"## Whisper / ASR transcript\n{transcript or 'n/a'}\n\n"
         f"## OCR\n{ocr or 'n/a'}\n\n"
         f"## Frame / multimodal analysis\n{frames or 'n/a'}\n\n"
+        f"## Multimodal item synthesis\n{multimodal_synthesis or 'n/a'}\n\n"
+        f"## Light Castells sociological context\n{castells_context or 'n/a'}\n\n"
+        f"## Later analysis cues\n{later_analysis_cues or 'n/a'}\n\n"
         f"## Analysis summary\n{sections['analysis_summary'] or 'n/a'}\n\n"
         f"## Entities, topics and themes\nEntities: {sections['entities'] or 'n/a'}\n\n"
         f"Topics: {sections['topics'] or 'n/a'}\n\nThemes: {sections['themes'] or 'n/a'}\n\n"
