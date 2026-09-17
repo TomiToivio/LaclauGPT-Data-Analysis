@@ -1,18 +1,12 @@
-"""Optional reference-only task queue for distributed analysis workers.
-
-Redis is coordination only. Durable analysis results and failure history live in a
-``DurableTaskStore`` implementation (SQLite locally, MongoDB in distributed mode).
-Direct mode does not import or require Redis.
-"""
+"""Distributed task queue contracts and adapters for LaclauGPT analysis."""
 from __future__ import annotations
 
 import json
-import sqlite3
 import time
-from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass
-from pathlib import Path
-from typing import Any, Protocol
+from dataclasses import asdict, dataclass, replace
+from typing import Any, Callable, Mapping, Protocol
+
+from .config import Settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,31 +36,30 @@ class TaskEnvelope:
         }
         missing = [name for name, value in required.items() if not str(value).strip()]
         if missing:
-            raise ValueError("task envelope missing: " + ", ".join(sorted(missing)))
+            raise ValueError("task envelope missing required fields: " + ", ".join(missing))
         if self.attempt < 1:
-            raise ValueError("attempt must be >= 1")
+            raise ValueError("task envelope attempt must be >= 1")
 
-    def to_fields(self) -> dict[str, str]:
+    def to_dict(self) -> dict[str, Any]:
         self.validate()
-        values = asdict(self)
-        return {key: str(value) for key, value in values.items()}
+        return asdict(self)
 
     @classmethod
-    def from_fields(cls, fields: Mapping[str, Any]) -> TaskEnvelope:
-        task = cls(
-            task_id=str(fields["task_id"]),
-            idempotency_key=str(fields["idempotency_key"]),
-            project_id=str(fields["project_id"]),
-            run_id=str(fields["run_id"]),
-            task_type=str(fields["task_type"]),
-            record_ref=str(fields["record_ref"]),
-            schema_version=str(fields["schema_version"]),
-            config_revision=str(fields["config_revision"]),
-            codebook_revision=str(fields["codebook_revision"]),
-            attempt=int(fields.get("attempt", 1)),
+    def from_dict(cls, payload: Mapping[str, Any]) -> TaskEnvelope:
+        envelope = cls(
+            task_id=str(payload.get("task_id") or ""),
+            idempotency_key=str(payload.get("idempotency_key") or ""),
+            project_id=str(payload.get("project_id") or ""),
+            run_id=str(payload.get("run_id") or ""),
+            task_type=str(payload.get("task_type") or ""),
+            record_ref=str(payload.get("record_ref") or ""),
+            schema_version=str(payload.get("schema_version") or ""),
+            config_revision=str(payload.get("config_revision") or ""),
+            codebook_revision=str(payload.get("codebook_revision") or ""),
+            attempt=int(payload.get("attempt") or 1),
         )
-        task.validate()
-        return task
+        envelope.validate()
+        return envelope
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,21 +70,28 @@ class ClaimedTask:
 
 class TaskQueue(Protocol):
     def publish(self, task: TaskEnvelope) -> str: ...
-    def claim(self, *, block_ms: int = 1000) -> ClaimedTask | None: ...
+
+    def claim(self) -> ClaimedTask | None: ...
+
     def reclaim(self, *, min_idle_ms: int) -> ClaimedTask | None: ...
+
     def ack(self, message_id: str) -> None: ...
+
     def dead_letter(self, task: TaskEnvelope, error: str) -> None: ...
-    def heartbeat(self, metadata: Mapping[str, str], *, ttl_seconds: int = 60) -> None: ...
+
+    def heartbeat(self, **fields: str) -> None: ...
 
 
 class DurableTaskStore(Protocol):
     def has_result(self, idempotency_key: str) -> bool: ...
+
     def write_result(
         self,
         task: TaskEnvelope,
         result: Mapping[str, Any],
         provenance: Mapping[str, Any],
     ) -> bool: ...
+
     def write_failure(
         self,
         task: TaskEnvelope,
@@ -100,41 +100,51 @@ class DurableTaskStore(Protocol):
     ) -> None: ...
 
 
-class SqliteTaskStore:
-    """Tiny durable store for local/direct mode and offline tests."""
+class InMemoryTaskQueue:
+    def __init__(self) -> None:
+        self.pending: list[ClaimedTask] = []
+        self.claimed: dict[str, ClaimedTask] = {}
+        self.dead_letters: list[dict[str, Any]] = []
+        self.heartbeats: list[dict[str, str]] = []
+        self._counter = 0
 
-    def __init__(self, path: str | Path):
-        self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.path) as connection:
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS task_results ("
-                "idempotency_key TEXT PRIMARY KEY, source_url TEXT, result_json TEXT NOT NULL, "
-                "provenance_json TEXT NOT NULL, created_at REAL NOT NULL)"
-            )
-            columns = {
-                str(row[1]) for row in connection.execute("PRAGMA table_info(task_results)")
-            }
-            if "source_url" not in columns:
-                connection.execute("ALTER TABLE task_results ADD COLUMN source_url TEXT")
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS task_failures ("
-                "id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL, "
-                "idempotency_key TEXT NOT NULL, source_url TEXT, attempt INTEGER NOT NULL, "
-                "error TEXT NOT NULL, provenance_json TEXT NOT NULL, created_at REAL NOT NULL)"
-            )
-            failure_columns = {
-                str(row[1]) for row in connection.execute("PRAGMA table_info(task_failures)")
-            }
-            if "source_url" not in failure_columns:
-                connection.execute("ALTER TABLE task_failures ADD COLUMN source_url TEXT")
+    def publish(self, task: TaskEnvelope) -> str:
+        task.validate()
+        self._counter += 1
+        message_id = str(self._counter)
+        self.pending.append(ClaimedTask(message_id=message_id, task=task))
+        return message_id
+
+    def claim(self) -> ClaimedTask | None:
+        if not self.pending:
+            return None
+        claimed = self.pending.pop(0)
+        self.claimed[claimed.message_id] = claimed
+        return claimed
+
+    def reclaim(self, *, min_idle_ms: int) -> ClaimedTask | None:
+        del min_idle_ms
+        if not self.claimed:
+            return None
+        return next(iter(self.claimed.values()))
+
+    def ack(self, message_id: str) -> None:
+        self.claimed.pop(message_id, None)
+
+    def dead_letter(self, task: TaskEnvelope, error: str) -> None:
+        self.dead_letters.append({"task": task.to_dict(), "error": error})
+
+    def heartbeat(self, **fields: str) -> None:
+        self.heartbeats.append(dict(fields))
+
+
+class InMemoryTaskStore:
+    def __init__(self) -> None:
+        self.results: dict[str, dict[str, Any]] = {}
+        self.failures: list[dict[str, Any]] = []
 
     def has_result(self, idempotency_key: str) -> bool:
-        with sqlite3.connect(self.path) as connection:
-            row = connection.execute(
-                "SELECT 1 FROM task_results WHERE idempotency_key = ?", (idempotency_key,)
-            ).fetchone()
-        return row is not None
+        return idempotency_key in self.results
 
     def write_result(
         self,
@@ -142,23 +152,14 @@ class SqliteTaskStore:
         result: Mapping[str, Any],
         provenance: Mapping[str, Any],
     ) -> bool:
-        try:
-            with sqlite3.connect(self.path) as connection:
-                connection.execute(
-                    "INSERT INTO task_results "
-                    "(idempotency_key, source_url, result_json, provenance_json, created_at) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (
-                        task.idempotency_key,
-                        task.record_ref,
-                        json.dumps(dict(result), ensure_ascii=False, default=str),
-                        json.dumps(dict(provenance), ensure_ascii=False, default=str),
-                        time.time(),
-                    ),
-                )
-            return True
-        except sqlite3.IntegrityError:
+        if task.idempotency_key in self.results:
             return False
+        self.results[task.idempotency_key] = {
+            "task": task.to_dict(),
+            "result": dict(result),
+            "provenance": dict(provenance),
+        }
+        return True
 
     def write_failure(
         self,
@@ -166,21 +167,13 @@ class SqliteTaskStore:
         error: str,
         provenance: Mapping[str, Any],
     ) -> None:
-        with sqlite3.connect(self.path) as connection:
-            connection.execute(
-                "INSERT INTO task_failures "
-                "(task_id, idempotency_key, source_url, attempt, error, provenance_json, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (
-                    task.task_id,
-                    task.idempotency_key,
-                    task.record_ref,
-                    task.attempt,
-                    error,
-                    json.dumps(dict(provenance), ensure_ascii=False, default=str),
-                    time.time(),
-                ),
-            )
+        self.failures.append(
+            {
+                "task": task.to_dict(),
+                "error": error,
+                "provenance": dict(provenance),
+            }
+        )
 
 
 class MongoTaskStore:
@@ -188,40 +181,40 @@ class MongoTaskStore:
 
     def __init__(
         self,
-        url: str,
+        mongo_url: str,
         *,
         database: str,
-        results_collection: str,
-        failures_collection: str,
+        result_collection: str,
+        failure_collection: str,
         project_id: str,
         run_id: str,
-    ):
+    ) -> None:
         try:
             from pymongo import MongoClient
-        except ImportError as exc:
-            raise RuntimeError("MongoDB task support requires: pip install '.[remote]'") from exc
-        client = MongoClient(url)
+        except ImportError as exc:  # pragma: no cover - optional runtime dependency
+            raise RuntimeError("pymongo is required for MongoTaskStore") from exc
+        client = MongoClient(mongo_url)
         db = client[database]
-        self.results = db[results_collection]
-        self.failures = db[failures_collection]
+        self.results = db[result_collection]
+        self.failures = db[failure_collection]
         self.project_id = project_id
         self.run_id = run_id
         self.results.create_index(
             [("project_id", 1), ("run_id", 1), ("idempotency_key", 1)],
             unique=True,
-            name="project_run_idempotency",
+            name="analysis_result_idempotency",
         )
         self.results.create_index(
             [("project_id", 1), ("run_id", 1), ("source_url", 1)],
-            name="project_run_source_url",
+            name="analysis_result_source_url",
         )
         self.failures.create_index(
             [("project_id", 1), ("run_id", 1), ("idempotency_key", 1)],
-            name="project_run_failure",
+            name="analysis_failure_idempotency",
         )
         self.failures.create_index(
             [("project_id", 1), ("run_id", 1), ("source_url", 1)],
-            name="project_run_failure_source_url",
+            name="analysis_failure_source_url",
         )
 
     def has_result(self, idempotency_key: str) -> bool:
@@ -245,8 +238,8 @@ class MongoTaskStore:
     ) -> bool:
         try:
             from pymongo.errors import DuplicateKeyError
-        except ImportError as exc:
-            raise RuntimeError("MongoDB task support requires: pip install '.[remote]'") from exc
+        except ImportError as exc:  # pragma: no cover
+            raise RuntimeError("pymongo is required for MongoTaskStore") from exc
         source_url = str(task.record_ref or result.get("source_url") or "").strip()
         if not source_url:
             raise ValueError("analysis result cannot be persisted without canonical source_url")
@@ -303,67 +296,42 @@ class RedisStreamQueue:
     ):
         try:
             import redis
-        except ImportError as exc:
-            raise RuntimeError("Redis task support requires: pip install '.[remote]'") from exc
-        self.client = redis.Redis.from_url(url, decode_responses=True)
+        except ImportError as exc:  # pragma: no cover - optional runtime dependency
+            raise RuntimeError("redis is required for RedisStreamQueue") from exc
+        self.redis = redis.Redis.from_url(url, decode_responses=True)
         self.stream = stream
         self.group = group
         self.consumer = consumer
         self.dead_letter_stream = dead_letter_stream or f"{stream}:dead"
-        self.heartbeat_key = heartbeat_key or f"{stream}:worker:{consumer}"
+        self.heartbeat_key = heartbeat_key or f"{stream}:heartbeat:{consumer}"
         try:
-            self.client.xgroup_create(stream, group, id="0", mkstream=True)
-        except redis.ResponseError as exc:
+            self.redis.xgroup_create(stream, group, id="0", mkstream=True)
+        except Exception as exc:  # pragma: no cover - redis response type varies
             if "BUSYGROUP" not in str(exc):
                 raise
 
-    @staticmethod
-    def _decode(value: Any) -> Any:
-        if isinstance(value, bytes):
-            return value.decode("utf-8")
-        return value
-
-    @classmethod
-    def _decode_fields(cls, fields: Mapping[Any, Any]) -> dict[str, Any]:
-        return {str(cls._decode(key)): cls._decode(value) for key, value in fields.items()}
-
-    @classmethod
-    def _claimed_task(cls, message_id: Any, fields: Mapping[Any, Any]) -> ClaimedTask:
-        return ClaimedTask(
-            str(cls._decode(message_id)),
-            TaskEnvelope.from_fields(cls._decode_fields(fields)),
-        )
-
-    @staticmethod
-    def _next_stream_id(message_id: str) -> str:
-        milliseconds, sequence = message_id.split("-", maxsplit=1)
-        return f"{milliseconds}-{int(sequence) + 1}"
-
-    @staticmethod
-    def _is_xautoclaim_unknown_command(exc: Exception) -> bool:
-        message = str(exc).lower()
-        return "unknown command" in message and "xautoclaim" in message
-
     def publish(self, task: TaskEnvelope) -> str:
-        return str(self.client.xadd(self.stream, task.to_fields()))
+        return str(self.redis.xadd(self.stream, {"task": json.dumps(task.to_dict())}))
 
-    def claim(self, *, block_ms: int = 1000) -> ClaimedTask | None:
-        response = self.client.xreadgroup(
+    def claim(self) -> ClaimedTask | None:
+        response = self.redis.xreadgroup(
             self.group,
             self.consumer,
             {self.stream: ">"},
             count=1,
-            block=block_ms,
+            block=1000,
         )
         if not response:
             return None
-        _, messages = response[0]
-        message_id, fields = messages[0]
-        return self._claimed_task(message_id, fields)
+        _, entries = response[0]
+        message_id, values = entries[0]
+        return ClaimedTask(str(message_id), TaskEnvelope.from_dict(json.loads(values["task"])))
 
     def reclaim(self, *, min_idle_ms: int) -> ClaimedTask | None:
+        # Prefer XAUTOCLAIM where available, but retain an XPENDING/XCLAIM
+        # fallback for older Redis servers and redis-py clients.
         try:
-            response = self.client.xautoclaim(
+            response = self.redis.xautoclaim(
                 self.stream,
                 self.group,
                 self.consumer,
@@ -371,113 +339,56 @@ class RedisStreamQueue:
                 "0-0",
                 count=1,
             )
-        except Exception as exc:
-            if not self._is_xautoclaim_unknown_command(exc):
-                raise
-            return self._reclaim_legacy(min_idle_ms=min_idle_ms)
-
-        messages = response[1] if len(response) > 1 else []
-        if not messages:
-            return None
-        message_id, fields = messages[0]
-        return self._claimed_task(message_id, fields)
-
-    def _reclaim_legacy(self, *, min_idle_ms: int) -> ClaimedTask | None:
-        """Redis 5/6.0 fallback using XPENDING + XCLAIM.
-
-        Redis 6.0 has neither XAUTOCLAIM nor XPENDING's IDLE filter, so inspect
-        ordinary pending-entry metadata client-side and claim the first entry
-        whose idle time meets the configured threshold.
-        """
-        start = "-"
-        while True:
-            pending = self.client.xpending_range(
-                self.stream,
-                self.group,
-                min=start,
-                max="+",
-                count=self._LEGACY_PENDING_BATCH,
-            )
-            if not pending:
-                return None
-
-            for raw_entry in pending:
-                entry = self._decode_fields(raw_entry)
-                idle_ms = int(entry.get("time_since_delivered", 0))
-                if idle_ms < min_idle_ms:
-                    continue
-                message_id = str(entry["message_id"])
-                claimed = self.client.xclaim(
-                    self.stream,
-                    self.group,
-                    self.consumer,
-                    min_idle_ms,
-                    [message_id],
+        except (AttributeError, TypeError):
+            response = None
+        if response:
+            entries = response[1] if len(response) > 1 else []
+            if entries:
+                message_id, values = entries[0]
+                return ClaimedTask(
+                    str(message_id),
+                    TaskEnvelope.from_dict(json.loads(values["task"])),
                 )
-                if not claimed:
-                    continue
-                claimed_id, fields = claimed[0]
-                return self._claimed_task(claimed_id, fields)
 
-            if len(pending) < self._LEGACY_PENDING_BATCH:
-                return None
-            last = self._decode_fields(pending[-1])
-            start = self._next_stream_id(str(last["message_id"]))
-
-    def ack(self, message_id: str) -> None:
-        self.client.xack(self.stream, self.group, message_id)
-
-    def dead_letter(self, task: TaskEnvelope, error: str) -> None:
-        fields = task.to_fields()
-        fields["error"] = error[:1000]
-        self.client.xadd(self.dead_letter_stream, fields)
-
-    def heartbeat(self, metadata: Mapping[str, str], *, ttl_seconds: int = 60) -> None:
-        self.client.set(
-            self.heartbeat_key,
-            json.dumps(dict(metadata), ensure_ascii=False),
-            ex=ttl_seconds,
+        pending = self.redis.xpending_range(
+            self.stream,
+            self.group,
+            min="-",
+            max="+",
+            count=self._LEGACY_PENDING_BATCH,
+            idle=min_idle_ms,
+        )
+        if not pending:
+            return None
+        entry = pending[0]
+        message_id = entry["message_id"] if isinstance(entry, dict) else entry[0]
+        claimed = self.redis.xclaim(
+            self.stream,
+            self.group,
+            self.consumer,
+            min_idle_ms,
+            [message_id],
+        )
+        if not claimed:
+            return None
+        claimed_id, values = claimed[0]
+        return ClaimedTask(
+            str(claimed_id),
+            TaskEnvelope.from_dict(json.loads(values["task"])),
         )
 
-
-class InMemoryTaskQueue:
-    """Deterministic queue used by tests and direct embedding applications."""
-
-    def __init__(self):
-        self.ready: list[ClaimedTask] = []
-        self.pending: dict[str, ClaimedTask] = {}
-        self.dead: list[tuple[TaskEnvelope, str]] = []
-        self.heartbeats: list[dict[str, str]] = []
-        self._counter = 0
-
-    def publish(self, task: TaskEnvelope) -> str:
-        task.validate()
-        self._counter += 1
-        message_id = f"{self._counter}-0"
-        self.ready.append(ClaimedTask(message_id, task))
-        return message_id
-
-    def claim(self, *, block_ms: int = 1000) -> ClaimedTask | None:
-        del block_ms
-        if not self.ready:
-            return None
-        claimed = self.ready.pop(0)
-        self.pending[claimed.message_id] = claimed
-        return claimed
-
-    def reclaim(self, *, min_idle_ms: int) -> ClaimedTask | None:
-        del min_idle_ms
-        return next(iter(self.pending.values()), None)
-
     def ack(self, message_id: str) -> None:
-        self.pending.pop(message_id, None)
+        self.redis.xack(self.stream, self.group, message_id)
 
     def dead_letter(self, task: TaskEnvelope, error: str) -> None:
-        self.dead.append((task, error))
+        self.redis.xadd(
+            self.dead_letter_stream,
+            {"task": json.dumps(task.to_dict()), "error": error},
+        )
 
-    def heartbeat(self, metadata: Mapping[str, str], *, ttl_seconds: int = 60) -> None:
-        del ttl_seconds
-        self.heartbeats.append(dict(metadata))
+    def heartbeat(self, **fields: str) -> None:
+        payload = {"updated_at": str(time.time()), **fields}
+        self.redis.hset(self.heartbeat_key, mapping=payload)
 
 
 class TaskWorker:
@@ -491,7 +402,7 @@ class TaskWorker:
         provenance: Mapping[str, Any],
         validator: Callable[[TaskEnvelope], None] | None = None,
         max_attempts: int = 3,
-    ):
+    ) -> None:
         self.queue = queue
         self.durable_store = durable_store
         self.handler = handler
@@ -499,7 +410,6 @@ class TaskWorker:
         self.provenance = dict(provenance)
         self.validator = validator
         self.max_attempts = max_attempts
-        self.last_failure_class: str | None = None
 
     def run_once(self, *, reclaim_idle_ms: int | None = None) -> str:
         self.last_failure_class = None
@@ -532,46 +442,40 @@ class TaskWorker:
                 self.queue.dead_letter(task, error)
                 self.queue.ack(claimed.message_id)
                 return "dead-letter"
-            retry_task = TaskEnvelope(
-                task_id=task.task_id,
-                idempotency_key=task.idempotency_key,
-                project_id=task.project_id,
-                run_id=task.run_id,
-                task_type=task.task_type,
-                record_ref=task.record_ref,
-                schema_version=task.schema_version,
-                config_revision=task.config_revision,
-                codebook_revision=task.codebook_revision,
-                attempt=task.attempt + 1,
-            )
+            retry_task = replace(task, attempt=task.attempt + 1)
+            retry_task.validate()
             self.queue.publish(retry_task)
             self.queue.ack(claimed.message_id)
             return "retry"
 
-    def heartbeat(self, **metadata: str) -> None:
-        payload = {"worker_id": self.worker_id, **metadata}
-        self.queue.heartbeat(payload)
+    def heartbeat(self, **fields: str) -> None:
+        self.queue.heartbeat(worker_id=self.worker_id, **fields)
 
 
-def redis_queue_from_settings(settings: Any, *, run_id: str, worker_id: str) -> RedisStreamQueue:
+def redis_queue_from_settings(
+    settings: Settings,
+    *,
+    run_id: str,
+    worker_id: str,
+) -> RedisStreamQueue:
     namespace = settings.distributed_namespace
     return RedisStreamQueue(
         settings.redis_url,
-        stream=namespace.redis_key("tasks", run_id),
-        group=namespace.redis_key("workers", run_id),
+        stream=namespace.redis_stream("analysis", run_id),
+        group=namespace.redis_group("analysis", run_id),
         consumer=worker_id,
-        dead_letter_stream=namespace.redis_key("dead", run_id),
-        heartbeat_key=namespace.redis_key("worker", worker_id),
+        dead_letter_stream=namespace.redis_stream("analysis-dead", run_id),
+        heartbeat_key=namespace.redis_heartbeat("analysis", run_id, worker_id),
     )
 
 
-def durable_store_from_settings(settings: Any, *, run_id: str) -> MongoTaskStore:
+def durable_store_from_settings(settings: Settings, *, run_id: str) -> MongoTaskStore:
     namespace = settings.distributed_namespace
     return MongoTaskStore(
-        settings.mongo_url,
-        database=settings.mongo_database,
-        results_collection=namespace.mongo_collection("results"),
-        failures_collection=namespace.mongo_collection("failures"),
+        settings.mongodb_url,
+        database=settings.mongodb_database,
+        result_collection=namespace.mongo_collection("analysis_results"),
+        failure_collection=namespace.mongo_collection("analysis_failures"),
         project_id=settings.project_id,
         run_id=run_id,
     )
