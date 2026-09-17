@@ -322,6 +322,11 @@ LACLAUGPT_PRIVATE_ROOT=/mnt/workspace/LaclauGPT-Private/runtime/ai26 \
 ./scripts/run_ai26_laskin.sh --once
 ```
 
+The install helper now performs the required re-freeze after every code update
+and refuses to install cron unless a bounded production-path cycle exits `0`.
+The public Git SHA therefore remains a meaningful provenance invariant rather
+than a manual trap after each merge.
+
 ## Test one synthetic record end to end
 
 Use a synthetic/public-safe record rather than private research material:
