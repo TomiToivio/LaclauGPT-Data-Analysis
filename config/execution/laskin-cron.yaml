@@ -12,10 +12,14 @@
 execution: cron
 
 schedule:
-  # Every 5 minutes: near-real-time relative to the hourly Collection cadence.
-  interval_minutes: 5
-  # Bounded work per tick. Small enough that a tick always finishes well inside
-  # its interval, so ticks never stack.
+  # Hourly at :05, deliberately staggered from Collection (:10 collect,
+  # :30 media). The worker seeds ready handoffs, drains a bounded batch, and
+  # exits. This is the canonical unattended Laskin schedule for AI26 analysis.
+  cron: "5 * * * *"
+  interval_minutes: 60
+  minute: 5
+  # Bounded work per tick. Increase through the private runtime environment
+  # when backlog requires it; do not convert the worker into a perpetual loop.
   max_tasks_per_tick: 10
   # Reclaim tasks whose lease went idle (crashed worker, interrupted host).
   reclaim_idle_ms: 300000
@@ -33,8 +37,10 @@ behaviour:
   perpetual_scheduler: false  # cron owns scheduling
 
 logging:
-  # Operational logs belong under the private runtime root.
-  directory: data/logs
+  # Operational logs belong under the private runtime root, never the public
+  # checkout. The installer defaults to:
+  # /mnt/workspace/LaclauGPT-Private/runtime/ai26/analysis/ai26-laskin-analysis.log
+  directory: private-runtime
   file: ai26-laskin-analysis.log
   # Debug diagnostics are opt-in; trace mode additionally requires an explicit
   # acknowledgement because prompts/evidence may contain research data.
