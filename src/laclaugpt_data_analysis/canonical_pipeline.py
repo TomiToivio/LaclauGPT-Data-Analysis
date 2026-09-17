@@ -12,7 +12,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from .canonical import CanonicalRecord, DiscourseObject, Entity, Evidence, Relation
 from .codebooks import CodebookEntry
@@ -70,7 +70,38 @@ class MultimodalFrameProposal(BaseModel):
     uncertainty: list[str] = Field(default_factory=list)
 
 
-class EventCandidate(BaseModel):
+class _CoerceStringListFields:
+    """Accept a bare string where a list of strings is declared.
+
+    Structured models are filled by an LLM, and for a single-value field a model
+    routinely returns the value itself rather than a one-element list
+    ("evidence": "quote" instead of ["quote"]). The intent is unambiguous, so
+    coerce it instead of failing validation: the alternative is an extra full
+    generation on retry, and a permanent task failure if the model repeats the
+    shape. Genuinely wrong types are still rejected.
+    """
+
+    @field_validator("*", mode="before", check_fields=False)
+    @classmethod
+    def _single_value_to_list(cls, value: Any, info: Any) -> Any:
+        name = getattr(info, "field_name", "")
+        model_fields = getattr(cls, "model_fields", {})
+        declared = model_fields.get(name)
+        if declared is None:
+            return value
+        annotation = str(declared.annotation)
+        is_string_list = "list[str]" in annotation.replace(" ", "") or (
+            "list" in annotation and "str" in annotation
+        )
+        if not is_string_list:
+            return value
+        if isinstance(value, str):
+            text = value.strip()
+            return [text] if text else []
+        return value
+
+
+class EventCandidate(_CoerceStringListFields, BaseModel):
     description: str = ""
     time: str = ""
     location: str = ""
@@ -79,7 +110,7 @@ class EventCandidate(BaseModel):
     confidence: float = Field(default=0.0, ge=0, le=1)
 
 
-class SummaryProposal(BaseModel):
+class SummaryProposal(_CoerceStringListFields, BaseModel):
     """Historical summary schema retained for EP24/generic reproducibility."""
 
     summary: str = ""
@@ -119,7 +150,7 @@ class CastellsContextProposal(BaseModel):
     uncertainty: list[str] = Field(default_factory=list)
 
 
-class MultimodalSummaryProposal(BaseModel):
+class MultimodalSummaryProposal(_CoerceStringListFields, BaseModel):
     """AI26 item-level semiotic synthesis before discourse-theoretical analysis."""
 
     summary: str = ""

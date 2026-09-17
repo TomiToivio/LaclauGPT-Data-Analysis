@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import logging
 import os
 import socket
 import subprocess
@@ -41,6 +42,8 @@ from .task_queue import (
     durable_store_from_settings,
     redis_queue_from_settings,
 )
+
+logger = logging.getLogger(__name__)
 
 AI26_MODEL = "gemma4:12b"
 AI26_NOT_BEFORE = "2026-09-01T00:00:00+00:00"
@@ -565,6 +568,34 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _cycle_exit_status(
+    *,
+    attempted: int,
+    completed: int,
+    duplicate: int = 0,
+    retry: int = 0,
+    dead_letter: int = 0,
+) -> int:
+    """Return the process exit status for one bounded analysis cycle.
+
+    An idle cycle and an all-duplicate cycle are both legitimate successes:
+    there was simply no new work. A cycle that attempted work and completed
+    none of it is a failure and must be visible to the scheduler, because the
+    task errors themselves are recorded only in the durable processing
+    collection.
+    """
+    if attempted <= 0:
+        return 0
+    if completed > 0:
+        return 0
+    if duplicate == attempted:
+        # Every claimed task was already analysed: an idle-equivalent cycle.
+        return 0
+    if retry == 0 and dead_letter == 0:
+        return 0
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     private_root = os.environ.get("LACLAUGPT_PRIVATE_CONFIG_DIR")
@@ -584,24 +615,59 @@ def main(argv: list[str] | None = None) -> int:
         raise ValueError("LACLAUGPT_RUN_ID does not match frozen run manifest")
     settings = load_settings()
     worker, handoff = build_worker(binding, settings)
+    worker.heartbeat(run_id=binding.manifest.run_id, status="starting")
+    counts: dict[str, int] = {
+        "completed": 0,
+        "duplicate": 0,
+        "retry": 0,
+        "dead-letter": 0,
+    }
+    seeded = 0
     if args.seed_ready:
-        seed_ready_tasks(
+        seeded = seed_ready_tasks(
             binding,
             handoff,
             worker.queue,
             worker.durable_store,
             limit=max(args.max_tasks, 0),
         )
-    worker.heartbeat(run_id=binding.manifest.run_id, status="starting")
-    processed = 0
+    attempted = 0
     for _ in range(max(args.max_tasks, 0)):
         status = worker.run_once(reclaim_idle_ms=args.reclaim_idle_ms)
         worker.heartbeat(run_id=binding.manifest.run_id, status=status)
         if status == "idle":
             break
-        processed += 1
-    worker.heartbeat(run_id=binding.manifest.run_id, status="finished", processed=str(processed))
-    return 0
+        counts[status] = counts.get(status, 0) + 1
+        attempted += 1
+
+    summary = (
+        f"seeded={seeded} completed={counts['completed']} duplicate={counts['duplicate']} "
+        f"retry={counts['retry']} dead-letter={counts['dead-letter']}"
+    )
+    worker.heartbeat(
+        run_id=binding.manifest.run_id,
+        status="finished",
+        processed=str(attempted),
+        summary=summary,
+    )
+    # Report the outcome to the scheduler. An idle or all-duplicate cycle is a
+    # legitimate success (there was simply nothing new), but a cycle that
+    # attempted work and completed none of it must not report success: the
+    # failures live in the processing collection, so a zero exit code would make
+    # a broken run indistinguishable from a healthy one.
+    exit_status = _cycle_exit_status(
+        attempted=attempted,
+        completed=counts["completed"],
+        duplicate=counts["duplicate"],
+        retry=counts["retry"],
+        dead_letter=counts["dead-letter"],
+    )
+    if exit_status:
+        logger.error("AI26 analysis cycle made no progress: %s", summary)
+        print(f"AI26 analysis cycle made no progress: {summary}", flush=True)
+    else:
+        print(f"AI26 analysis cycle finished: {summary}", flush=True)
+    return exit_status
 
 
 if __name__ == "__main__":
