@@ -10,11 +10,18 @@ import hashlib
 import json
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, Field, field_validator
 
-from .canonical import CanonicalRecord, DiscourseObject, Entity, Evidence, Relation
+from .canonical import (
+    CanonicalRecord,
+    DiscourseObject,
+    Entity,
+    Evidence,
+    Relation,
+    RelationChain,
+)
 from .codebooks import CodebookEntry
 from .context_envelope import PromptEnvelope, build_prompt_envelope
 from .critical_ai import run_optional_critical_ai
@@ -638,6 +645,42 @@ def discourse_analysis(
     return proposal
 
 
+def _relation_chains(
+    record: CanonicalRecord,
+    relations: list[DiscursiveRelation],
+    chain_type: Literal["equivalence", "difference"],
+) -> list[RelationChain]:
+    """Project typed equivalence/difference relations into explicit chains.
+
+    The discourse stage reports these as typed relation edges. The canonical
+    contract keeps them as `RelationChain` members so the Laclaudian category is
+    preserved; without this they collapse into the generic `relations` list and
+    the distinction is lost. A chain needs at least two members to be a chain, so
+    single-edge relations stay only in `relations`.
+    """
+    chains: list[RelationChain] = []
+    for index, item in enumerate(relations, start=1):
+        source = item.source.strip()
+        target = item.target.strip()
+        if not source or not target:
+            continue
+        member_refs = [source] if source == target else [source, target]
+        if len(member_refs) < 2:
+            continue
+        chains.append(
+            RelationChain(
+                chain_id=f"{chain_type}_chain:{len(chains) + 1}",
+                chain_type=chain_type,
+                member_refs=member_refs,
+                evidence_ids=_evidence_ids(
+                    record, item.evidence, f"{chain_type}_chain:{index}"
+                ),
+                review_status="PROVISIONAL",
+            )
+        )
+    return chains
+
+
 def _evidence_ids(record: CanonicalRecord, quotes: list[str], prefix: str) -> list[str]:
     ids: list[str] = []
     for quote in quotes:
@@ -697,6 +740,13 @@ def postprocess_record(
         for index, label in enumerate(summary.entities, start=1)
     ]
 
+    record.analysis.signifiers = []
+    record.analysis.floating_signifiers = _objects(
+        record, discourse.floating_signifier_candidates, "floating_signifier"
+    )
+    record.analysis.empty_signifier_candidates = _objects(
+        record, discourse.empty_signifier_candidates, "empty_signifier"
+    )
     if isinstance(summary, SummaryProposal):
         summary_signifiers = [
             DiscursiveElement(label=label, uncertainty="summary-stage candidate")
@@ -705,12 +755,11 @@ def postprocess_record(
         record.analysis.signifiers = _objects(record, summary_signifiers, "signifier")
     else:
         record.analysis.signifiers = []
-    record.analysis.signifiers.extend(
-        _objects(record, discourse.floating_signifier_candidates, "floating_signifier")
-    )
-    record.analysis.signifiers.extend(
-        _objects(record, discourse.empty_signifier_candidates, "empty_signifier")
-    )
+    # Keep the generic list for consumers that only want "a signifier", while the
+    # dedicated fields above preserve the Laclaudian category (floating vs empty),
+    # which is the distinction the paper and codebook depend on.
+    record.analysis.signifiers.extend(record.analysis.floating_signifiers)
+    record.analysis.signifiers.extend(record.analysis.empty_signifier_candidates)
     record.analysis.nodal_points = _objects(record, discourse.nodal_point_candidates, "nodal_point")
     record.analysis.formations = _objects(record, discourse.formation_candidates, "formation")
     record.analysis.imaginaries = _objects(record, discourse.imaginary_candidates, "imaginary")
@@ -727,6 +776,26 @@ def postprocess_record(
     )
     record.analysis.abstentions = discourse.abstentions
 
+    record.analysis.equivalence_chains = _relation_chains(
+        record, discourse.equivalences, "equivalence"
+    )
+    record.analysis.difference_chains = _relation_chains(
+        record, discourse.differences, "difference"
+    )
+    # `antagonisms` is a declared field that consumers read (research_record,
+    # rdf, derived_structures) but was only written by the legacy pipeline, so it
+    # stayed empty on canonical runs. Project the typed edges here.
+    record.analysis.antagonisms = [
+        Relation(
+            relation_id=f"antagonism:{index}",
+            relation_type=relation.relation_type,
+            source_ref=relation.source,
+            target_ref=relation.target,
+            evidence_ids=_evidence_ids(record, relation.evidence, f"antagonism:{index}"),
+            review_status="PROVISIONAL",
+        )
+        for index, relation in enumerate(discourse.antagonisms, start=1)
+    ]
     relations = (
         discourse.articulations
         + discourse.equivalences
