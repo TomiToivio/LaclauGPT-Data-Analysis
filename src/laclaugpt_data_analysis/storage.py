@@ -98,14 +98,41 @@ class LocalArtifactStore:
         target = self.root / key; target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(Path(source).read_bytes()); return str(target)
     def download_to(self, key: str, target: str | Path) -> Path:
         destination = Path(target); destination.parent.mkdir(parents=True, exist_ok=True); destination.write_bytes((self.root / key).read_bytes()); return destination
+    def exists(self, key: str) -> bool: return (self.root / key).exists()
+    def delete(self, key: str) -> None:
+        path = self.root / key
+        if path.exists(): path.unlink()
 
 
 class S3ArtifactStore:
-    def __init__(self, bucket: str, endpoint_url: str | None = None, region: str | None = None, prefix: str = ""):
-        try: import boto3
-        except ImportError as exc: raise RuntimeError("S3 support requires: pip install '.[remote]'") from exc
+    def __init__(
+        self,
+        bucket: str,
+        endpoint_url: str | None = None,
+        region: str | None = None,
+        prefix: str = "",
+        access_key_id: str | None = None,
+        secret_access_key: str | None = None,
+        signature_version: str = "s3",
+        addressing_style: str = "auto",
+    ):
+        try:
+            import boto3
+            from botocore.config import Config
+        except ImportError as exc:
+            raise RuntimeError("S3 support requires: pip install '.[remote]'") from exc
         self.bucket, self.prefix = bucket, prefix.rstrip("/")
-        self.client = boto3.client("s3", endpoint_url=endpoint_url, region_name=region)
+        self.client = boto3.client(
+            "s3",
+            endpoint_url=endpoint_url or None,
+            region_name=region or None,
+            aws_access_key_id=access_key_id or None,
+            aws_secret_access_key=secret_access_key or None,
+            config=Config(
+                signature_version=signature_version,
+                s3={"addressing_style": addressing_style},
+            ),
+        )
     def _key(self, key: str) -> str:
         clean = key.lstrip("/"); return f"{self.prefix}/{clean}" if self.prefix else clean
     def put_text(self, key: str, value: str) -> None: self.client.put_object(Bucket=self.bucket, Key=self._key(key), Body=value.encode("utf-8"), ContentType="text/plain; charset=utf-8")
@@ -122,6 +149,16 @@ class S3ArtifactStore:
         if not ref.startswith(prefix): raise ValueError("S3 reference does not belong to configured bucket")
         object_key = ref[len(prefix):]
         destination = Path(target); destination.parent.mkdir(parents=True, exist_ok=True); self.client.download_file(self.bucket, object_key, str(destination)); return destination
+    def exists(self, key: str) -> bool:
+        try:
+            self.client.head_object(Bucket=self.bucket, Key=self._key(key)); return True
+        except self.client.exceptions.ClientError as exc:
+            status = int(exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode", 0))
+            code = str(exc.response.get("Error", {}).get("Code", ""))
+            if status == 404 or code in {"404", "NoSuchKey", "NotFound"}: return False
+            raise
+    def delete(self, key: str) -> None:
+        self.client.delete_object(Bucket=self.bucket, Key=self._key(key))
 
 
 class MemoryCache:
@@ -177,7 +214,16 @@ def artifact_store(settings: Settings):
     if settings.object_backend == "local": return LocalArtifactStore(settings.artifact_dir)
     if settings.object_backend == "s3":
         if not settings.s3_bucket: raise ValueError("LACLAUGPT_S3_BUCKET is required for object_backend=s3")
-        return S3ArtifactStore(settings.s3_bucket, settings.s3_endpoint_url, settings.s3_region, prefix=settings.distributed_namespace.s3_key("analysis").rstrip("/"))
+        return S3ArtifactStore(
+            settings.s3_bucket,
+            settings.s3_endpoint_url,
+            settings.s3_region,
+            prefix=settings.distributed_namespace.s3_key("analysis").rstrip("/"),
+            access_key_id=settings.s3_access_key_id,
+            secret_access_key=settings.s3_secret_access_key,
+            signature_version=settings.s3_signature_version,
+            addressing_style=settings.s3_addressing_style,
+        )
     raise ValueError(f"unsupported object backend: {settings.object_backend}")
 
 
