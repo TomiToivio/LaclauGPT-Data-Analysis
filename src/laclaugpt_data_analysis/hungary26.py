@@ -16,7 +16,7 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any, Iterable
 
-from .codebooks import Codebook, CodebookEntry, load_codebook, merge_codebooks
+from .codebooks import Codebook, load_codebook, merge_codebooks
 
 HUNGARY26_ELECTION_DATE = "2026-04-12"
 REQUIRED_PRIVATE_FILES = (
@@ -67,7 +67,7 @@ def _stable_id(platform: str, workbook: str, sheet: str, row_number: int, row: d
     source_url = str(_pick(row, PLATFORM_FIELD_ALIASES["source_url"]) or "").strip()
     post_id = str(_pick(row, PLATFORM_FIELD_ALIASES["post_id"]) or "").strip()
     primary = source_url or post_id or f"{workbook}:{sheet}:{row_number}"
-    digest = hashlib.sha256(f"hungary26|{platform}|{primary}".encode("utf-8")).hexdigest()[:20]
+    digest = hashlib.sha256(f"hungary26|{platform}|{primary}".encode()).hexdigest()[:20]
     return f"hu26-{platform}-{digest}"
 
 
@@ -76,7 +76,7 @@ def _fingerprint(row: dict[str, Any]) -> str:
         str(_pick(row, PLATFORM_FIELD_ALIASES[name]) or "").strip().casefold()
         for name in ("author", "caption", "created_at", "media_ref")
     )
-    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+    return hashlib.sha256(material.encode()).hexdigest()
 
 
 def _near_duplicate_key(row: dict[str, Any]) -> str:
@@ -159,13 +159,19 @@ def load_hungary26_workbook(path: str | Path, *, platform: str) -> list[Workbook
         except StopIteration:
             continue
         for row_number, values in enumerate(rows, start=2):
-            row = {header: _jsonable(value) for header, value in zip(headers, values) if header}
+            row = {
+                header: _jsonable(value)
+                for header, value in zip(headers, values, strict=False)
+                if header
+            }
             if not any(value not in (None, "") for value in row.values()):
                 continue
             document_id = _stable_id(platform, source.name, sheet.title, row_number, row)
             media_ref = str(_pick(row, PLATFORM_FIELD_ALIASES["media_ref"]) or "").strip()
-            media_material = media_ref or str(_pick(row, PLATFORM_FIELD_ALIASES["source_url"]) or document_id)
-            media_id = "media-" + hashlib.sha256(media_material.encode("utf-8")).hexdigest()[:20]
+            media_material = media_ref or str(
+                _pick(row, PLATFORM_FIELD_ALIASES["source_url"]) or document_id
+            )
+            media_id = "media-" + hashlib.sha256(media_material.encode()).hexdigest()[:20]
             records.append(
                 WorkbookRecord(
                     document_id=document_id,
@@ -239,14 +245,16 @@ def deterministic_pilot(records: Iterable[WorkbookRecord], *, per_platform: int 
     for record in records:
         groups[record.platform].append(record)
     selected: list[WorkbookRecord] = []
-    for platform, platform_records in sorted(groups.items()):
+    for _platform, platform_records in sorted(groups.items()):
+
         def rank(record: WorkbookRecord) -> tuple[int, str]:
             difficulty = sum(
                 int(not value)
                 for value in (record.caption, record.media_ref, record.author, record.created_at)
             )
-            digest = hashlib.sha256(record.document_id.encode("utf-8")).hexdigest()
+            digest = hashlib.sha256(record.document_id.encode()).hexdigest()
             return (-difficulty, digest)
+
         selected.extend(sorted(platform_records, key=rank)[:per_platform])
     return selected
 
@@ -264,7 +272,9 @@ def load_private_hungary26_codebook(path: str | Path) -> Codebook:
                 f"{entry.kind}:{entry.label} missing valid provenance_class; expected one of {sorted(allowed)}"
             )
         if provenance_class == "model_candidate" and entry.metadata.get("reviewed") is True:
-            raise ValueError("model_candidate entries must be promoted to a grounded provenance class after review")
+            raise ValueError(
+                "model_candidate entries must be promoted to a grounded provenance class after review"
+            )
     return book
 
 
@@ -351,30 +361,37 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(private_runtime_preflight(args.private_root), indent=2))
         return 0
 
-    records = [
-        *load_hungary26_workbook(args.instagram, platform="instagram"),
-        *load_hungary26_workbook(args.tiktok, platform="tiktok"),
-    ] if hasattr(args, "instagram") else []
+    records = (
+        [
+            *load_hungary26_workbook(args.instagram, platform="instagram"),
+            *load_hungary26_workbook(args.tiktok, platform="tiktok"),
+        ]
+        if hasattr(args, "instagram")
+        else []
+    )
 
     if args.command == "normalize":
         write_manifest(records, args.output)
     elif args.command == "audit":
         report = audit_records(records)
         json_target = Path(args.json)
-        json_target.parent.mkdir(parents=True, exist_ok=True)
-        json_target.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         markdown_target = Path(args.markdown)
+        json_target.parent.mkdir(parents=True, exist_ok=True)
         markdown_target.parent.mkdir(parents=True, exist_ok=True)
+        json_target.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         markdown_target.write_text(_markdown_audit(report), encoding="utf-8")
     elif args.command == "pilot":
         write_manifest(deterministic_pilot(records, per_platform=args.per_platform), args.output)
-    else:
+    elif args.command == "codebook-collisions":
         book = load_private_hungary26_codebook(args.codebook)
-        Path(args.output).write_text(
-            json.dumps(codebook_collisions(book), ensure_ascii=False, indent=2), encoding="utf-8"
+        target = Path(args.output)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(
+            json.dumps(codebook_collisions(book), indent=2, ensure_ascii=False) + "\n",
+            encoding="utf-8",
         )
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     raise SystemExit(main())
