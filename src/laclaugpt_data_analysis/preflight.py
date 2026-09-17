@@ -12,9 +12,11 @@ import json
 import os
 import sys
 from typing import Any
+from uuid import uuid4
 
 from .debug_mode import sanitize_url
 from .staging import StagingPolicy
+from .storage import S3ArtifactStore
 
 
 def _check_mongodb(settings: Any) -> dict[str, Any]:
@@ -57,33 +59,44 @@ def _check_object_store(settings: Any) -> dict[str, Any]:
         "backend": "s3",
         "configured": True,
         "bucket": settings.s3_bucket,
-        "endpoint": sanitize_url(settings.s3_endpoint_url or ""),
+        "endpoint": sanitize_url(settings.s3_endpoint_url or "shared-aws-config"),
+        "signature_version": settings.s3_signature_version,
+        "addressing_style": settings.s3_addressing_style,
     }
     try:
-        import boto3
-    except ImportError:
-        report["error"] = "boto3_not_installed"
-        return report
-    try:
-        client = boto3.client(
-            "s3", endpoint_url=settings.s3_endpoint_url or None,
-            region_name=settings.s3_region or None,
+        store = S3ArtifactStore(
+            settings.s3_bucket,
+            settings.s3_endpoint_url,
+            settings.s3_region,
+            prefix=settings.distributed_namespace.s3_key("analysis").rstrip("/"),
+            access_key_id=settings.s3_access_key_id,
+            secret_access_key=settings.s3_secret_access_key,
+            signature_version=settings.s3_signature_version,
+            addressing_style=settings.s3_addressing_style,
         )
-        # A HEAD on a project-scoped sentinel validates credentials without
-        # requiring list permission (Allas commonly denies ListBucket).
-        prefix = settings.distributed_namespace.s3_key("analysis").rstrip("/")
-        client.head_object(Bucket=settings.s3_bucket, Key=f"{prefix}/.preflight")
+        # Verify the exact write path the pipeline needs. The tiny sentinel stays
+        # inside this project's namespace and is deleted immediately afterwards.
+        key = f".preflight/{uuid4().hex}.txt"
+        store.put_bytes(key, b"laclaugpt-preflight\n", content_type="text/plain")
         report["reachable"] = True
+        report["writeable"] = True
+        try:
+            store.delete(key)
+            report["cleanup"] = True
+        except Exception as exc:  # noqa: BLE001 - upload capability already proven
+            report["cleanup"] = False
+            report["cleanup_error"] = type(exc).__name__
+    except RuntimeError as exc:
+        if "S3 support requires" in str(exc):
+            report["error"] = "boto3_not_installed"
+            return report
+        report["reachable"] = False
+        report["writeable"] = False
+        report["error"] = type(exc).__name__
     except Exception as exc:  # noqa: BLE001
-        code = str(getattr(exc, "response", {}).get("Error", {}).get("Code", ""))
-        if code in {"404", "NoSuchKey", "NotFound"} or getattr(
-            exc, "response", {}
-        ).get("ResponseMetadata", {}).get("HTTPStatusCode") == 404:
-            # Credentials work; the sentinel simply does not exist.
-            report["reachable"] = True
-        else:
-            report["reachable"] = False
-            report["error"] = type(exc).__name__
+        report["reachable"] = False
+        report["writeable"] = False
+        report["error"] = type(exc).__name__
     return report
 
 
@@ -127,8 +140,6 @@ def preflight_report() -> dict[str, Any]:
     report: dict[str, Any] = {
         "status": "ok",
         "project_id": settings.project_id,
-        # Run identity is a distributed-run concept; the worker enforces it
-        # against the frozen manifest. The preflight reports it when present.
         "run_id": os.environ.get("LACLAUGPT_RUN_ID", ""),
         "machine": settings.machine,
         "execution": settings.execution,
@@ -162,6 +173,8 @@ def preflight_report() -> dict[str, Any]:
         problems.append("redis unreachable")
     if checks["object_store"].get("reachable") is False:
         problems.append("object store unreachable")
+    if checks["object_store"].get("writeable") is False:
+        problems.append("object store is not writeable")
     if checks["ollama"].get("reachable") is False:
         problems.append("ollama endpoint unreachable")
     if checks["ollama"].get("model_present") is False:

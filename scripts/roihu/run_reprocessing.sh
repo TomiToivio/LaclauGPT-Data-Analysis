@@ -8,7 +8,6 @@ STOP=${3:-}
 : "${LACLAUGPT_PROJECT_ID:?set LACLAUGPT_PROJECT_ID from private runtime config}"
 : "${LACLAUGPT_MONGODB_URI:?set LACLAUGPT_MONGODB_URI from private runtime config}"
 : "${LACLAUGPT_REDIS_URL:?set LACLAUGPT_REDIS_URL from private runtime config}"
-: "${LACLAUGPT_S3_ENDPOINT:?set LACLAUGPT_S3_ENDPOINT from private runtime config}"
 : "${LACLAUGPT_S3_BUCKET:?set LACLAUGPT_S3_BUCKET from private runtime config}"
 
 export LACLAUGPT_MACHINE=${LACLAUGPT_MACHINE:-roihu}
