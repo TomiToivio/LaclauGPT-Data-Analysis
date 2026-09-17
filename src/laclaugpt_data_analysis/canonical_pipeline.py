@@ -14,7 +14,7 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, Field, field_validator
 
-from .canonical import CanonicalRecord, DiscourseObject, Entity, Evidence, Relation
+from .canonical import CanonicalRecord, DiscourseObject, Entity, Evidence, Relation, RelationChain
 from .codebooks import CodebookEntry
 from .context_envelope import PromptEnvelope, build_prompt_envelope
 from .critical_ai import run_optional_critical_ai
@@ -561,6 +561,44 @@ def _objects(
     ]
 
 
+def _relations(
+    record: CanonicalRecord, values: list[DiscursiveRelation], prefix: str
+) -> list[Relation]:
+    return [
+        Relation(
+            relation_id=f"{prefix}:{index}",
+            relation_type=item.relation_type,
+            source_ref=item.source,
+            target_ref=item.target,
+            evidence_ids=_evidence_ids(record, item.evidence, f"{prefix}:{index}"),
+            review_status="PROVISIONAL",
+        )
+        for index, item in enumerate(values, start=1)
+    ]
+
+
+def _relation_chains(
+    record: CanonicalRecord,
+    values: list[DiscursiveRelation],
+    chain_type: str,
+) -> list[RelationChain]:
+    chains = []
+    for index, item in enumerate(values, start=1):
+        members = [item.source, item.target]
+        if len(set(members)) < 2:
+            continue
+        chains.append(
+            RelationChain(
+                chain_id=f"{chain_type}_chain:{index}",
+                chain_type=chain_type,
+                member_refs=members,
+                evidence_ids=_evidence_ids(record, item.evidence, f"{chain_type}_chain:{index}"),
+                review_status="PROVISIONAL",
+            )
+        )
+    return chains
+
+
 def postprocess_record(
     record: CanonicalRecord,
     summary: SummaryResult,
@@ -573,6 +611,12 @@ def postprocess_record(
         Entity(entity_id=f"entity:{index}", label=label, review_status="PROVISIONAL")
         for index, label in enumerate(summary.entities, start=1)
     ]
+    record.analysis.topics = []
+    record.analysis.sentiments = _objects(
+        record,
+        [DiscursiveElement(label=value, uncertainty="summary-stage observation") for value in summary.sentiment_observations],
+        "sentiment",
+    )
 
     if isinstance(summary, SummaryProposal):
         summary_signifiers = [
@@ -582,18 +626,24 @@ def postprocess_record(
         record.analysis.signifiers = _objects(record, summary_signifiers, "signifier")
     else:
         record.analysis.signifiers = []
-    record.analysis.signifiers.extend(
-        _objects(record, discourse.floating_signifier_candidates, "floating_signifier")
+
+    record.analysis.floating_signifiers = _objects(
+        record, discourse.floating_signifier_candidates, "floating_signifier"
     )
-    record.analysis.signifiers.extend(
-        _objects(record, discourse.empty_signifier_candidates, "empty_signifier")
+    record.analysis.empty_signifier_candidates = _objects(
+        record, discourse.empty_signifier_candidates, "empty_signifier"
     )
+    record.analysis.signifiers.extend(record.analysis.floating_signifiers)
+    record.analysis.signifiers.extend(record.analysis.empty_signifier_candidates)
     record.analysis.nodal_points = _objects(record, discourse.nodal_point_candidates, "nodal_point")
     record.analysis.formations = _objects(record, discourse.formation_candidates, "formation")
     record.analysis.imaginaries = _objects(record, discourse.imaginary_candidates, "imaginary")
     record.analysis.us = _objects(record, discourse.collective_subjects, "collective_subject")
     record.analysis.frontier = _objects(record, discourse.frontiers, "frontier")
     record.analysis.affects = _objects(record, discourse.affects, "affect")
+    record.analysis.equivalence_chains = _relation_chains(record, discourse.equivalences, "equivalence")
+    record.analysis.difference_chains = _relation_chains(record, discourse.differences, "difference")
+    record.analysis.antagonisms = _relations(record, discourse.antagonisms, "antagonism")
     record.analysis.formula_of_populism = {
         "populist": discourse.populist,
         "non_populist_reason": discourse.non_populist_reason,
@@ -610,17 +660,7 @@ def postprocess_record(
         + discourse.differences
         + discourse.antagonisms
     )
-    record.analysis.relations = [
-        Relation(
-            relation_id=f"relation:{index}",
-            relation_type=relation.relation_type,
-            source_ref=relation.source,
-            target_ref=relation.target,
-            evidence_ids=_evidence_ids(record, relation.evidence, f"relation:{index}"),
-            review_status="PROVISIONAL",
-        )
-        for index, relation in enumerate(relations, start=1)
-    ]
+    record.analysis.relations = _relations(record, relations, "relation")
     record.analysis.completed_at = datetime.now(UTC)
     return ensure_research_layers(record)
 
