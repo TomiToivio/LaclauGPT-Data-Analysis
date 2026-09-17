@@ -3,7 +3,11 @@ import os
 import pytest
 
 from laclaugpt_data_analysis.canonical import SCHEMA_VERSION
-from laclaugpt_data_analysis.distributed_worker import AI26_MODEL, FrozenRunManifest, enforce_local_model
+from laclaugpt_data_analysis.distributed_worker import (
+    AI26_MODEL,
+    FrozenRunManifest,
+    enforce_local_model,
+)
 from laclaugpt_data_analysis.llm.ollama import normalize_llm_mode, resolve_endpoint
 
 
