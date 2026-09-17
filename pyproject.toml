@@ -24,11 +24,14 @@ laclaugpt-summarize-period = "laclaugpt_data_analysis.periodic_summary:main"
 [project.optional-dependencies]
 analysis = [
   "pandas>=2.2",
+  "polars>=1.8",
   "numpy>=1.26",
   "scipy>=1.14",
   "scikit-learn>=1.5",
   "statsmodels>=0.14",
   "networkx>=3.3",
+  "igraph>=0.11",
+  "leidenalg>=0.10",
 ]
 arrow = [
   "pyarrow>=17",
@@ -63,11 +66,14 @@ dev = [
 ]
 all = [
   "pandas>=2.2",
+  "polars>=1.8",
   "numpy>=1.26",
   "scipy>=1.14",
   "scikit-learn>=1.5",
   "statsmodels>=0.14",
   "networkx>=3.3",
+  "igraph>=0.11",
+  "leidenalg>=0.10",
   "pyarrow>=17",
   "spacy>=3.7",
   "sentence-transformers>=3.0",
