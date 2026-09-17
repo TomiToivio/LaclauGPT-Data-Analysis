@@ -78,7 +78,7 @@ set +a
 
 # Analysis semantics come from the project layer; capability from the machine
 # layer; scheduling from this cron layer. Never hard-code credentials here.
-export LACLAUGPT_MACHINE=${LACLAUGPT_MACHINE:-linux-server}
+export LACLAUGPT_MACHINE=${LACLAUGPT_MACHINE:-laskin}
 export LACLAUGPT_EXECUTION=${LACLAUGPT_EXECUTION:-cron}
 export LACLAUGPT_STORAGE=${LACLAUGPT_STORAGE:-distributed}
 export LACLAUGPT_DATA_BACKEND=${LACLAUGPT_DATA_BACKEND:-mongodb}
