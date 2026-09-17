@@ -53,6 +53,17 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _load_project_config(path: Path) -> dict[str, Any]:
+    """Read the frozen private project configuration, failing closed on invalid input."""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"private project config is unreadable or malformed: {path}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("private project config must be a JSON object")
+    return payload
+
+
 def _inside(root: Path, path: Path) -> Path:
     root = root.resolve()
     resolved = path.resolve()
@@ -347,6 +358,7 @@ class AI26Handler:
         self.binding = binding
         self.settings = settings
         self.handoff = handoff
+        self.project_config = _load_project_config(binding.private_config)
         self.codebook = load_codebook(binding.codebook)
         self.provider = OllamaProvider(host=resolve_llm_host() or None)
         self.stager = stager if stager is not None else build_media_stager(settings)
@@ -370,6 +382,10 @@ class AI26Handler:
             _publish_local_media_refs(record, report)
         context = PipelineContext(
             project_context="AI26 distributed bounded test",
+            project_config=self.project_config,
+            project_config_revision=self.binding.manifest.config_sha256,
+            config_revision=self.binding.manifest.config_sha256,
+            codebook_revision=self.binding.manifest.codebook_sha256,
             provenance={
                 "private_config_sha256": [self.binding.manifest.config_sha256],
                 "codebook_sha256": [self.binding.manifest.codebook_sha256],
