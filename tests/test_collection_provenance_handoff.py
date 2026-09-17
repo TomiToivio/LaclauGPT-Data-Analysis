@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from laclaugpt_data_analysis.distributed_worker import MongoCollectionHandoff
 from laclaugpt_data_analysis.models import Provenance
 
