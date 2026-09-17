@@ -197,8 +197,9 @@ def test_text_only_parity_does_not_manufacture_multimodal_evidence():
     )
     provider = ParityProvider()
     result = analyze_record(record, provider=provider, model="fake-model")
-    assert all(
-        "[CONTEXT: CODEBOOK CANDIDATES, NOT EVIDENCE]" not in request.user
+    assert any(
+        "[CONTEXT: CODEBOOK CANDIDATES, NOT EVIDENCE]" in request.user
+        and "(none available)" in request.user
         for request in provider.requests
     )
     assert result.content.frames == []
