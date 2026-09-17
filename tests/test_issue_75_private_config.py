@@ -7,7 +7,11 @@ import pytest
 from laclaugpt_data_analysis.canonical import CanonicalRecord, SCHEMA_VERSION
 from laclaugpt_data_analysis.config import Settings
 from laclaugpt_data_analysis.critical_ai import critical_ai_enabled
-from laclaugpt_data_analysis.distributed_worker import AI26Handler, AI26_MODEL, WorkerBinding
+from laclaugpt_data_analysis.distributed_worker import (
+    AI26Handler,
+    AI26_MODEL,
+    WorkerBinding,
+)
 from laclaugpt_data_analysis.dna_statement_coding import dna_statement_coding_enabled
 from laclaugpt_data_analysis.task_queue import TaskEnvelope
 
