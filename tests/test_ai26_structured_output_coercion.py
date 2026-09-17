@@ -7,6 +7,7 @@ report success, while an idle/all-duplicate cycle still must.
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from laclaugpt_data_analysis.canonical_pipeline import (
     EventCandidate,
@@ -47,7 +48,7 @@ def test_whitespace_is_stripped_when_coercing() -> None:
 
 def test_non_string_single_value_is_not_coerced() -> None:
     """A genuinely wrong type must still fail rather than be papered over."""
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         EventCandidate(evidence={"nested": "mapping"})
 
 
