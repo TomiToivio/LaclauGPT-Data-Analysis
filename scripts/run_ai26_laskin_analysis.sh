@@ -27,7 +27,9 @@ PRIVATE_DIR=${LACLAUGPT_PRIVATE_CONFIG_DIR:-"$ROOT_DIR/data/config/ai26"}
 export OLLAMA_HOST="$LACLAUGPT_LLM_ENDPOINT"
 
 export LACLAUGPT_PROJECT_ID=ai26
-export LACLAUGPT_MACHINE=linux-server
+# Preserve a private/deployment override, but use the canonical Laskin machine
+# identifier by default. "linux-server" is a machine class, not this host's ID.
+export LACLAUGPT_MACHINE=${LACLAUGPT_MACHINE:-laskin}
 export LACLAUGPT_EXECUTION=cron
 export LACLAUGPT_STORAGE=distributed
 export LACLAUGPT_DATA_BACKEND=mongodb

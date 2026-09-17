@@ -7,6 +7,7 @@ and the configured endpoint, and must not leak private paths into provenance.
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -69,6 +70,19 @@ def test_machine_layer_disables_browser_capture() -> None:
     """Laskin must never run Firefox/browser collection."""
     values = _compose().as_dict()
     assert values["capabilities"]["browser_capture"] is False
+
+
+def test_laskin_machine_identity_is_consistent_across_public_entrypoints() -> None:
+    """Issue #115: every shipped Laskin entrypoint must resolve machine=laskin."""
+    example = (ROOT / "deployment" / "ai26.laskin.env.example").read_text(encoding="utf-8")
+    wrapper = (ROOT / "scripts" / "run_ai26_laskin.sh").read_text(encoding="utf-8")
+    legacy_wrapper = (ROOT / "scripts" / "run_ai26_laskin_analysis.sh").read_text(encoding="utf-8")
+
+    assert re.search(r"^LACLAUGPT_MACHINE=laskin$", example, re.MULTILINE)
+    assert "export LACLAUGPT_MACHINE=${LACLAUGPT_MACHINE:-laskin}" in wrapper
+    assert "export LACLAUGPT_MACHINE=${LACLAUGPT_MACHINE:-laskin}" in legacy_wrapper
+    assert "export LACLAUGPT_MACHINE=linux-server" not in wrapper
+    assert "export LACLAUGPT_MACHINE=linux-server" not in legacy_wrapper
 
 
 def test_all_ai26_stages_enabled_by_operator_decision() -> None:
