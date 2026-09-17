@@ -337,7 +337,7 @@ def analyze_frames(record: CanonicalRecord, *, provider, context: PipelineContex
     task_resource = load_prompt(task_id, version="v1")
     ai26_multimodal = project_profile.casefold() == "ai26"
     for frame in record.content.frames:
-        rendered_task = task_resource.render(frame_id=frame.id, timestamp_seconds=frame.timestamp_seconds, project_note="AI26 multimodal evidence-first frame analysis." if ai26_multimodal else "Generic descriptive frame analysis.")
+        rendered_task = task_resource.render(frame_id=frame.id, timestamp_seconds=frame.timestamp_seconds, project_note="AI26 relevance guide only" if ai26_multimodal else "Generic descriptive frame analysis.")
         envelope = _envelope(record, context, task=rendered_task.text, codebook_entries=codebook_entries, prompt_version=prompt_version)
         proposal_model = MultimodalFrameProposal if ai26_multimodal else FrameProposal
         proposal, response = chat_structured(provider, proposal_model, model=model, system_prompt=system_resource.text, user_prompt=envelope.render(), allow_cloud_fallback=allow_cloud_fallback)
@@ -394,7 +394,8 @@ def _evidence_ids(record: CanonicalRecord, quotes: list[str], prefix: str) -> li
 
 
 def _objects(record: CanonicalRecord, items: list[DiscursiveElement], kind: str) -> list[DiscourseObject]:
-    return [DiscourseObject(object_id=f"{kind}:{index}", label=item.label, kind=kind, evidence_ids=_evidence_ids(record, item.evidence, f"{kind}:{index}"), confidence=item.confidence, uncertainty=item.uncertainty, review_status="PROVISIONAL") for index, item in enumerate(items, start=1)]
+    corpus_required = kind in {"floating_signifier", "empty_signifier", "formation"}
+    return [DiscourseObject(object_id=f"{kind}:{index}", label=item.label, kind=kind, evidence_ids=_evidence_ids(record, item.evidence, f"{kind}:{index}"), confidence=item.confidence, uncertainty=item.uncertainty, review_status="PROVISIONAL", metadata={"corpus_validation_required": corpus_required}) for index, item in enumerate(items, start=1)]
 
 
 def _relation_chains(record: CanonicalRecord, relations: list[DiscursiveRelation], chain_type: Literal["equivalence", "difference"]) -> list[RelationChain]:
