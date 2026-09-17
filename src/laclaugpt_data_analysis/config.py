@@ -50,8 +50,6 @@ class Settings:
     llm_endpoint: str = "http://127.0.0.1:11434"
     cloud_allowed: bool = False
     caller: str = "human-cli"
-    # New explicit storage selector. ``data_backend`` remains as a compatibility
-    # alias for older configs; storage_backend wins when it is not empty.
     storage_backend: str = "auto"
     data_backend: str = "csv"
     database_url: str = "sqlite:///./data/database/analysis.sqlite3"
@@ -71,8 +69,6 @@ class Settings:
     s3_prefix_root: str = "projects"
     s3_access_key_id: str | None = None
     s3_secret_access_key: str | None = None
-    # CSC Allas requires SigV2 uploads and virtual-host compatible addressing.
-    # Keep provider-specific behavior configurable for AWS/other S3 backends.
     s3_signature_version: str = "s3"
     s3_addressing_style: str = "auto"
     collection_data_dir: Path | None = None
@@ -147,8 +143,8 @@ def load_settings() -> Settings:
         redis_url=_env("REDIS_URL"),
         redis_key_prefix=_env("REDIS_KEY_PREFIX", "laclaugpt") or "laclaugpt",
         mongo_url=_env("MONGODB_URI") or _env("MONGO_URL"),
-        mongo_database=_env("MONGO_DATABASE", "laclaugpt") or "laclaugpt",
-        mongo_vector_index=_env("MONGO_VECTOR_INDEX", "laclaugpt_record_embedding") or "laclaugpt_record_embedding",
+        mongo_database=_env("MONGODB_DATABASE") or _env("MONGO_DATABASE", "laclaugpt") or "laclaugpt",
+        mongo_vector_index=_env("MONGODB_VECTOR_INDEX") or _env("MONGO_VECTOR_INDEX", "laclaugpt_record_embedding") or "laclaugpt_record_embedding",
         object_backend=_env("OBJECT_BACKEND", "local") or "local",
         s3_endpoint_url=_env("S3_ENDPOINT") or _env("S3_ENDPOINT_URL"),
         s3_bucket=_env("S3_BUCKET"),
@@ -174,10 +170,7 @@ def load_settings() -> Settings:
         periodic_summary_interval_hours=_int_env("PERIODIC_SUMMARY_INTERVAL_HOURS", 24),
         periodic_summary_history_context=_int_env("PERIODIC_SUMMARY_HISTORY_CONTEXT", 7),
         periodic_summary_use_latest_as_context=_bool_env("PERIODIC_SUMMARY_USE_LATEST_AS_CONTEXT", True),
-        periodic_summary_scopes=_csv_env(
-            "PERIODIC_SUMMARY_SCOPES",
-            ("overall", "formation", "signifier", "source", "author"),
-        ),
+        periodic_summary_scopes=_csv_env("PERIODIC_SUMMARY_SCOPES", ("overall", "formation", "signifier", "source", "author")),
         luhmann_enabled=_bool_env("LUHMANN_ENABLED", False),
         luhmann_codebook=Path(_env("LUHMANN_CODEBOOK", "codebooks/public/luhmann_social_systems_v1.yaml") or "codebooks/public/luhmann_social_systems_v1.yaml"),
         castells_enabled=_bool_env("CASTELLS_ENABLED", False),
