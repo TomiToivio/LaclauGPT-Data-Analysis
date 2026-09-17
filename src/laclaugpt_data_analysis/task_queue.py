@@ -516,9 +516,11 @@ def redis_queue_from_settings(settings: Any, *, run_id: str, worker_id: str) -> 
 
 
 def durable_store_from_settings(settings: Any, *, run_id: str) -> DurableTaskStore:
-    if settings.data_backend == "mongodb":
-        if not settings.mongo_url:
-            raise ValueError("LACLAUGPT_MONGO_URL is required for distributed task results")
+    # Import locally to keep task_queue usable as a lightweight standalone module.
+    from .storage import resolved_storage_backend
+
+    backend = resolved_storage_backend(settings)
+    if backend == "mongodb":
         namespace = settings.distributed_namespace
         return MongoTaskStore(
             settings.mongo_url,
