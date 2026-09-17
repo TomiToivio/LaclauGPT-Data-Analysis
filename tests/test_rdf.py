@@ -5,7 +5,13 @@ from datetime import UTC, datetime
 
 import pytest
 
-from laclaugpt_data_analysis.canonical import CanonicalRecord, DiscourseObject, Entity, Evidence, Relation
+from laclaugpt_data_analysis.canonical import (
+    CanonicalRecord,
+    DiscourseObject,
+    Entity,
+    Evidence,
+    Relation,
+)
 from laclaugpt_data_analysis.models import Provenance
 from laclaugpt_data_analysis.plugin_pipeline import PluginContext, PluginRegistry
 from laclaugpt_data_analysis.rdf import (
