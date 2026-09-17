@@ -7,6 +7,17 @@
 # Source of truth: TomiToivio/LaclauGPT paper/PAPER.md, docs/AI26_REFERENCE_CASE.md.
 # Credentials, private source lists, real corpus data and machine paths never
 # belong in this file or in Git at all.
+#
+# Context composition order (highest evidentiary priority first):
+# 1. current source evidence
+# 2. current stage instructions
+# 3. project/theory context
+# 4. source profile context
+# 5. codebook context
+# 6. situational/periodic context
+# 7. researcher/context memory
+# 8. RAG context
+# Context is never promoted to source evidence merely by appearing in the prompt.
 
 project: ai26
 dataset:
@@ -78,7 +89,6 @@ formations:
   - ai safety
   - ai critical
   - anti-ai
-
 dimensions:
   political_economy: [ownership, labour, concentration, redistribution, public infrastructure]
   governance: [regulation, liability, audits, standards, evaluation, democratic control]
