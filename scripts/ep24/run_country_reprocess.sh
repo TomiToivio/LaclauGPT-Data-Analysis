@@ -35,6 +35,13 @@ The job will FAIL CLOSED if the private codebook is missing or if the
 public+private merged codebook contains no private entities or themes.
 Do not bypass this check for a real EP24 reprocessing run.
 
+EP24 PROMPT COMPATIBILITY REQUIREMENT:
+  legacy prompt coverage + improved staged pipeline are BOTH required.
+  active frame prompt:   ep24.frame_analysis:v2
+  active summary prompt: ep24.summary_analysis:v2
+  active Laclau prompt:  ep24.laclau_analysis:v2
+  legacy contract:       docs/EP24_LEGACY_PROMPTS.md
+
 See: EP24_PRIVATE_DATA_REQUIRED.md
 ========================================================================
 EOF
@@ -126,10 +133,15 @@ PY
 export EP24_PUBLIC_CODEBOOK="$public_codebook"
 export EP24_PRIVATE_HUMAN_CODEBOOK="$private_codebook"
 export EP24_EFFECTIVE_CODEBOOK="$effective_codebook"
-export EP24_FRAME_PROMPT_ID="ep24.frame_analysis:v1"
+
+# EP24 v2 prompts are additive upgrades: they preserve every legacy frame,
+# summary and populism obligation while adding evidence/provenance safeguards.
+# Do not downgrade these to generic laclau.* prompts for EP24 re-analysis.
+export EP24_FRAME_PROMPT_ID="ep24.frame_analysis:v2"
 export EP24_TRANSLATION_PROMPT_ID="ep24.translation:v1"
-export EP24_SUMMARY_PROMPT_ID="ep24.summary_analysis:v1"
-export EP24_LACLAU_PROMPT_ID="ep24.laclau_analysis:v1"
+export EP24_SUMMARY_PROMPT_ID="ep24.summary_analysis:v2"
+export EP24_LACLAU_PROMPT_ID="ep24.laclau_analysis:v2"
+export EP24_LEGACY_PROMPT_ARCHIVE="${LACLAUGPT_REPO_ROOT}/docs/EP24_LEGACY_PROMPTS.md"
 
 # The public module contains reusable analysis components, but the historical
 # EP24 end-to-end driver still lives in restricted research code. Until that
