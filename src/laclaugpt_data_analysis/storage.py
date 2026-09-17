@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .config import Settings
+from .s3_client import build_s3_client
 
 Record = dict[str, Any]
 
@@ -101,11 +102,23 @@ class LocalArtifactStore:
 
 
 class S3ArtifactStore:
-    def __init__(self, bucket: str, endpoint_url: str | None = None, region: str | None = None, prefix: str = ""):
-        try: import boto3
-        except ImportError as exc: raise RuntimeError("S3 support requires: pip install '.[remote]'") from exc
+    def __init__(
+        self,
+        bucket: str,
+        endpoint_url: str | None = None,
+        region: str | None = None,
+        prefix: str = "",
+        *,
+        addressing_style: str = "auto",
+        signature_version: str = "auto",
+    ):
         self.bucket, self.prefix = bucket, prefix.rstrip("/")
-        self.client = boto3.client("s3", endpoint_url=endpoint_url, region_name=region)
+        self.client, self.client_spec = build_s3_client(
+            endpoint_url=endpoint_url,
+            region=region,
+            addressing_style=addressing_style,
+            signature_version=signature_version,
+        )
     def _key(self, key: str) -> str:
         clean = key.lstrip("/"); return f"{self.prefix}/{clean}" if self.prefix else clean
     def put_text(self, key: str, value: str) -> None: self.client.put_object(Bucket=self.bucket, Key=self._key(key), Body=value.encode("utf-8"), ContentType="text/plain; charset=utf-8")
@@ -177,7 +190,14 @@ def artifact_store(settings: Settings):
     if settings.object_backend == "local": return LocalArtifactStore(settings.artifact_dir)
     if settings.object_backend == "s3":
         if not settings.s3_bucket: raise ValueError("LACLAUGPT_S3_BUCKET is required for object_backend=s3")
-        return S3ArtifactStore(settings.s3_bucket, settings.s3_endpoint_url, settings.s3_region, prefix=settings.distributed_namespace.s3_key("analysis").rstrip("/"))
+        return S3ArtifactStore(
+            settings.s3_bucket,
+            settings.s3_endpoint_url,
+            settings.s3_region,
+            prefix=settings.distributed_namespace.s3_key("analysis").rstrip("/"),
+            addressing_style=settings.s3_addressing_style,
+            signature_version=settings.s3_signature_version,
+        )
     raise ValueError(f"unsupported object backend: {settings.object_backend}")
 
 
