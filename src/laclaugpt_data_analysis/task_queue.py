@@ -310,6 +310,19 @@ class RedisStreamQueue:
             if "BUSYGROUP" not in str(exc):
                 raise
 
+    @staticmethod
+    def _field(values: Mapping[Any, Any], name: str) -> Any:
+        return values.get(name) if name in values else values.get(name.encode())
+
+    @classmethod
+    def _decode_task(cls, values: Mapping[Any, Any]) -> TaskEnvelope:
+        raw = cls._field(values, "task")
+        if raw is None:
+            raise ValueError("Redis task entry is missing task payload")
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
+        return TaskEnvelope.from_dict(json.loads(str(raw)))
+
     def publish(self, task: TaskEnvelope) -> str:
         return str(self.redis.xadd(self.stream, {"task": json.dumps(task.to_dict())}))
 
@@ -325,7 +338,7 @@ class RedisStreamQueue:
             return None
         _, entries = response[0]
         message_id, values = entries[0]
-        return ClaimedTask(str(message_id), TaskEnvelope.from_dict(json.loads(values["task"])))
+        return ClaimedTask(str(message_id), self._decode_task(values))
 
     def reclaim(self, *, min_idle_ms: int) -> ClaimedTask | None:
         try:
@@ -339,41 +352,65 @@ class RedisStreamQueue:
             )
         except (AttributeError, TypeError):
             response = None
+        except RuntimeError as exc:
+            if "unknown command" not in str(exc).casefold() or "xautoclaim" not in str(exc).casefold():
+                raise
+            response = None
         if response:
             entries = response[1] if len(response) > 1 else []
             if entries:
                 message_id, values = entries[0]
-                return ClaimedTask(
-                    str(message_id),
-                    TaskEnvelope.from_dict(json.loads(values["task"])),
-                )
+                return ClaimedTask(str(message_id), self._decode_task(values))
 
-        pending = self.redis.xpending_range(
-            self.stream,
-            self.group,
-            min="-",
-            max="+",
-            count=self._LEGACY_PENDING_BATCH,
-            idle=min_idle_ms,
-        )
-        if not pending:
-            return None
-        entry = pending[0]
-        message_id = entry["message_id"] if isinstance(entry, dict) else entry[0]
-        claimed = self.redis.xclaim(
-            self.stream,
-            self.group,
-            self.consumer,
-            min_idle_ms,
-            [message_id],
-        )
-        if not claimed:
-            return None
-        claimed_id, values = claimed[0]
-        return ClaimedTask(
-            str(claimed_id),
-            TaskEnvelope.from_dict(json.loads(values["task"])),
-        )
+        start = "-"
+        while True:
+            try:
+                pending = self.redis.xpending_range(
+                    self.stream,
+                    self.group,
+                    min=start,
+                    max="+",
+                    count=self._LEGACY_PENDING_BATCH,
+                    idle=min_idle_ms,
+                )
+                eligible = pending[:1]
+            except TypeError:
+                pending = self.redis.xpending_range(
+                    self.stream,
+                    self.group,
+                    min=start,
+                    max="+",
+                    count=self._LEGACY_PENDING_BATCH,
+                )
+                eligible = [
+                    entry
+                    for entry in pending
+                    if int(
+                        entry.get("time_since_delivered", 0)
+                        if isinstance(entry, dict)
+                        else entry[2]
+                    )
+                    >= min_idle_ms
+                ][:1]
+            if eligible:
+                entry = eligible[0]
+                message_id = entry["message_id"] if isinstance(entry, dict) else entry[0]
+                claimed = self.redis.xclaim(
+                    self.stream,
+                    self.group,
+                    self.consumer,
+                    min_idle_ms,
+                    [message_id],
+                )
+                if not claimed:
+                    return None
+                claimed_id, values = claimed[0]
+                return ClaimedTask(str(claimed_id), self._decode_task(values))
+            if not pending or len(pending) < self._LEGACY_PENDING_BATCH:
+                return None
+            last = pending[-1]
+            last_id = last["message_id"] if isinstance(last, dict) else last[0]
+            start = str(last_id)
 
     def ack(self, message_id: str) -> None:
         self.redis.xack(self.stream, self.group, message_id)
