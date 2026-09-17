@@ -20,7 +20,7 @@ from .canonical import SCHEMA_VERSION, CanonicalRecord
 from .canonical_pipeline import PipelineContext, run_canonical_pipeline
 from .codebooks import load_codebook
 from .config import Settings, load_settings
-from .llm.ollama import OllamaProvider
+from .llm.ollama import OllamaProvider, configured_llm_modes
 from .task_queue import (
     TaskEnvelope,
     TaskQueue,
@@ -210,21 +210,28 @@ class WorkerBinding:
 def enforce_local_model(manifest: FrozenRunManifest) -> None:
     if manifest.model != AI26_MODEL:
         raise ValueError(f"AI26 distributed test requires model {AI26_MODEL}")
-    mode = os.environ.get("LLM_MODE", "local").strip().lower()
-    if mode not in {"", "local"}:
-        raise ValueError("AI26 distributed test forbids cloud/external Ollama mode")
+
+    for name, mode in configured_llm_modes():
+        if mode != "local":
+            raise ValueError(
+                f"AI26 distributed test forbids cloud/external Ollama mode: {name}={mode}"
+            )
+
     fallback = os.environ.get("LLM_ALLOW_CLOUD_FALLBACK", "").strip().casefold()
     if fallback in {"1", "true", "yes", "on"}:
         raise ValueError("AI26 distributed test forbids cloud fallback")
     configured_model = (
-        os.environ.get("LACLAUGPT_OLLAMA_MODEL")
+        os.environ.get("LACLAUGPT_LLM_MODEL")
+        or os.environ.get("LACLAUGPT_OLLAMA_MODEL")
         or os.environ.get("OLLAMA_MODEL")
         or AI26_MODEL
     )
     if configured_model != AI26_MODEL:
         raise ValueError(f"configured Ollama model must be {AI26_MODEL}")
     os.environ["LLM_MODE"] = "local"
+    os.environ["LACLAUGPT_LLM_MODE"] = "local-ollama"
     os.environ["LLM_ALLOW_CLOUD_FALLBACK"] = "0"
+    os.environ["LACLAUGPT_LLM_MODEL"] = AI26_MODEL
     os.environ["LACLAUGPT_OLLAMA_MODEL"] = AI26_MODEL
 
 
