@@ -51,6 +51,17 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def source_tree_sha256() -> str:
+    """Hash the analysed source tree so docs/CI merges do not stale a run.
+
+    Shares the definition used by the worker's validator, so a freeze and a
+    validation can never disagree about what "the analysed code" means.
+    """
+    from .distributed_worker import _source_tree_sha256
+
+    return _source_tree_sha256(_repo_root())
+
+
 def resolve_public_git_sha(explicit: str = "") -> str:
     """Resolve the public Data-Analysis revision, or fail rather than guess."""
     if explicit.strip():
@@ -135,6 +146,7 @@ def write_run_manifest(
         "codebook_sha256": _sha256_file(codebook_path),
         "model": model,
         "public_git_sha": resolve_public_git_sha(public_git_sha),
+        "source_tree_sha256": source_tree_sha256(),
     }
     manifest_path = root / "run-manifest.json"
     manifest_path.write_text(
