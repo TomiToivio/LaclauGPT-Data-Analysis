@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from laclaugpt_data_analysis.canonical import CanonicalRecord, Content, Source
+from laclaugpt_data_analysis.canonical import CanonicalRecord, ContentSection, SourceSection
 from laclaugpt_data_analysis.canonical_pipeline import (
     DiscourseProposal,
     MultimodalSummaryProposal,
@@ -14,8 +14,8 @@ from laclaugpt_data_analysis.canonical_pipeline import (
 def _record() -> CanonicalRecord:
     return CanonicalRecord(
         source_url="https://example.test/item",
-        source=Source(platform="test"),
-        content=Content(text="AI policy debate"),
+        source=SourceSection(platform="test"),
+        content=ContentSection(text="AI policy debate"),
     )
 
 
