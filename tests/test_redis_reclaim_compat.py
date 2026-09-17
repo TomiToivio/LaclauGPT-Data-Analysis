@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from laclaugpt_data_analysis.task_queue import RedisStreamQueue, TaskEnvelope
 
 
 def _task_fields(*, as_bytes: bool = False):
-    fields = TaskEnvelope(
+    task = TaskEnvelope(
         task_id="task-1",
         idempotency_key="analysis:record-1:v1",
         project_id="ai26",
@@ -16,7 +18,8 @@ def _task_fields(*, as_bytes: bool = False):
         schema_version="1",
         config_revision="cfg-abc",
         codebook_revision="cb-def",
-    ).to_fields()
+    )
+    fields = {"task": json.dumps(task.to_dict())}
     if not as_bytes:
         return fields
     return {key.encode(): value.encode() for key, value in fields.items()}
@@ -24,7 +27,7 @@ def _task_fields(*, as_bytes: bool = False):
 
 def _queue(client) -> RedisStreamQueue:
     queue = object.__new__(RedisStreamQueue)
-    queue.client = client
+    queue.redis = client
     queue.stream = "stream"
     queue.group = "group"
     queue.consumer = "consumer"
@@ -42,7 +45,7 @@ class Redis60Client:
     def xautoclaim(self, *args, **kwargs):
         raise RuntimeError("unknown command `XAUTOCLAIM`, with args beginning with: stream")
 
-    def xpending_range(self, stream, group, *, min, max, count):
+    def xpending_range(self, stream, group, *, min, max, count, **kwargs):
         self.pending_calls.append((stream, group, min, max, count))
         if min == "-":
             return self.pending[:count]

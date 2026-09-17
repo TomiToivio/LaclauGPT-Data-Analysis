@@ -1,8 +1,6 @@
-from pathlib import Path
-
 from laclaugpt_data_analysis.canonical import SCHEMA_VERSION
 from laclaugpt_data_analysis.distributed_worker import AI26TaskWorker, _cycle_exit_code
-from laclaugpt_data_analysis.task_queue import InMemoryTaskQueue, SqliteTaskStore, TaskEnvelope
+from laclaugpt_data_analysis.task_queue import InMemoryTaskQueue, InMemoryTaskStore, TaskEnvelope
 
 
 def _task() -> TaskEnvelope:
@@ -31,24 +29,31 @@ def test_cycle_succeeds_for_idle_duplicate_or_any_completed_progress() -> None:
     assert _cycle_exit_code({"completed": 1, "duplicate": 0, "retry": 1, "dead-letter": 1}) == 0
 
 
-def test_worker_exposes_failure_class_without_failure_text(tmp_path: Path) -> None:
+def test_worker_exposes_failure_class_without_failure_text() -> None:
     queue = InMemoryTaskQueue()
-    store = SqliteTaskStore(tmp_path / "tasks.sqlite3")
+    store = InMemoryTaskStore()
     queue.publish(_task())
 
     def broken(_: TaskEnvelope):
         raise RuntimeError("sensitive source-derived failure detail")
 
-    worker = AI26TaskWorker(queue, store, broken, "worker-1", {}, max_attempts=3)
+    worker = AI26TaskWorker(
+        queue=queue,
+        durable_store=store,
+        handler=broken,
+        worker_id="worker-1",
+        provenance={},
+        max_attempts=3,
+    )
 
     assert worker.run_once() == "retry"
     assert worker.last_failure_class == "RuntimeError"
     assert "sensitive" not in worker.last_failure_class
 
 
-def test_failure_class_is_cleared_on_next_non_failure(tmp_path: Path) -> None:
+def test_failure_class_is_cleared_on_next_non_failure() -> None:
     queue = InMemoryTaskQueue()
-    store = SqliteTaskStore(tmp_path / "tasks.sqlite3")
+    store = InMemoryTaskStore()
     task = _task()
     queue.publish(task)
     calls = 0
@@ -60,7 +65,14 @@ def test_failure_class_is_cleared_on_next_non_failure(tmp_path: Path) -> None:
             raise ValueError("temporary")
         return {"task_id": current.task_id}
 
-    worker = AI26TaskWorker(queue, store, flaky, "worker-1", {}, max_attempts=3)
+    worker = AI26TaskWorker(
+        queue=queue,
+        durable_store=store,
+        handler=flaky,
+        worker_id="worker-1",
+        provenance={},
+        max_attempts=3,
+    )
 
     assert worker.run_once() == "retry"
     assert worker.last_failure_class == "ValueError"

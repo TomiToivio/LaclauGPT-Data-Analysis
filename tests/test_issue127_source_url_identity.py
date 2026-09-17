@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-import sqlite3
+import sys
+import types
 
-from laclaugpt_data_analysis.task_queue import SqliteTaskStore, TaskEnvelope
+from laclaugpt_data_analysis.task_queue import MongoTaskStore, TaskEnvelope
 
 
 def _task() -> TaskEnvelope:
@@ -19,60 +20,84 @@ def _task() -> TaskEnvelope:
     )
 
 
-def test_sqlite_result_persists_source_url(tmp_path):
-    path = tmp_path / "tasks.sqlite3"
-    store = SqliteTaskStore(path)
+class FakeCollection:
+    def __init__(self) -> None:
+        self.documents: list[dict] = []
+        self.indexes: list[tuple] = []
+
+    def create_index(self, keys, **kwargs):
+        self.indexes.append((keys, kwargs))
+
+    def find_one(self, query, projection=None):
+        del projection
+        for row in self.documents:
+            if all(row.get(key) == value for key, value in query.items()):
+                return row
+        return None
+
+    def insert_one(self, document):
+        self.documents.append(dict(document))
+        return object()
+
+
+class FakeDatabase:
+    def __init__(self) -> None:
+        self.collections: dict[str, FakeCollection] = {}
+
+    def __getitem__(self, name: str) -> FakeCollection:
+        return self.collections.setdefault(name, FakeCollection())
+
+
+class FakeClient:
+    databases: dict[str, FakeDatabase] = {}
+
+    def __init__(self, url: str):
+        self.url = url
+
+    def __getitem__(self, name: str) -> FakeDatabase:
+        return self.databases.setdefault(name, FakeDatabase())
+
+
+def _store(monkeypatch) -> MongoTaskStore:
+    FakeClient.databases.clear()
+    pymongo = types.ModuleType("pymongo")
+    pymongo.MongoClient = FakeClient
+    errors = types.ModuleType("pymongo.errors")
+
+    class DuplicateKeyError(Exception):
+        pass
+
+    errors.DuplicateKeyError = DuplicateKeyError
+    monkeypatch.setitem(sys.modules, "pymongo", pymongo)
+    monkeypatch.setitem(sys.modules, "pymongo.errors", errors)
+    return MongoTaskStore(
+        "mongodb://example.invalid",
+        database="laclaugpt",
+        result_collection="ai26__analysis_results",
+        failure_collection="ai26__analysis_failures",
+        project_id="ai26",
+        run_id="run-1",
+    )
+
+
+def test_mongo_result_persists_source_url(monkeypatch):
+    store = _store(monkeypatch)
     task = _task()
 
     assert store.write_result(task, {"source_url": task.record_ref}, {"worker": "test"})
 
-    with sqlite3.connect(path) as connection:
-        row = connection.execute(
-            "SELECT source_url, result_json FROM task_results WHERE idempotency_key = ?",
-            (task.idempotency_key,),
-        ).fetchone()
-
-    assert row is not None
-    assert row[0] == task.record_ref
-    assert task.record_ref in row[1]
+    row = store.results.documents[0]
+    assert row["source_url"] == task.record_ref
+    assert row["result"]["source_url"] == task.record_ref
 
 
-def test_sqlite_failure_persists_source_url(tmp_path):
-    path = tmp_path / "tasks.sqlite3"
-    store = SqliteTaskStore(path)
+def test_mongo_failure_persists_source_url_once(monkeypatch):
+    store = _store(monkeypatch)
     task = _task()
 
     store.write_failure(task, "boom", {"worker": "test"})
 
-    with sqlite3.connect(path) as connection:
-        row = connection.execute(
-            "SELECT source_url, error FROM task_failures WHERE idempotency_key = ?",
-            (task.idempotency_key,),
-        ).fetchone()
-
-    assert row == (task.record_ref, "boom")
-
-
-def test_sqlite_migrates_existing_tables_without_source_url(tmp_path):
-    path = tmp_path / "tasks.sqlite3"
-    with sqlite3.connect(path) as connection:
-        connection.execute(
-            "CREATE TABLE task_results ("
-            "idempotency_key TEXT PRIMARY KEY, result_json TEXT NOT NULL, "
-            "provenance_json TEXT NOT NULL, created_at REAL NOT NULL)"
-        )
-        connection.execute(
-            "CREATE TABLE task_failures ("
-            "id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL, "
-            "idempotency_key TEXT NOT NULL, attempt INTEGER NOT NULL, "
-            "error TEXT NOT NULL, provenance_json TEXT NOT NULL, created_at REAL NOT NULL)"
-        )
-
-    SqliteTaskStore(path)
-
-    with sqlite3.connect(path) as connection:
-        result_columns = {row[1] for row in connection.execute("PRAGMA table_info(task_results)")}
-        failure_columns = {row[1] for row in connection.execute("PRAGMA table_info(task_failures)")}
-
-    assert "source_url" in result_columns
-    assert "source_url" in failure_columns
+    row = store.failures.documents[0]
+    assert row["source_url"] == task.record_ref
+    assert row["error"] == "boom"
+    assert list(row).count("source_url") == 1

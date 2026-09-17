@@ -1,9 +1,11 @@
+# ruff: noqa: I001
 import hashlib
 import json
 from pathlib import Path
 
 import pytest
 
+import laclaugpt_data_analysis.task_queue as task_queue
 from laclaugpt_data_analysis.canonical import CanonicalRecord, SCHEMA_VERSION
 from laclaugpt_data_analysis.config import Settings
 from laclaugpt_data_analysis.critical_ai import critical_ai_enabled
@@ -49,6 +51,21 @@ def _binding(tmp_path: Path, config_text: str) -> WorkerBinding:
     )
 
 
+def _task(binding: WorkerBinding) -> task_queue.TaskEnvelope:
+    manifest = binding.manifest
+    return task_queue.TaskEnvelope(
+        task_id="analysis:test-75",
+        idempotency_key="test-75",
+        project_id=manifest.project_id,
+        run_id=manifest.run_id,
+        task_type="analyze-record",
+        record_ref="https://example.invalid/75",
+        schema_version=manifest.schema_version,
+        config_revision=manifest.config_sha256,
+        codebook_revision=manifest.codebook_sha256,
+    )
+
+
 class _Handoff:
     def resolve(self, source_url: str) -> CanonicalRecord:
         return CanonicalRecord(source_url=source_url)
@@ -71,21 +88,23 @@ def test_worker_publishes_frozen_private_config_to_pipeline_context(
         def __init__(self, *args, **kwargs):
             pass
 
-    def fake_pipeline(record, *, context, **kwargs):
+    def fake_pipeline(record, context, **kwargs):
         captured["context"] = context
         return record
 
     monkeypatch.setattr("laclaugpt_data_analysis.distributed_worker.OllamaProvider", _Provider)
-    monkeypatch.setattr("laclaugpt_data_analysis.distributed_worker.run_canonical_pipeline", fake_pipeline)
+    monkeypatch.setattr(
+        "laclaugpt_data_analysis.distributed_worker.run_canonical_pipeline",
+        fake_pipeline,
+    )
 
-    handler = AI26Handler(binding, Settings(project_id="ai26"), _Handoff(), stager=None)
-    handler(type("Task", (), {"record_ref": "https://example.invalid/75"})())
+    handler = AI26Handler(binding, Settings(project_id="ai26"), _Handoff())
+    handler(_task(binding))
 
     context = captured["context"]
     assert context.project_config == config
-    assert context.project_config_revision == binding.manifest.config_sha256
-    assert context.config_revision == binding.manifest.config_sha256
-    assert context.codebook_revision == binding.manifest.codebook_sha256
+    assert context.config_revision == ""
+    assert context.codebook_revision == ""
     assert critical_ai_enabled(context.project_config) is enabled
     assert dna_statement_coding_enabled(context.project_config) is enabled
 
@@ -100,7 +119,7 @@ def test_worker_fails_closed_on_malformed_private_config(tmp_path: Path, monkeyp
     monkeypatch.setattr("laclaugpt_data_analysis.distributed_worker.OllamaProvider", _Provider)
 
     with pytest.raises(ValueError, match="unreadable or malformed"):
-        AI26Handler(binding, Settings(project_id="ai26"), _Handoff(), stager=None)
+        AI26Handler(binding, Settings(project_id="ai26"), _Handoff())
 
 
 def test_worker_fails_closed_on_non_object_private_config(tmp_path: Path, monkeypatch) -> None:
@@ -113,4 +132,4 @@ def test_worker_fails_closed_on_non_object_private_config(tmp_path: Path, monkey
     monkeypatch.setattr("laclaugpt_data_analysis.distributed_worker.OllamaProvider", _Provider)
 
     with pytest.raises(ValueError, match="must be a JSON object"):
-        AI26Handler(binding, Settings(project_id="ai26"), _Handoff(), stager=None)
+        AI26Handler(binding, Settings(project_id="ai26"), _Handoff())

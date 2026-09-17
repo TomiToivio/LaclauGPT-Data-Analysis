@@ -8,7 +8,7 @@ The task envelope is deliberately reference-only. It carries `project_id`, `run_
 
 ### Direct/local
 
-Use the normal analysis pipeline with CSV/SQLite/filesystem storage. `SqliteTaskStore` is available when an application wants durable local idempotency/retry history. No Redis import is required.
+Use the normal analysis pipeline with CSV/SQLite/filesystem storage. Task-worker unit tests and other ephemeral local worker use can use `InMemoryTaskStore`; the task worker no longer provides a separate SQLite durable-store implementation. No Redis import is required.
 
 ### Distributed
 
@@ -43,7 +43,7 @@ No endpoint or credential should be committed. The AI26 distributed worker in is
 
 ## Worker heartbeat
 
-`TaskWorker.heartbeat()` writes an expiring Redis status value. This is liveness/coordination information only and must not be treated as durable research provenance.
+`TaskWorker.heartbeat()` writes Redis liveness/status information only. It must not be treated as durable research provenance.
 
 ## Design constraints
 

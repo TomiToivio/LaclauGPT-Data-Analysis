@@ -7,7 +7,7 @@ import pytest
 
 from laclaugpt_data_analysis.config import Settings
 from laclaugpt_data_analysis.storage import _mongodb_reachable, resolved_storage_backend
-from laclaugpt_data_analysis.task_queue import SqliteTaskStore, durable_store_from_settings
+from laclaugpt_data_analysis.task_queue import MongoTaskStore, durable_store_from_settings
 
 
 def test_auto_honours_data_backend_and_distributed_mongodb_fails_closed(monkeypatch):
@@ -47,21 +47,39 @@ def test_explicit_storage_backend_still_has_precedence():
     assert resolved_storage_backend(settings) == "sqlite"
 
 
-def test_durable_task_store_uses_canonical_storage_resolver(monkeypatch, tmp_path):
-    monkeypatch.setattr(
-        "laclaugpt_data_analysis.storage.resolved_storage_backend",
-        lambda settings: "sqlite",
-    )
+def test_durable_task_store_uses_mongo_settings_names(monkeypatch):
+    calls = {}
+
+    class FakeCollection:
+        def create_index(self, *args, **kwargs):
+            return None
+
+    class FakeDatabase:
+        def __getitem__(self, name):
+            calls.setdefault("collections", []).append(name)
+            return FakeCollection()
+
+    class FakeClient:
+        def __init__(self, url):
+            calls["url"] = url
+
+        def __getitem__(self, name):
+            calls["database"] = name
+            return FakeDatabase()
+
+    monkeypatch.setitem(sys.modules, "pymongo", types.SimpleNamespace(MongoClient=FakeClient))
     settings = Settings(
-        storage="local",
-        storage_backend="auto",
+        project_id="ai26",
+        storage="distributed",
         data_backend="mongodb",
-        data_dir=tmp_path,
         mongo_url="mongodb://example.invalid",
+        mongo_database="analysis-db",
     )
 
     store = durable_store_from_settings(settings, run_id="run-76")
-    assert isinstance(store, SqliteTaskStore)
+    assert isinstance(store, MongoTaskStore)
+    assert calls["url"] == settings.mongo_url
+    assert calls["database"] == settings.mongo_database
 
 
 def test_mongodb_reachability_probe_is_cached_for_same_settings(monkeypatch):

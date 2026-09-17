@@ -27,6 +27,20 @@ def _store_without_pymongo_init():
     return store
 
 
+def _task(source_url: str = "https://example.invalid/source/1") -> TaskEnvelope:
+    return TaskEnvelope(
+        task_id="analysis:handoff-1",
+        idempotency_key="handoff-1",
+        project_id="ai26",
+        run_id="run-001",
+        task_type="analyze-record",
+        record_ref=source_url,
+        schema_version="1",
+        config_revision="cfg",
+        codebook_revision="cb",
+    )
+
+
 def test_mongo_result_persists_canonical_source_url_at_top_level(monkeypatch):
     store = _store_without_pymongo_init()
 
@@ -36,8 +50,9 @@ def test_mongo_result_persists_canonical_source_url_at_top_level(monkeypatch):
     monkeypatch.setitem(__import__("sys").modules, "pymongo.errors", type("E", (), {"DuplicateKeyError": DuplicateKeyError}))
 
     source_url = "https://example.invalid/source/1"
+    task = _task(source_url)
     assert store.write_result(
-        "handoff-1",
+        task,
         {"source_url": source_url, "floating_signifiers": ["AI"]},
         {"worker_id": "worker-1"},
     )
@@ -57,8 +72,9 @@ def test_mongo_result_rejects_missing_source_url(monkeypatch):
 
     monkeypatch.setitem(__import__("sys").modules, "pymongo.errors", type("E", (), {"DuplicateKeyError": DuplicateKeyError}))
 
+    task = _task("")
     try:
-        store.write_result("handoff-1", {"floating_signifiers": ["AI"]}, {})
+        store.write_result(task, {"floating_signifiers": ["AI"]}, {})
     except ValueError as exc:
         assert "source_url" in str(exc)
     else:
@@ -68,17 +84,7 @@ def test_mongo_result_rejects_missing_source_url(monkeypatch):
 def test_processing_failure_persists_task_record_ref_as_source_url():
     store = _store_without_pymongo_init()
     source_url = "https://example.invalid/source/1"
-    task = TaskEnvelope(
-        task_id="analysis:handoff-1",
-        idempotency_key="handoff-1",
-        project_id="ai26",
-        run_id="run-001",
-        task_type="analyze-record",
-        record_ref=source_url,
-        schema_version="1",
-        config_revision="cfg",
-        codebook_revision="cb",
-    )
+    task = _task(source_url)
 
     store.write_failure(task, "RuntimeError: boom", {"worker_id": "worker-1"})
 
