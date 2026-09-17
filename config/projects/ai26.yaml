@@ -38,21 +38,24 @@ codebook:
   merge_order: [public, private_overlay]
 
 analysis:
-  # Core Laclau/Mouffe/Palonen discourse stage. Always on for AI26.
-  laclau: true
-  palonen: true
-  sociotechnical_imaginaries: true
-  sentiment: true
-  topics: true
-  entities: true
-  context_memory: true
-  temporal: true
-  multimodal: true
-  sna: false
-  ant: false
-  valueflows: false
+  # These flags are executable declarations, validated by stage_contract.py.
+  # `true` means an implemented stage/projection must exist or the run fails
+  # before model work begins. `false` below marks a deliberate AI26 exclusion,
+  # not a missing implementation.
+  laclau: true                     # implemented: discourse stage + canonical projection
+  palonen: true                    # implemented inside shared discourse/populism stage
+  sociotechnical_imaginaries: true # implemented: discourse.imaginary_candidates -> imaginaries
+  sentiment: true                  # implemented: summary sentiment observations -> sentiments
+  topics: true                     # implemented: summary topic observations -> topics
+  entities: true                   # implemented: summary entity observations -> entities
+  context_memory: true             # implemented when memory context is supplied by entrypoint
+  temporal: true                   # implemented in summary event/temporal observations
+  multimodal: true                 # implemented: frame stage runs when frames exist
+  sna: false                       # deliberately excluded from AI26 canonical run
+  ant: false                       # deliberately excluded from AI26 canonical run
+  valueflows: false                # deliberately excluded from AI26 canonical run
 
-  # Optional specialised stages. AI26 runs all three on Laskin by operator
+  # Optional specialised stages. AI26 runs both on Laskin by operator
   # decision (2026-09-17); each remains an explicit, individually switchable
   # toggle so a run can be narrowed without editing code.
   dna_statement_coding:
