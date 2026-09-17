@@ -50,18 +50,20 @@ def test_config_revision_rejects_tampered_payload() -> None:
 
 def test_in_memory_message_bus_requires_reference_for_research_payloads() -> None:
     bus = InMemoryMessageBus()
-    request = MessageEnvelope(
-        message_id="request-1",
+    request = MessageEnvelope.build(
         project_id="ai26",
+        run_id="run-1",
         sender="analysis",
         recipient="visualization",
-        kind="refresh",
+        message_type="refresh",
         correlation_id="corr-1",
         config_revision="cfg-123",
         body={"record_ref": "record-1"},
     )
     message_id = bus.publish(request)
-    received_id, received = bus.receive()
+    received_pair = bus.receive()
+    assert received_pair is not None
+    received_id, received = received_pair
     assert received_id == message_id
     assert received.correlation_id == request.correlation_id
     assert received.config_revision == "cfg-123"
