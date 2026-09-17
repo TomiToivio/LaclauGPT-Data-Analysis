@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from .canonical import CanonicalRecord, Evidence
 from .codebooks import CodebookEntry
 from .context_envelope import PromptEnvelope, build_prompt_envelope
+from .dna_statement_coding import run_optional_dna_statement_coding
 from .llm.structured_output import chat_structured
 from .prompt_library import load_prompt, prompt_provenance
 
@@ -268,7 +269,16 @@ def run_optional_critical_ai(
     model: str = "auto",
     allow_cloud_fallback: bool | None = None,
 ) -> CriticalAIAnalysis | None:
-    """Run Critical AI Studies only when enabled in the existing project settings."""
+    """Run optional DNA coding first, then Critical AI Studies when enabled."""
+    run_optional_dna_statement_coding(
+        record,
+        provider=provider,
+        context=context,
+        codebook_entries=codebook_entries,
+        model=model,
+        allow_cloud_fallback=allow_cloud_fallback,
+    )
+
     config = critical_ai_config(context.project_config)
     if not config.enabled:
         return None
