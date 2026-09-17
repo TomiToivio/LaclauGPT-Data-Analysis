@@ -4,8 +4,8 @@ from laclaugpt_data_analysis.canonical import CanonicalRecord, DiscourseObject
 from laclaugpt_data_analysis.canonical_pipeline import (
     DiscourseProposal,
     DiscursiveElement,
+    MultimodalSummaryProposal,
     PipelineContext,
-    SummaryProposal,
     build_discourse_graph,
     run_canonical_pipeline,
 )
@@ -71,13 +71,12 @@ def test_prompt_envelope_has_all_eight_sections_and_empty_fallbacks():
 
 
 def test_pipeline_keeps_raw_legacy_human_and_structured_layers():
-    summary = SummaryProposal(
+    summary = MultimodalSummaryProposal(
         summary="Human-readable synthetic summary",
         narrative="A synthetic debate about democratic control of AI.",
         topics=["AI governance"],
         entities=["Synthetic Lab"],
-        candidate_signifiers=["democratic AI"],
-        sociotechnical_imaginary_candidates=["democratically governed AI"],
+        later_analysis_cues=["Later discourse analysis may examine democratic AI claims."],
     )
     discourse = DiscourseProposal(
         demands=[
@@ -136,7 +135,8 @@ def test_pipeline_keeps_raw_legacy_human_and_structured_layers():
     assert result.analysis.formations[0].review_status == "PROVISIONAL"
     assert result.analysis.formations[0].metadata["corpus_validation_required"] is True
     assert result.analysis.formula_of_populism["populist"] is False
-    assert "summary_preanalysis" in result.intermediate.stage_outputs
+    assert "multimodal_synthesis" in result.intermediate.stage_outputs
+    assert "castells_context" in result.intermediate.stage_outputs
     assert "discourse_analysis" in result.intermediate.stage_outputs
     assert "discourse_graph" in result.intermediate.stage_outputs
     assert len(provider.requests) == 2
