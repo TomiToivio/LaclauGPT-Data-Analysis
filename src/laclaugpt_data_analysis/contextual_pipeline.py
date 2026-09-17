@@ -6,6 +6,7 @@ from typing import Any
 from .canonical import CanonicalRecord
 from .canonical_pipeline import (
     GraphSink,
+    PipelineContext,
     Preprocessor,
     VectorSink,
     analyze_frames,
@@ -18,6 +19,7 @@ from .canonical_pipeline import (
 from .codebooks import CodebookEntry
 from .context_orchestration import AnalysisContextPolicy, assemble_analysis_context
 from .context_runtime import ContextItem
+from .critical_ai import run_optional_critical_ai
 from .llm.multimodal import FrameAwareProvider
 from .periodic_summary import PeriodicSummaryRepository
 from .rag import RetrievalBackend
@@ -35,11 +37,30 @@ def _append_context_audit(
     record.intermediate.stage_outputs[key] = history
 
 
+def _optional_stage_context(
+    stage_context: PipelineContext,
+    caller_context: PipelineContext | None,
+) -> PipelineContext:
+    """Keep assembled scientific context while preserving caller configuration metadata."""
+    caller = caller_context or PipelineContext()
+    return stage_context.model_copy(
+        update={
+            "config_revision": caller.config_revision,
+            "codebook_revision": caller.codebook_revision,
+            "context_revision": caller.context_revision,
+            "project_config_revision": caller.project_config_revision,
+            "project_config": dict(caller.project_config),
+        },
+        deep=True,
+    )
+
+
 def run_contextual_canonical_pipeline(
     record: CanonicalRecord,
     *,
     provider,
     project_id: str,
+    caller_context: PipelineContext | None = None,
     codebook_entries: list[CodebookEntry] | None = None,
     policy: AnalysisContextPolicy | None = None,
     summary_repository: PeriodicSummaryRepository | None = None,
@@ -127,6 +148,16 @@ def run_contextual_canonical_pipeline(
         model=model,
         prompt_version=prompt_version,
         project_profile=project_profile,
+        allow_cloud_fallback=allow_cloud_fallback,
+    )
+
+    optional_context = _optional_stage_context(discourse_context, caller_context)
+    run_optional_critical_ai(
+        record,
+        provider=provider,
+        context=optional_context,
+        codebook_entries=entries,
+        model=model,
         allow_cloud_fallback=allow_cloud_fallback,
     )
 
