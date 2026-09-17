@@ -7,13 +7,9 @@ import pytest
 from laclaugpt_data_analysis.canonical import CanonicalRecord, SCHEMA_VERSION
 from laclaugpt_data_analysis.config import Settings
 from laclaugpt_data_analysis.critical_ai import critical_ai_enabled
-from laclaugpt_data_analysis.distributed_worker import (
-    AI26Handler,
-    AI26_MODEL,
-    WorkerBinding,
-)
+from laclaugpt_data_analysis.distributed_worker import AI26Handler, AI26_MODEL, WorkerBinding
 from laclaugpt_data_analysis.dna_statement_coding import dna_statement_coding_enabled
-from laclaugpt_data_analysis.task_queue import TaskEnvelope
+import laclaugpt_data_analysis.task_queue as task_queue
 
 
 def _sha(path: Path) -> str:
@@ -54,9 +50,9 @@ def _binding(tmp_path: Path, config_text: str) -> WorkerBinding:
     )
 
 
-def _task(binding: WorkerBinding) -> TaskEnvelope:
+def _task(binding: WorkerBinding) -> task_queue.TaskEnvelope:
     manifest = binding.manifest
-    return TaskEnvelope(
+    return task_queue.TaskEnvelope(
         task_id="analysis:test-75",
         idempotency_key="test-75",
         project_id=manifest.project_id,
