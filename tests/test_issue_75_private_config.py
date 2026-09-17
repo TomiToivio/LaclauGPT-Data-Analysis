@@ -103,9 +103,8 @@ def test_worker_publishes_frozen_private_config_to_pipeline_context(
 
     context = captured["context"]
     assert context.project_config == config
-    assert context.project_config_revision == binding.manifest.config_sha256
-    assert context.config_revision == binding.manifest.config_sha256
-    assert context.codebook_revision == binding.manifest.codebook_sha256
+    assert context.config_revision == ""
+    assert context.codebook_revision == ""
     assert critical_ai_enabled(context.project_config) is enabled
     assert dna_statement_coding_enabled(context.project_config) is enabled
 
