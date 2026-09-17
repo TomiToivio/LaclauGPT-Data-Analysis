@@ -171,7 +171,7 @@ class SqliteTaskStore:
 
 
 class MongoTaskStore:
-    """Durable distributed result/failure history with atomic idempotency."""
+    """Durable distributed result/failure history with canonical source identity."""
 
     def __init__(
         self,
@@ -198,9 +198,17 @@ class MongoTaskStore:
             unique=True,
             name="project_run_idempotency",
         )
+        self.results.create_index(
+            [("project_id", 1), ("run_id", 1), ("source_url", 1)],
+            name="project_run_source_url",
+        )
         self.failures.create_index(
             [("project_id", 1), ("run_id", 1), ("idempotency_key", 1)],
             name="project_run_failure",
+        )
+        self.failures.create_index(
+            [("project_id", 1), ("run_id", 1), ("source_url", 1)],
+            name="project_run_source_url",
         )
 
     def has_result(self, idempotency_key: str) -> bool:
@@ -226,9 +234,13 @@ class MongoTaskStore:
             from pymongo.errors import DuplicateKeyError
         except ImportError as exc:
             raise RuntimeError("MongoDB task support requires: pip install '.[remote]'") from exc
+        source_url = str(result.get("source_url") or "").strip()
+        if not source_url:
+            raise ValueError("analysis result must contain canonical source_url")
         document = {
             "project_id": self.project_id,
             "run_id": self.run_id,
+            "source_url": source_url,
             "idempotency_key": idempotency_key,
             "result": dict(result),
             "provenance": dict(provenance),
@@ -250,6 +262,7 @@ class MongoTaskStore:
             {
                 "project_id": self.project_id,
                 "run_id": self.run_id,
+                "source_url": task.record_ref,
                 "task_id": task.task_id,
                 "idempotency_key": task.idempotency_key,
                 "attempt": task.attempt,
