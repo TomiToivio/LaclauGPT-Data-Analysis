@@ -13,7 +13,7 @@ import logging
 import os
 import socket
 import subprocess
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from typing import Any
 
@@ -118,11 +118,43 @@ class FrozenRunManifest:
     codebook_sha256: str
     model: str
     public_git_sha: str
+    # Hash of the analysed source tree at freeze time. Optional so manifests
+    # written before this field existed still load (see validate_runtime_code).
+    source_tree_sha256: str = ""
 
     @classmethod
     def load(cls, path: str | Path) -> FrozenRunManifest:
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
-        return cls(**payload)
+        known = {field.name for field in fields(cls)}
+        return cls(**{key: value for key, value in payload.items() if key in known})
+
+
+# Directories whose contents define the analysed behaviour. Documentation, CI
+# configuration and test changes do not alter analysis semantics, so they must
+# not invalidate a frozen run (issue #121).
+_SOURCE_TREE_ROOTS = ("src",)
+_SOURCE_TREE_SUFFIXES = (".py",)
+
+
+def _source_tree_sha256(repo_root: Path | None = None) -> str:
+    """Hash the analysed source tree, independent of commits and comments."""
+    root = repo_root or Path(__file__).resolve().parents[2]
+    digest = hashlib.sha256()
+    files: list[Path] = []
+    for top in _SOURCE_TREE_ROOTS:
+        base = root / top
+        if not base.is_dir():
+            continue
+        for path in base.rglob("*"):
+            if path.is_file() and path.suffix in _SOURCE_TREE_SUFFIXES:
+                files.append(path)
+    # Deterministic order so the hash does not depend on filesystem traversal.
+    for path in sorted(files, key=lambda item: item.as_posix()):
+        digest.update(path.relative_to(root).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,11 +208,32 @@ class WorkerBinding:
             raise ValueError("codebook hash does not match frozen run manifest")
 
     def validate_runtime_code(self) -> None:
+        """Require the analysed source tree — not just the commit — to be unchanged.
+
+        The commit SHA identifies the whole repository, so a docs-only,
+        CI-only or test-only merge would invalidate a frozen run and stop a
+        scheduled job for no analytical reason (issue #121). The source-tree hash
+        covers exactly what affects analysis semantics. When a manifest predates
+        this field, or the checkout is not a git repository, fall back to the
+        strict commit comparison so the guarantee is never silently dropped.
+        """
+        frozen_tree = (self.manifest.source_tree_sha256 or "").strip()
+        if frozen_tree:
+            runtime_tree = _source_tree_sha256()
+            if runtime_tree == frozen_tree:
+                return
+            raise ValueError(
+                "analysed source tree has changed since the run was frozen: "
+                f"manifest={frozen_tree} runtime={runtime_tree}. "
+                "Re-freeze the run with laclaugpt-freeze-ai26 before analysing."
+            )
+
         runtime_sha = _runtime_public_git_sha()
         if runtime_sha != self.manifest.public_git_sha:
             raise ValueError(
                 "public Git SHA does not match frozen run manifest: "
-                f"manifest={self.manifest.public_git_sha} runtime={runtime_sha}"
+                f"manifest={self.manifest.public_git_sha} runtime={runtime_sha}. "
+                "Re-freeze the run with laclaugpt-freeze-ai26 before analysing."
             )
 
     def validate_task(self, task: TaskEnvelope) -> None:
