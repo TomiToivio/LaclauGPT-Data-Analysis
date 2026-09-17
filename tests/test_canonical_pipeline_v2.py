@@ -4,9 +4,11 @@ from laclaugpt_data_analysis.canonical import CanonicalRecord, DiscourseObject
 from laclaugpt_data_analysis.canonical_pipeline import (
     DiscourseProposal,
     DiscursiveElement,
+    DiscursiveRelation,
     MultimodalSummaryProposal,
     PipelineContext,
     build_discourse_graph,
+    postprocess_record,
     run_canonical_pipeline,
 )
 from laclaugpt_data_analysis.context_envelope import build_prompt_envelope
@@ -145,6 +147,68 @@ def test_pipeline_keeps_raw_legacy_human_and_structured_layers():
         assert "[RAG CONTEXT]" in request.user
         assert "[PREVIOUS ANALYSIS]" in request.user
         assert "[TASK]" in request.user
+
+
+def test_postprocess_projects_typed_laclau_fields_without_dropping_generic_views():
+    record = synthetic_record()
+    summary = MultimodalSummaryProposal(
+        summary="Synthetic summary",
+        entities=["Synthetic Lab"],
+        sentiment_observations=["cautiously optimistic"],
+    )
+    discourse = DiscourseProposal(
+        floating_signifier_candidates=[
+            DiscursiveElement(
+                label="progress",
+                evidence=["Progress means AI that serves democratic society."],
+                confidence=0.6,
+            )
+        ],
+        empty_signifier_candidates=[
+            DiscursiveElement(
+                label="democracy",
+                evidence=["Democracy can unite otherwise distinct demands."],
+                confidence=0.5,
+            )
+        ],
+        equivalences=[
+            DiscursiveRelation(
+                relation_type="equivalence",
+                source="democracy",
+                target="public control",
+                evidence=["Democracy and public control are articulated together."],
+            )
+        ],
+        differences=[
+            DiscursiveRelation(
+                relation_type="difference",
+                source="public control",
+                target="private ownership",
+                evidence=["Public control is distinguished from private ownership."],
+            )
+        ],
+        antagonisms=[
+            DiscursiveRelation(
+                relation_type="antagonism",
+                source="democratic public",
+                target="unaccountable monopoly",
+                evidence=["An unaccountable monopoly blocks democratic control."],
+            )
+        ],
+    )
+
+    result = postprocess_record(record, summary, discourse)
+
+    assert [item.label for item in result.analysis.floating_signifiers] == ["progress"]
+    assert [item.label for item in result.analysis.empty_signifier_candidates] == ["democracy"]
+    assert {item.label for item in result.analysis.signifiers} == {"progress", "democracy"}
+    assert result.analysis.equivalence_chains[0].member_refs == ["democracy", "public control"]
+    assert result.analysis.difference_chains[0].member_refs == ["public control", "private ownership"]
+    assert result.analysis.antagonisms[0].target_ref == "unaccountable monopoly"
+    assert any(item.relation_type == "equivalence" for item in result.analysis.relations)
+    assert any(item.relation_type == "difference" for item in result.analysis.relations)
+    assert any(item.relation_type == "antagonism" for item in result.analysis.relations)
+    assert result.analysis.sentiments[0].label == "cautiously optimistic"
 
 
 def test_graph_is_projection_not_second_ontology():
