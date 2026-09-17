@@ -38,26 +38,6 @@ def _csv_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(value.strip() for value in raw.split(",") if value.strip())
 
 
-def _record_backend_defaults() -> tuple[str, str]:
-    """Resolve record-role env names into the legacy deployment/storage selectors.
-
-    ``LACLAUGPT_STORAGE`` and ``LACLAUGPT_DATA_BACKEND`` remain explicit overrides for
-    backwards compatibility. When they are absent, the role-oriented
-    ``LACLAUGPT_RECORD_BACKEND`` contract is sufficient to select local vs distributed
-    storage and the concrete record backend.
-    """
-    record_backend = (_env("RECORD_BACKEND") or "").strip().casefold()
-    if not record_backend:
-        return "local", "csv"
-    if record_backend == "mongodb":
-        return "distributed", "mongodb"
-    if record_backend in {"csv", "files"}:
-        return "local", "csv"
-    if record_backend == "sqlite":
-        return "local", "sqlite"
-    raise ValueError(f"unsupported record backend: {record_backend}")
-
-
 @dataclass(frozen=True)
 class Settings:
     project_id: str = "default"
@@ -146,20 +126,19 @@ class Settings:
 def load_settings() -> Settings:
     collection_data = _env("COLLECTION_DATA_DIR")
     scratch = _env("SCRATCH_DIR")
-    role_storage, role_data_backend = _record_backend_defaults()
     settings = Settings(
         project_id=_env("PROJECT_ID", "default") or "default",
         profile=_env("PROFILE", "local") or "local",
         machine=_env("MACHINE", "laptop") or "laptop",
         execution=_env("EXECUTION", "cli") or "cli",
-        storage=_env("STORAGE") or role_storage,
+        storage=_env("STORAGE", "local") or "local",
         llm_mode=_env("LLM_MODE", "local-ollama") or "local-ollama",
         llm_model=_env("LLM_MODEL", "gemma4:e4b") or "gemma4:e4b",
         llm_endpoint=_env("LLM_ENDPOINT", "http://127.0.0.1:11434") or "http://127.0.0.1:11434",
         cloud_allowed=_bool_env("CLOUD_ALLOWED", False),
         caller=_env("CALLER", "human-cli") or "human-cli",
         storage_backend=_env("STORAGE_BACKEND", "auto") or "auto",
-        data_backend=_env("DATA_BACKEND") or role_data_backend,
+        data_backend=_env("DATA_BACKEND", "csv") or "csv",
         database_url=_env("DATABASE_URL", "sqlite:///./data/database/analysis.sqlite3") or "sqlite:///./data/database/analysis.sqlite3",
         data_dir=Path(_env("DATA_DIR", "./data") or "./data"),
         artifact_dir=Path(_env("ARTIFACT_DIR", "./data/artifacts") or "./data/artifacts"),
