@@ -17,6 +17,11 @@ from typing import Any, Callable, Iterable, Literal, Mapping, Protocol, Sequence
 from .canonical import CanonicalRecord
 
 PluginScope = Literal["record", "corpus"]
+InterpretationMode = Literal[
+    "exploratory_instrumentalist",
+    "measurement",
+    "theoretical_interpretive",
+]
 
 
 def _stable_hash(value: Mapping[str, Any]) -> str:
@@ -27,6 +32,11 @@ def _stable_hash(value: Mapping[str, Any]) -> str:
 @dataclass(frozen=True, slots=True)
 class PluginSpec:
     """Versioned capability contract for one analytical method.
+
+    ``name``/``version`` identify the software plugin. ``method_id`` and
+    ``method_version`` identify the stable cross-repository research method. This
+    distinction lets implementations evolve without silently changing the meaning of
+    legacy AC/DT results.
 
     ``prompt_ids`` declares stable first-party/external prompt resources used by an
     LLM-assisted plugin. Prompt-free statistical/network plugins leave it empty.
@@ -42,6 +52,17 @@ class PluginSpec:
     model_dependencies: tuple[str, ...] = ()
     prompt_ids: tuple[str, ...] = ()
     config_schema_version: str = "1"
+    method_id: str | None = None
+    method_version: str | None = None
+    interpretation_mode: InterpretationMode = "exploratory_instrumentalist"
+
+    @property
+    def stable_method_id(self) -> str:
+        return self.method_id or self.name
+
+    @property
+    def stable_method_version(self) -> str:
+        return self.method_version or self.version
 
     def validate(self) -> None:
         if not self.name.strip() or not self.version.strip():
@@ -52,6 +73,14 @@ class PluginSpec:
             raise ValueError("plugin cannot depend on itself")
         if any(not prompt_id.strip() for prompt_id in self.prompt_ids):
             raise ValueError("plugin prompt IDs must not be empty")
+        if self.interpretation_mode not in {
+            "exploratory_instrumentalist",
+            "measurement",
+            "theoretical_interpretive",
+        }:
+            raise ValueError(f"unsupported interpretation mode: {self.interpretation_mode}")
+        if not self.stable_method_id.strip() or not self.stable_method_version.strip():
+            raise ValueError("stable method id/version must not be empty")
 
 
 @dataclass(slots=True)
@@ -259,8 +288,39 @@ class AnalysisPipeline:
         config: Mapping[str, Any],
         result: Mapping[str, Any],
         context: PluginContext,
+        *,
+        input_record_ids: Sequence[str],
     ) -> dict[str, Any]:
+        method_id = plugin.spec.stable_method_id
+        method_version = plugin.spec.stable_method_version
+        validation_status = (
+            "not_validated" if plugin.spec.interpretation_mode == "measurement" else "not_applicable"
+        )
         return {
+            # Shared AC/DT result contract.
+            "schema_version": "acdt-result/1.0",
+            "method_id": method_id,
+            "method_version": method_version,
+            "interpretation_mode": plugin.spec.interpretation_mode,
+            "study_id": context.project_id or None,
+            "corpus_id": context.metadata.get("corpus_id"),
+            "input_record_ids": list(input_record_ids),
+            "parameters": dict(config),
+            "provenance": {
+                "producer": "laclaugpt-data-analysis",
+                "producer_version": plugin.spec.version,
+                "git_commit": context.metadata.get("git_commit"),
+                "run_id": context.run_id or None,
+                "worker_id": context.worker_id or None,
+                "created_at": datetime.now(UTC).isoformat(),
+            },
+            "validation": {
+                "status": validation_status,
+                "human_review_status": "provisional",
+                "method": None,
+                "notes": None,
+            },
+            # Backwards-compatible plugin metadata retained for existing consumers.
             "plugin": plugin.spec.name,
             "plugin_version": plugin.spec.version,
             "scope": plugin.spec.scope,
@@ -309,7 +369,11 @@ class AnalysisPipeline:
             try:
                 result = plugin.process(current.model_copy(deep=True), context, selection.config)
                 current.analysis.plugin_results[plugin.spec.name] = self._result_envelope(
-                    plugin, selection.config, result, context
+                    plugin,
+                    selection.config,
+                    result,
+                    context,
+                    input_record_ids=[current.source_url],
                 )
                 capabilities.update(plugin.spec.produces)
                 current.append_analysis_provenance(
@@ -318,6 +382,9 @@ class AnalysisPipeline:
                     metadata={
                         "plugin": plugin.spec.name,
                         "plugin_version": plugin.spec.version,
+                        "method_id": plugin.spec.stable_method_id,
+                        "method_version": plugin.spec.stable_method_version,
+                        "interpretation_mode": plugin.spec.interpretation_mode,
                         "prompt_ids": list(plugin.spec.prompt_ids),
                         "config_hash": _stable_hash(selection.config),
                         "config_revision": context.config_revision,
@@ -397,7 +464,11 @@ class AnalysisPipeline:
                     selection.config,
                 )
                 sidecars[plugin.spec.name] = self._result_envelope(
-                    plugin, selection.config, output, context
+                    plugin,
+                    selection.config,
+                    output,
+                    context,
+                    input_record_ids=[record.source_url for record in processed],
                 )
                 available.update(plugin.spec.produces)
             except Exception as exc:  # noqa: BLE001
@@ -426,6 +497,9 @@ class LegacyLaclauPlugin:
     spec = PluginSpec(
         name="laclau",
         version="1.0",
+        method_id="laclau_discourse_analysis",
+        method_version="1.0",
+        interpretation_mode="theoretical_interpretive",
         scope="record",
         requires=frozenset({"text"}),
         produces=frozenset({"laclau"}),
