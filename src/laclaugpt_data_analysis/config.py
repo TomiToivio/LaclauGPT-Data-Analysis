@@ -69,6 +69,12 @@ class Settings:
     s3_bucket: str | None = None
     s3_region: str | None = None
     s3_prefix_root: str = "projects"
+    s3_access_key_id: str | None = None
+    s3_secret_access_key: str | None = None
+    # CSC Allas requires SigV2 uploads and virtual-host compatible addressing.
+    # Keep provider-specific behavior configurable for AWS/other S3 backends.
+    s3_signature_version: str = "s3"
+    s3_addressing_style: str = "auto"
     collection_data_dir: Path | None = None
 
     rag_enabled: bool = False
@@ -145,8 +151,13 @@ def load_settings() -> Settings:
         mongo_vector_index=_env("MONGO_VECTOR_INDEX", "laclaugpt_record_embedding") or "laclaugpt_record_embedding",
         object_backend=_env("OBJECT_BACKEND", "local") or "local",
         s3_endpoint_url=_env("S3_ENDPOINT") or _env("S3_ENDPOINT_URL"),
-        s3_bucket=_env("S3_BUCKET"), s3_region=_env("S3_REGION"),
+        s3_bucket=_env("S3_BUCKET"),
+        s3_region=_env("S3_REGION"),
         s3_prefix_root=_env("S3_PREFIX_ROOT", "projects") or "projects",
+        s3_access_key_id=_env("S3_ACCESS_KEY_ID") or _env("S3_ACCESS_KEY"),
+        s3_secret_access_key=_env("S3_SECRET_ACCESS_KEY") or _env("S3_SECRET_KEY"),
+        s3_signature_version=_env("S3_SIGNATURE_VERSION", "s3") or "s3",
+        s3_addressing_style=_env("S3_ADDRESSING_STYLE", "auto") or "auto",
         collection_data_dir=Path(collection_data) if collection_data else None,
         rag_enabled=_bool_env("RAG_ENABLED", False),
         rag_backend=_env("RAG_BACKEND", "mongodb") or "mongodb",
@@ -186,6 +197,10 @@ def load_settings() -> Settings:
         errors.append("vector/hybrid RAG requires LACLAUGPT_EMBEDDING_MODEL")
     if settings.storage_backend.casefold() == "mongodb" and not settings.mongo_url:
         errors.append("storage_backend=mongodb requires LACLAUGPT_MONGODB_URI or LACLAUGPT_MONGO_URL")
+    if settings.s3_signature_version.casefold() not in {"s3", "s3v4"}:
+        errors.append("S3 signature version must be s3 or s3v4")
+    if settings.s3_addressing_style.casefold() not in {"auto", "virtual", "path"}:
+        errors.append("S3 addressing style must be auto, virtual, or path")
     if settings.periodic_summary_interval_hours < 1:
         errors.append("periodic summary interval hours must be >= 1")
     if settings.periodic_summary_history_context < 0:
