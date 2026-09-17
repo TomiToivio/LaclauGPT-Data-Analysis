@@ -140,6 +140,12 @@ codebook and a `run-manifest.json` binding project, run, schema, model and the
 public Git revision. The worker **fails closed** when any pinned hash disagrees,
 so configuration drift is a hard error rather than a silent change of meaning.
 
+For the normal Laskin deployment you should not need to invoke the freeze command
+separately after a code update. `scripts/install_ai26_laskin_cron.sh` re-freezes
+the deployed run before it installs the cron entry, so the manifest's
+`public_git_sha` is refreshed to the checkout being deployed while config and
+codebook hashes remain pinned to the effective private inputs.
+
 ## Preflight
 
 ```bash
@@ -227,11 +233,15 @@ LACLAUGPT_PRIVATE_ROOT=/mnt/workspace/LaclauGPT-Private/runtime/ai26 \
   bash scripts/install_ai26_laskin_cron.sh
 ```
 
-It installs exactly one tagged entry and replaces older invocations of the same
-wrapper. The resulting canonical entry is:
+The installer re-freezes the run manifest first, installs exactly one tagged
+entry, replaces older invocations of the same wrapper, and then runs the wrapper
+in `--check` mode using the exact private-root contract that cron will receive.
+Installation exits non-zero if freezing or preflight fails.
+
+The resulting canonical entry is:
 
 ```cron
-5 * * * * /bin/bash /mnt/workspace/LaclauGPT-Data-Analysis/scripts/run_ai26_laskin.sh >> /mnt/workspace/LaclauGPT-Private/runtime/ai26/analysis/ai26-laskin-analysis.log 2>&1 # LaclauGPT AI26 analysis
+5 * * * * LACLAUGPT_PRIVATE_ROOT=/mnt/workspace/LaclauGPT-Private/runtime/ai26 /bin/bash /mnt/workspace/LaclauGPT-Data-Analysis/scripts/run_ai26_laskin.sh >> /mnt/workspace/LaclauGPT-Private/runtime/ai26/analysis/ai26-laskin-analysis.log 2>&1 # LaclauGPT AI26 analysis
 ```
 
 This is intentionally staggered from the Collection jobs (`:10` collect,
@@ -286,8 +296,10 @@ is still running; inspect backlog, `LACLAUGPT_MAX_TASKS`, and the log.
 ## Recovery after a failed run
 
 1. Read the tail of the log and identify the failing stage.
-2. If a hash mismatch is reported, re-freeze deliberately (see above) after
-   confirming the intended configuration — do not edit hashes by hand.
+2. If a hash mismatch is reported after an update, rerun the cron installer. It
+   deliberately re-freezes the manifest against the deployed public revision.
+   If a config/codebook hash still mismatches, inspect the intended private
+   inputs and freeze deliberately rather than editing hashes by hand.
 3. If a backend is unreachable, restore it before re-enabling cron; the worker
    fails closed rather than writing partial results.
 4. If a task exhausted its attempts it is dead-lettered with its durable failure
@@ -303,10 +315,11 @@ git pull --ff-only origin main
 .venv/bin/python -m pip install -e '.[remote,ollama,dev]'
 .venv/bin/python -m pytest
 .venv/bin/laclaugpt-preflight
-./scripts/run_ai26_laskin.sh --once
-# re-freeze if the analysis config or codebook changed
+# Re-freeze to the newly deployed public revision, reinstall cron, and verify
+# the exact cron environment. Do this before the first post-update worker tick.
 LACLAUGPT_PRIVATE_ROOT=/mnt/workspace/LaclauGPT-Private/runtime/ai26 \
   bash scripts/install_ai26_laskin_cron.sh
+./scripts/run_ai26_laskin.sh --once
 ```
 
 ## Test one synthetic record end to end
