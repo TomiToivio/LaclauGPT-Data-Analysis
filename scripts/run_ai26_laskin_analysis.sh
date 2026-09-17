@@ -18,7 +18,6 @@ PRIVATE_DIR=${LACLAUGPT_PRIVATE_CONFIG_DIR:-"$ROOT_DIR/data/config/ai26"}
 : "${LACLAUGPT_RUN_ID:?required}"
 : "${LACLAUGPT_MONGODB_URI:?required}"
 : "${LACLAUGPT_REDIS_URL:?required}"
-: "${LACLAUGPT_S3_ENDPOINT:?required}"
 : "${LACLAUGPT_S3_BUCKET:?required}"
 : "${OLLAMA_HOST:?required}"
 
