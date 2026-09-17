@@ -520,7 +520,7 @@ class AI26TaskWorker(TaskWorker):
         try:
             result = self.handler(task)
             inserted = self.durable_store.write_result(
-                task.idempotency_key,
+                task,
                 result,
                 self.provenance,
             )
@@ -621,52 +621,18 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--private-config", required=True)
     parser.add_argument("--codebook", required=True)
     parser.add_argument("--worker-id")
-    parser.add_argument("--max-tasks", type=int, default=1)
-    parser.add_argument("--reclaim-idle-ms", type=int, default=300_000)
-    parser.add_argument(
-        "--seed-ready",
-        action="store_true",
-        help="seed a bounded batch from Collection's Mongo handoff before consuming tasks",
-    )
+    parser.add_argument("--max-tasks", type=int, default=10)
+    parser.add_argument("--reclaim-idle-ms", type=int, default=900_000)
+    parser.add_argument("--seed-ready", action="store_true")
     return parser
-
-
-def _cycle_exit_status(
-    *,
-    attempted: int,
-    completed: int,
-    duplicate: int = 0,
-    retry: int = 0,
-    dead_letter: int = 0,
-) -> int:
-    """Return the process exit status for one bounded analysis cycle.
-
-    An idle cycle and an all-duplicate cycle are both legitimate successes:
-    there was simply no new work. A cycle that attempted work and completed
-    none of it is a failure and must be visible to the scheduler, because the
-    task errors themselves are recorded only in the durable processing
-    collection.
-    """
-    if attempted <= 0:
-        return 0
-    if completed > 0:
-        return 0
-    if duplicate == attempted:
-        # Every claimed task was already analysed: an idle-equivalent cycle.
-        return 0
-    if retry == 0 and dead_letter == 0:
-        return 0
-    return 1
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    private_root = os.environ.get("LACLAUGPT_PRIVATE_CONFIG_DIR")
+    private_root = os.environ.get("LACLAUGPT_PRIVATE_CONFIG_DIR", "")
     if not private_root:
         raise SystemExit("LACLAUGPT_PRIVATE_CONFIG_DIR is required")
-    env_run_id = os.environ.get("LACLAUGPT_RUN_ID")
-    if not env_run_id:
-        raise SystemExit("LACLAUGPT_RUN_ID is required")
+    settings = load_settings()
     binding = WorkerBinding.build(
         manifest_path=args.run_manifest,
         private_root=private_root,
@@ -674,62 +640,23 @@ def main(argv: list[str] | None = None) -> int:
         codebook=args.codebook,
         worker_id=args.worker_id,
     )
-    if env_run_id != binding.manifest.run_id:
-        raise ValueError("LACLAUGPT_RUN_ID does not match frozen run manifest")
-    settings = load_settings()
     worker, handoff = build_worker(binding, settings)
-    seeded = 0
     if args.seed_ready:
-        seeded = seed_ready_tasks(
+        seed_ready_tasks(
             binding,
             handoff,
             worker.queue,
             worker.durable_store,
             limit=max(args.max_tasks, 0),
         )
-    worker.heartbeat(run_id=binding.manifest.run_id, status="starting")
-    counts = {"completed": 0, "duplicate": 0, "retry": 0, "dead-letter": 0}
-    processed = 0
-    last_failure_class: str | None = None
+    counts = {"completed": 0, "duplicate": 0, "retry": 0, "dead-letter": 0, "idle": 0}
     for _ in range(max(args.max_tasks, 0)):
-        status = worker.run_once(reclaim_idle_ms=args.reclaim_idle_ms)
-        worker.heartbeat(run_id=binding.manifest.run_id, status=status)
-        if status == "idle":
+        outcome = worker.run_once(reclaim_idle_ms=args.reclaim_idle_ms)
+        counts[outcome] = counts.get(outcome, 0) + 1
+        if outcome == "idle":
             break
-        if status in counts:
-            counts[status] += 1
-        processed += 1
-        failure_class = getattr(worker, "last_failure_class", None)
-        if failure_class:
-            last_failure_class = str(failure_class)
-
-    exit_code = _cycle_exit_code(counts)
-    summary = (
-        f"AI26 analysis summary status={exit_code} seeded={seeded} "
-        f"completed={counts['completed']} duplicate={counts['duplicate']} "
-        f"retry={counts['retry']} dead-letter={counts['dead-letter']}"
-    )
-    if last_failure_class:
-        summary += f" last_failure_class={last_failure_class}"
-    print(summary, flush=True)
-
-    heartbeat_fields = {
-        "processed": str(processed),
-        "seeded": str(seeded),
-        "completed": str(counts["completed"]),
-        "duplicate": str(counts["duplicate"]),
-        "retry": str(counts["retry"]),
-        "dead_letter": str(counts["dead-letter"]),
-        "exit_status": str(exit_code),
-    }
-    if last_failure_class:
-        heartbeat_fields["last_failure_class"] = last_failure_class
-    worker.heartbeat(
-        run_id=binding.manifest.run_id,
-        status="finished" if exit_code == 0 else "failed",
-        **heartbeat_fields,
-    )
-    return exit_code
+    logger.info("AI26 worker cycle: %s", counts)
+    return _cycle_exit_code(counts)
 
 
 if __name__ == "__main__":
