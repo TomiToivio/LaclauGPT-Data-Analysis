@@ -1,4 +1,3 @@
-from laclaugpt_data_analysis.models import Provenance
 from laclaugpt_data_analysis.distributed_worker import MongoCollectionHandoff
 
 
@@ -20,20 +19,6 @@ COLLECTION_PROVENANCE = {
 }
 
 
-def test_analysis_provenance_absorbs_collection_specific_fields() -> None:
-    provenance = Provenance.model_validate(COLLECTION_PROVENANCE)
-
-    assert provenance.provenance_id == "collection-prov-1"
-    assert provenance.method == "rss-feedparser"
-    assert provenance.created_at.isoformat() == "2026-09-17T13:10:05.797645+00:00"
-    assert provenance.metadata["existing"] == "kept"
-    assert provenance.metadata["collector_version"] == "0.1.0"
-    assert provenance.metadata["capture_id"] == "capture-1"
-    assert provenance.metadata["run_id"] == "ai26-distributed-001"
-    assert provenance.metadata["module"] == "rss-feedparser"
-    assert provenance.metadata["transformations"] == ["rss-atom-parse", "map-entry"]
-
-
 class FakeCollection:
     def find_one(self, query):
         assert query == {
@@ -53,15 +38,24 @@ class FakeCollection:
         }
 
 
-def test_mongo_collection_handoff_resolves_collection_provenance() -> None:
+def test_mongo_collection_handoff_resolves_and_preserves_collection_provenance() -> None:
     handoff = MongoCollectionHandoff.__new__(MongoCollectionHandoff)
     handoff.collection = FakeCollection()
     handoff.project_id = "ai26"
 
     record = handoff.resolve("https://example.invalid/post")
+    provenance = record.provenance[0]
 
     assert record.source_url == "https://example.invalid/post"
     assert record.content.text == "Collected source text"
     assert len(record.provenance) == 1
-    assert record.provenance[0].method == "rss-feedparser"
-    assert record.provenance[0].metadata["visited_url"].endswith("feed.xml?view=frontpage")
+    assert provenance.provenance_id == "collection-prov-1"
+    assert provenance.method == "rss-feedparser"
+    assert provenance.created_at.isoformat() == "2026-09-17T13:10:05.797645+00:00"
+    assert provenance.metadata["existing"] == "kept"
+    assert provenance.metadata["collector_version"] == "0.1.0"
+    assert provenance.metadata["capture_id"] == "capture-1"
+    assert provenance.metadata["run_id"] == "ai26-distributed-001"
+    assert provenance.metadata["module"] == "rss-feedparser"
+    assert provenance.metadata["visited_url"].endswith("feed.xml?view=frontpage")
+    assert provenance.metadata["transformations"] == ["rss-atom-parse", "map-entry"]
