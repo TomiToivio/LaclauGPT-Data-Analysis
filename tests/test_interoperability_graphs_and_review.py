@@ -4,12 +4,8 @@ from laclaugpt_data_analysis.dats_review import (
     import_dats_human_correction,
     provisional_ai_annotation,
 )
-from laclaugpt_data_analysis.graph_exchange import statements_to_actor_concept_graph
-from laclaugpt_data_analysis.interoperability import (
-    GraphProjection,
-    Producer,
-    import_dna_rows,
-)
+from laclaugpt_data_analysis.interoperability import import_dna_rows
+from laclaugpt_data_analysis.portable_exchange import actor_concept_projection
 
 
 def test_provisional_ai_annotation_cannot_default_to_human_verified() -> None:
@@ -61,17 +57,8 @@ def test_actor_concept_graph_carries_projection_semantics() -> None:
             }
         ]
     )
-    projection = GraphProjection(
-        projection_id="p1",
-        graph_type="actor-concept-bipartite",
-        node_semantics="actors and coded concepts",
-        edge_semantics="coded actor-concept statement occurrence",
-        weighting_method="statement count",
-        projection_method="bipartite",
-        source_statement_ids=["dna:s1"],
-        producer=Producer(type="tool", id="laclaugpt-data-analysis"),
-    )
-    graph = statements_to_actor_concept_graph(statements, projection)
-    assert graph.graph["interpretation_status"] == "DESCRIPTIVE_ONLY"
-    assert graph.graph["edge_semantics"] == "coded actor-concept statement occurrence"
-    assert graph["actor:a1"]["concept:c1"]["weight"] == 1.0
+    nodes, edges, projection = actor_concept_projection(statements)
+    assert {node["kind"] for node in nodes} == {"actor", "concept"}
+    assert edges == [{"source": "a1", "target": "c1", "qualifier": "agreement", "weight": 1}]
+    assert projection.edge_semantics == "coded DiscourseStatement incidence, separated by qualifier"
+    assert projection.source_statement_ids == ["dna:s1"]
