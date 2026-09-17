@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from laclaugpt_data_analysis.canonical import CanonicalRecord, DiscourseObject, Relation
 from laclaugpt_data_analysis.canonical_pipeline import PipelineContext
 from laclaugpt_data_analysis.periodic_summary import (
+    PeriodicSummaryLimits,
     PeriodicSummaryRepository,
     SummaryScope,
     build_periodic_summary,
@@ -19,30 +20,41 @@ from laclaugpt_data_analysis.storage import CsvStore
 
 def _record(
     source_url: str,
-    when: datetime,
+    when: datetime | None,
     *,
     author: str = "alice",
     platform: str = "x",
+    language: str = "en",
     signifier: str = "freedom",
     formation: str = "formation-a",
     us: str = "citizens",
     them: str = "elite",
     frontier: str = "bureaucracy",
+    status: str = "analyzed",
 ) -> CanonicalRecord:
     record = CanonicalRecord(source_url=source_url)
     record.source.created_at = when
     record.source.author = author
     record.source.platform = platform
-    record.source.language = "en"
-    record.analysis.status = "analyzed"
+    record.source.language = language
+    record.analysis.status = status
     record.analysis.signifiers = [
-        DiscourseObject(object_id=f"s:{source_url}", label=signifier, kind="signifier", evidence_ids=[f"e:{source_url}"])
+        DiscourseObject(
+            object_id=f"s:{source_url}",
+            label=signifier,
+            kind="signifier",
+            evidence_ids=[f"e:{source_url}"],
+        )
     ]
     record.analysis.formations = [
         DiscourseObject(object_id=f"f:{source_url}", label=formation, kind="formation")
     ]
-    record.analysis.us = [DiscourseObject(object_id=f"u:{source_url}", label=us, kind="collective_subject")]
-    record.analysis.them = [DiscourseObject(object_id=f"t:{source_url}", label=them, kind="opposed_subject")]
+    record.analysis.us = [
+        DiscourseObject(object_id=f"u:{source_url}", label=us, kind="collective_subject")
+    ]
+    record.analysis.them = [
+        DiscourseObject(object_id=f"t:{source_url}", label=them, kind="opposed_subject")
+    ]
     record.analysis.frontier = [
         DiscourseObject(object_id=f"fr:{source_url}", label=frontier, kind="frontier")
     ]
@@ -77,6 +89,24 @@ def test_latest_completed_window_is_completed_not_partial() -> None:
     assert end == datetime(2026, 9, 17, tzinfo=UTC)
 
 
+def test_exact_window_is_half_open_and_missing_timestamps_are_reported() -> None:
+    records = [
+        _record("start", datetime(2026, 9, 16, tzinfo=UTC)),
+        _record("inside", datetime(2026, 9, 16, 23, 59, 59, tzinfo=UTC)),
+        _record("end", datetime(2026, 9, 17, tzinfo=UTC)),
+        _record("missing", None),
+    ]
+    summary = build_periodic_summary(
+        records,
+        project_id="AI26",
+        window_start=datetime(2026, 9, 16, tzinfo=UTC),
+        window_end=datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    assert summary.statistics.coverage.record_count == 2
+    assert summary.statistics.coverage.records_considered == 4
+    assert summary.statistics.coverage.missing_timestamp == 1
+
+
 def test_periodic_summary_aggregates_deltas_and_frontier_without_promoting_counts() -> None:
     first = build_periodic_summary(
         [_record("a", datetime(2026, 9, 15, 10, tzinfo=UTC))],
@@ -96,8 +126,33 @@ def test_periodic_summary_aggregates_deltas_and_frontier_without_promoting_count
     )
     assert second.statistics.signifiers[0].delta == 1
     assert second.statistics.frontiers[0].delta == 1
-    assert "frequency/centrality" in second.narrative.lower()
+    assert "frequency is not hegemony" in second.narrative.lower()
+    assert "co-occurrence is not articulation" in second.narrative.lower()
     assert second.previous_summary_ids == [first.id]
+
+
+def test_distributions_failed_records_and_document_frequency_are_deterministic() -> None:
+    records = [
+        _record("a", datetime(2026, 9, 16, 10, tzinfo=UTC), platform="x", language="en"),
+        _record(
+            "b",
+            datetime(2026, 9, 16, 11, tzinfo=UTC),
+            platform="telegram",
+            language="fi",
+            status="failed",
+        ),
+    ]
+    summary = build_periodic_summary(
+        records,
+        project_id="AI26",
+        window_start=datetime(2026, 9, 16, tzinfo=UTC),
+        window_end=datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    coverage = summary.statistics.coverage
+    assert coverage.source_distribution == {"x": 1, "telegram": 1}
+    assert coverage.language_distribution == {"en": 1, "fi": 1}
+    assert coverage.failed_or_incomplete == 1
+    assert summary.statistics.signifiers[0].document_frequency == 2
 
 
 def test_grouping_is_project_neutral_and_scope_specific() -> None:
@@ -110,25 +165,92 @@ def test_grouping_is_project_neutral_and_scope_specific() -> None:
         project_id="EP24",
         window_start=datetime(2026, 9, 16, tzinfo=UTC),
         window_end=datetime(2026, 9, 17, tzinfo=UTC),
-        group_by=["author", "formation"],
+        group_by=["author", "formation", "signifier"],
     )
     keys = {item.scope.key for item in summaries}
-    assert {"overall", "author=alice", "author=bob", "formation=formation-a"} <= keys
+    assert {
+        "overall",
+        "author=alice",
+        "author=bob",
+        "formation=formation-a",
+        "signifier=freedom",
+    } <= keys
 
 
-def test_latest_summary_is_context_not_evidence_and_injection_is_provenanced() -> None:
+def test_like_for_like_previous_scope_and_history_are_provenanced() -> None:
+    previous = build_periodic_summary(
+        [_record("a", datetime(2026, 9, 15, 10, tzinfo=UTC), author="alice")],
+        project_id="AI26",
+        scope=SummaryScope(dimension="author", value="alice"),
+        window_start=datetime(2026, 9, 15, tzinfo=UTC),
+        window_end=datetime(2026, 9, 16, tzinfo=UTC),
+    )
+    current = build_periodic_summary(
+        [_record("b", datetime(2026, 9, 16, 10, tzinfo=UTC), author="alice")],
+        project_id="AI26",
+        scope=SummaryScope(dimension="author", value="alice"),
+        previous=previous,
+        history=[previous.model_copy(update={"id": "older"})],
+        window_start=datetime(2026, 9, 16, tzinfo=UTC),
+        window_end=datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    assert current.previous_summary_ids == [previous.id, "older"]
+    assert current.statistics.signifiers[0].delta == 0
+
+
+def test_report_identity_is_stable_across_configuration_revisions() -> None:
+    kwargs = dict(
+        records=[_record("a", datetime(2026, 9, 16, 10, tzinfo=UTC))],
+        project_id="AI26",
+        window_start=datetime(2026, 9, 16, tzinfo=UTC),
+        window_end=datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    first = build_periodic_summary(**kwargs, revisions={"config_revision": "a"})
+    second = build_periodic_summary(**kwargs, revisions={"config_revision": "b"})
+    assert first.id == second.id
+    assert first.provenance["configuration_revision"] == "a"
+    assert second.provenance["configuration_revision"] == "b"
+
+
+def test_empty_window_and_bounded_evidence_are_serializable() -> None:
+    empty = build_periodic_summary(
+        [],
+        project_id="AI26",
+        window_start=datetime(2026, 9, 16, tzinfo=UTC),
+        window_end=datetime(2026, 9, 17, tzinfo=UTC),
+    )
+    assert empty.statistics.coverage.record_count == 0
+    assert empty.model_dump(mode="json")["statistics"]["coverage"]["record_count"] == 0
+
+    records = [
+        _record(str(index), datetime(2026, 9, 16, 10, tzinfo=UTC))
+        for index in range(20)
+    ]
+    bounded = build_periodic_summary(
+        records,
+        project_id="AI26",
+        window_start=datetime(2026, 9, 16, tzinfo=UTC),
+        window_end=datetime(2026, 9, 17, tzinfo=UTC),
+        limits=PeriodicSummaryLimits(max_evidence_refs_per_metric=3),
+    )
+    assert len(bounded.statistics.signifiers[0].evidence_refs) == 3
+
+
+def test_latest_summary_is_compact_context_not_evidence_and_injection_is_provenanced() -> None:
     summary = build_periodic_summary(
         [_record("a", datetime(2026, 9, 16, 10, tzinfo=UTC))],
         project_id="AI26",
         window_start=datetime(2026, 9, 16, tzinfo=UTC),
         window_end=datetime(2026, 9, 17, tzinfo=UTC),
     )
-    item = summary_context_item(summary)
+    item = summary_context_item(summary, max_chars=1000)
     assert item.kind == "historical_summary_context"
     assert item.trust == "context_not_evidence"
     assert "NOT CURRENT-SOURCE EVIDENCE" in item.text
+    assert len(item.text) <= 1000
+    assert "top_signifiers" in item.text
 
-    context = inject_summary_context(PipelineContext(), summary)
+    context = inject_summary_context(PipelineContext(), summary, max_chars=1000)
     assert summary.id in context.provenance["periodic_summary_id"]
     assert summary.sha256 in context.provenance["periodic_summary_sha256"]
     assert "NOT CURRENT-SOURCE EVIDENCE" in context.situational_context
