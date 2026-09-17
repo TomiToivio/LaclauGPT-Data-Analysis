@@ -1,60 +1,64 @@
 from pathlib import Path
 
-from laclaugpt_data_analysis.config import Settings
 from laclaugpt_data_analysis.coordination import (
     ConfigRevision,
     FileConfigStore,
     InMemoryMessageBus,
     MessageEnvelope,
-    config_store_from_settings,
 )
 from laclaugpt_data_analysis.distributed import ProjectNamespace
 from laclaugpt_data_analysis.task_queue import InMemoryTaskQueue, TaskEnvelope
 
 
-def test_redis_disabled_uses_durable_local_config_store(tmp_path: Path) -> None:
-    settings = Settings(project_id="ai26", data_dir=tmp_path, redis_url=None)
-    store = config_store_from_settings(settings)
+def test_file_config_store_preserves_immutable_history(tmp_path: Path) -> None:
+    store = FileConfigStore(tmp_path, project_id="ai26")
     revision = ConfigRevision.build(
         project_id="ai26",
         module="analysis",
-        payload={"plugins": ["laclau"], "model": "gemma4:12b"},
+        payload={"model": "gemma4:12b", "temperature": 0},
         publisher="test",
     )
-    store.publish(revision)
-    loaded = store.current("analysis")
-    assert loaded is not None
-    assert loaded.revision == revision.revision
-    assert loaded.payload["model"] == "gemma4:12b"
+
+    assert store.publish(revision) == revision.revision
+    assert store.current("analysis") == revision
+    assert store.get("analysis", revision.revision) == revision
 
 
-def test_config_revision_is_content_addressed_and_immutable(tmp_path: Path) -> None:
-    store = FileConfigStore(tmp_path, project_id="ai26")
-    first = ConfigRevision.build(
-        project_id="ai26", module="analysis", payload={"rag_top_k": 20}, publisher="ui"
-    )
-    second = ConfigRevision.build(
-        project_id="ai26", module="analysis", payload={"rag_top_k": 30}, publisher="ui"
-    )
-    assert first.revision != second.revision
-    store.publish(first)
-    store.publish(second)
-    assert store.current("analysis").revision == second.revision
-    assert store.get("analysis", first.revision).payload == {"rag_top_k": 20}
-
-
-def test_message_round_trip_preserves_correlation_and_config_revision() -> None:
-    bus = InMemoryMessageBus()
-    request = MessageEnvelope.build(
+def test_config_revision_rejects_tampered_payload() -> None:
+    revision = ConfigRevision.build(
         project_id="ai26",
-        run_id="run-1",
-        sender="visualization",
-        recipient="rag",
-        message_type="rag.query",
+        module="analysis",
+        payload={"model": "gemma4:12b"},
+        publisher="test",
+    )
+    tampered = ConfigRevision(
+        project_id=revision.project_id,
+        module=revision.module,
+        revision=revision.revision,
+        payload={"model": "different"},
+        created_at=revision.created_at,
+        publisher=revision.publisher,
+    )
+
+    try:
+        tampered.validate()
+    except ValueError as exc:
+        assert "hash" in str(exc)
+    else:
+        raise AssertionError("tampered config revision should fail validation")
+
+
+def test_in_memory_message_bus_requires_reference_for_research_payloads() -> None:
+    bus = InMemoryMessageBus()
+    request = MessageEnvelope(
+        message_id="request-1",
+        project_id="ai26",
+        sender="analysis",
+        recipient="visualization",
+        kind="refresh",
+        correlation_id="corr-1",
         config_revision="cfg-123",
-        source_record_id="record-7",
-        payload_ref="mongodb://ai26/record-7",
-        body={"question": "What articulations surround AI?"},
+        body={"record_ref": "record-1"},
     )
     message_id = bus.publish(request)
     received_id, received = bus.receive()
@@ -79,8 +83,8 @@ def test_in_memory_queue_prevents_simultaneous_double_claim() -> None:
         codebook_revision="codebook",
     )
     queue.publish(task)
-    first = queue.claim(block_ms=0)
-    second = queue.claim(block_ms=0)
+    first = queue.claim()
+    second = queue.claim()
     assert first is not None
     assert second is None
     assert queue.reclaim(min_idle_ms=0) == first
