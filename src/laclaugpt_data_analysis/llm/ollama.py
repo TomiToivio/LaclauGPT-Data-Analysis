@@ -2,9 +2,8 @@
 
 Behaviour migrated from the monolith's ``llm.py``:
 
-- mode resolution: explicit ``LLM_MODE=local|cloud|external|auto`` wins; auto
-  probes a reachable Ollama endpoint's VRAM (>= ``LLM_LOCAL_MIN_VRAM_GB``,
-  default 16) before choosing local;
+- mode resolution: explicit local/cloud/external/auto configuration wins;
+- deployment aliases such as ``local-ollama`` and ``ollama-cloud`` are normalized;
 - ``OLLAMA_HOST`` is honoured for local and remote Ollama servers alike;
 - local -> cloud fallback is forbidden by default and must be explicitly
   authorised per call or via ``LLM_ALLOW_CLOUD_FALLBACK=1``;
@@ -35,7 +34,7 @@ from laclaugpt_data_analysis.llm.base import (
 logger = logging.getLogger(__name__)
 
 LLM_MODE_ENV = "LLM_MODE"
-LLM_MODE_ENV_ALIAS = "LACLAUGPT_OLLAMA_MODE"
+LLM_MODE_ENV_ALIASES = ("LACLAUGPT_LLM_MODE", "LACLAUGPT_OLLAMA_MODE")
 LLM_HOST_ENV = "OLLAMA_HOST"
 LLM_CLOUD_ENV = "LLM_CLOUD_MODEL"
 LLM_LOCAL_MODEL_ENV = "LLM_LOCAL_MODEL"
@@ -48,6 +47,39 @@ _CAPABLE_HOST_MARKERS = os.environ.get(
 ).split(",")
 _LOCAL_ENDPOINTS = {"", "127.0.0.1", "localhost", "::1"}
 _TRUE_VALUES = {"1", "true", "yes", "on"}
+_MODE_ALIASES = {
+    "": "",
+    "auto": "auto",
+    "local": "local",
+    "local-ollama": "local",
+    "cloud": "cloud",
+    "ollama-cloud": "cloud",
+    "external": "external",
+}
+
+
+def normalize_llm_mode(value: str | None) -> str:
+    """Normalize documented deployment/provider mode spellings.
+
+    Empty input remains empty so callers can distinguish an unset mode from an
+    explicit value. Unknown values fail closed instead of silently becoming a
+    routing decision.
+    """
+    raw = (value or "").strip().casefold()
+    try:
+        return _MODE_ALIASES[raw]
+    except KeyError as exc:
+        allowed = ", ".join(sorted(value for value in _MODE_ALIASES if value))
+        raise ValueError(f"LLM mode must be one of: {allowed}") from exc
+
+
+def configured_llm_modes() -> list[tuple[str, str]]:
+    """Return all explicitly configured mode variables after normalization."""
+    configured: list[tuple[str, str]] = []
+    for name in (LLM_MODE_ENV, *LLM_MODE_ENV_ALIASES):
+        if name in os.environ and os.environ[name].strip():
+            configured.append((name, normalize_llm_mode(os.environ[name])))
+    return configured
 
 
 def _endpoint_hostname(endpoint: str) -> str:
@@ -100,14 +132,10 @@ def resolve_endpoint(model_hint: str | None = None) -> tuple[str, str]:
     """Resolve ``(mode, model)`` for a call. Never performs network I/O itself.
 
     ``auto`` probes the endpoint only through :func:`probe_host`, which callers
-    may suppress in tests by setting ``LLM_MODE`` explicitly.
+    may suppress in tests by setting an explicit mode.
     """
-    mode_env = (
-        os.environ.get(LLM_MODE_ENV) or os.environ.get(LLM_MODE_ENV_ALIAS) or ""
-    ).strip().lower()
-    allowed_modes = ("auto", "local", "cloud", "external")
-    if mode_env and mode_env not in allowed_modes:
-        raise ValueError(f"LLM mode must be one of: {', '.join(allowed_modes)}")
+    configured_modes = configured_llm_modes()
+    mode_env = configured_modes[0][1] if configured_modes else ""
     host = os.environ.get(LLM_HOST_ENV, "")
     if mode_env in ("", "auto"):
         if host and _external_endpoint(host):
@@ -124,7 +152,11 @@ def resolve_endpoint(model_hint: str | None = None) -> tuple[str, str]:
         raise ValueError("external Ollama mode requires OLLAMA_HOST")
     if model_hint and model_hint.casefold() == "auto":
         model_hint = None
-    configured = os.environ.get("LACLAUGPT_OLLAMA_MODEL") or os.environ.get("OLLAMA_MODEL")
+    configured = (
+        os.environ.get("LACLAUGPT_LLM_MODEL")
+        or os.environ.get("LACLAUGPT_OLLAMA_MODEL")
+        or os.environ.get("OLLAMA_MODEL")
+    )
     if mode == "cloud":
         model = (
             configured
