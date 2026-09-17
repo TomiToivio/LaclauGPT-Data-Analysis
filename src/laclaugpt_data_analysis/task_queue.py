@@ -88,7 +88,7 @@ class DurableTaskStore(Protocol):
     def has_result(self, idempotency_key: str) -> bool: ...
     def write_result(
         self,
-        idempotency_key: str,
+        task: TaskEnvelope,
         result: Mapping[str, Any],
         provenance: Mapping[str, Any],
     ) -> bool: ...
@@ -109,15 +109,25 @@ class SqliteTaskStore:
         with sqlite3.connect(self.path) as connection:
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS task_results ("
-                "idempotency_key TEXT PRIMARY KEY, result_json TEXT NOT NULL, "
+                "idempotency_key TEXT PRIMARY KEY, source_url TEXT, result_json TEXT NOT NULL, "
                 "provenance_json TEXT NOT NULL, created_at REAL NOT NULL)"
             )
+            columns = {
+                str(row[1]) for row in connection.execute("PRAGMA table_info(task_results)")
+            }
+            if "source_url" not in columns:
+                connection.execute("ALTER TABLE task_results ADD COLUMN source_url TEXT")
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS task_failures ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL, "
-                "idempotency_key TEXT NOT NULL, attempt INTEGER NOT NULL, "
+                "idempotency_key TEXT NOT NULL, source_url TEXT, attempt INTEGER NOT NULL, "
                 "error TEXT NOT NULL, provenance_json TEXT NOT NULL, created_at REAL NOT NULL)"
             )
+            failure_columns = {
+                str(row[1]) for row in connection.execute("PRAGMA table_info(task_failures)")
+            }
+            if "source_url" not in failure_columns:
+                connection.execute("ALTER TABLE task_failures ADD COLUMN source_url TEXT")
 
     def has_result(self, idempotency_key: str) -> bool:
         with sqlite3.connect(self.path) as connection:
@@ -128,7 +138,7 @@ class SqliteTaskStore:
 
     def write_result(
         self,
-        idempotency_key: str,
+        task: TaskEnvelope,
         result: Mapping[str, Any],
         provenance: Mapping[str, Any],
     ) -> bool:
@@ -136,9 +146,11 @@ class SqliteTaskStore:
             with sqlite3.connect(self.path) as connection:
                 connection.execute(
                     "INSERT INTO task_results "
-                    "(idempotency_key, result_json, provenance_json, created_at) VALUES (?, ?, ?, ?)",
+                    "(idempotency_key, source_url, result_json, provenance_json, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
                     (
-                        idempotency_key,
+                        task.idempotency_key,
+                        task.record_ref,
                         json.dumps(dict(result), ensure_ascii=False, default=str),
                         json.dumps(dict(provenance), ensure_ascii=False, default=str),
                         time.time(),
@@ -157,11 +169,12 @@ class SqliteTaskStore:
         with sqlite3.connect(self.path) as connection:
             connection.execute(
                 "INSERT INTO task_failures "
-                "(task_id, idempotency_key, attempt, error, provenance_json, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "(task_id, idempotency_key, source_url, attempt, error, provenance_json, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (
                     task.task_id,
                     task.idempotency_key,
+                    task.record_ref,
                     task.attempt,
                     error,
                     json.dumps(dict(provenance), ensure_ascii=False, default=str),
@@ -198,9 +211,17 @@ class MongoTaskStore:
             unique=True,
             name="project_run_idempotency",
         )
+        self.results.create_index(
+            [("project_id", 1), ("run_id", 1), ("source_url", 1)],
+            name="project_run_source_url",
+        )
         self.failures.create_index(
             [("project_id", 1), ("run_id", 1), ("idempotency_key", 1)],
             name="project_run_failure",
+        )
+        self.failures.create_index(
+            [("project_id", 1), ("run_id", 1), ("source_url", 1)],
+            name="project_run_failure_source_url",
         )
 
     def has_result(self, idempotency_key: str) -> bool:
@@ -218,7 +239,7 @@ class MongoTaskStore:
 
     def write_result(
         self,
-        idempotency_key: str,
+        task: TaskEnvelope,
         result: Mapping[str, Any],
         provenance: Mapping[str, Any],
     ) -> bool:
@@ -226,10 +247,14 @@ class MongoTaskStore:
             from pymongo.errors import DuplicateKeyError
         except ImportError as exc:
             raise RuntimeError("MongoDB task support requires: pip install '.[remote]'") from exc
+        source_url = str(task.record_ref or result.get("source_url") or "").strip()
+        if not source_url:
+            raise ValueError("analysis result cannot be persisted without canonical source_url")
         document = {
             "project_id": self.project_id,
             "run_id": self.run_id,
-            "idempotency_key": idempotency_key,
+            "idempotency_key": task.idempotency_key,
+            "source_url": source_url,
             "result": dict(result),
             "provenance": dict(provenance),
             "created_at": time.time(),
@@ -252,6 +277,7 @@ class MongoTaskStore:
                 "run_id": self.run_id,
                 "task_id": task.task_id,
                 "idempotency_key": task.idempotency_key,
+                "source_url": task.record_ref,
                 "attempt": task.attempt,
                 "error": error,
                 "provenance": dict(provenance),
@@ -461,8 +487,8 @@ class TaskWorker:
     handler: Callable[[TaskEnvelope], Mapping[str, Any]]
     worker_id: str
     provenance: Mapping[str, Any]
-    max_attempts: int = 3
     validator: Callable[[TaskEnvelope], None] | None = None
+    max_attempts: int = 3
 
     def run_once(self, *, reclaim_idle_ms: int | None = None) -> str:
         claimed = None
@@ -483,9 +509,9 @@ class TaskWorker:
 
         try:
             result = self.handler(task)
-            self.durable_store.write_result(task.idempotency_key, result, self.provenance)
+            inserted = self.durable_store.write_result(task, result, self.provenance)
             self.queue.ack(claimed.message_id)
-            return "completed"
+            return "completed" if inserted else "duplicate"
         except Exception as exc:
             error = f"{type(exc).__name__}: {exc}"
             self.durable_store.write_failure(task, error, self.provenance)
@@ -495,39 +521,35 @@ class TaskWorker:
                 return "dead-letter"
             return "retry"
 
-    def heartbeat(self, **metadata: str) -> None:
-        payload = {"worker_id": self.worker_id, **metadata}
-        self.queue.heartbeat(payload)
-
-
-def redis_queue_from_settings(settings: Any, *, run_id: str, worker_id: str) -> RedisStreamQueue:
-    if not settings.redis_url:
-        raise ValueError("LACLAUGPT_REDIS_URL is required for Redis task mode")
-    namespace = settings.distributed_namespace
-    stream = namespace.stream_key(f"analysis:{run_id}:tasks")
-    return RedisStreamQueue(
-        settings.redis_url,
-        stream=stream,
-        group="analysis-workers",
-        consumer=worker_id,
-        dead_letter_stream=namespace.stream_key(f"analysis:{run_id}:dead"),
-        heartbeat_key=namespace.worker_key("analysis", worker_id),
-    )
-
 
 def durable_store_from_settings(settings: Any, *, run_id: str) -> DurableTaskStore:
-    # Import locally to keep task_queue usable as a lightweight standalone module.
-    from .storage import resolved_storage_backend
-
-    backend = resolved_storage_backend(settings)
-    if backend == "mongodb":
-        namespace = settings.distributed_namespace
+    if settings.data_backend == "mongodb":
+        if not settings.mongo_url:
+            raise ValueError("MongoDB task store requires LACLAUGPT_MONGODB_URI")
         return MongoTaskStore(
             settings.mongo_url,
             database=settings.mongo_database,
-            results_collection=namespace.mongo_collection("analyzed"),
-            failures_collection=namespace.mongo_collection("processing"),
+            results_collection=settings.distributed_namespace.mongo_collection("analyzed"),
+            failures_collection=settings.distributed_namespace.mongo_collection("processing"),
             project_id=settings.project_id,
             run_id=run_id,
         )
-    return SqliteTaskStore(settings.data_path("database", f"tasks-{run_id}.sqlite3"))
+    return SqliteTaskStore(settings.data_path("task_queue.sqlite3"))
+
+
+def redis_queue_from_settings(settings: Any, *, run_id: str, worker_id: str) -> TaskQueue:
+    if settings.cache_backend != "redis":
+        raise ValueError("distributed task queue requires Redis cache backend")
+    if not settings.redis_url:
+        raise ValueError("Redis task queue requires LACLAUGPT_REDIS_URL")
+    stream = settings.distributed_namespace.redis_key("analysis", run_id, "tasks")
+    group = settings.distributed_namespace.redis_key("analysis", run_id, "workers")
+    heartbeat = settings.distributed_namespace.redis_key("analysis", run_id, "worker", worker_id)
+    return RedisStreamQueue(
+        settings.redis_url,
+        stream=stream,
+        group=group,
+        consumer=worker_id,
+        dead_letter_stream=settings.distributed_namespace.redis_key("analysis", run_id, "dead"),
+        heartbeat_key=heartbeat,
+    )
