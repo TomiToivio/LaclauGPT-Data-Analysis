@@ -333,6 +333,12 @@ class RedisStreamQueue:
             return f"{milliseconds}-{int(sequence) + 1}"
         return text
 
+    @staticmethod
+    def _idle_ms(entry: Any) -> int:
+        if isinstance(entry, Mapping):
+            return int(entry.get("time_since_delivered", 0))
+        return int(entry[2])
+
     def publish(self, task: TaskEnvelope) -> str:
         return self._text(self.redis.xadd(self.stream, {"task": json.dumps(task.to_dict())}))
 
@@ -384,7 +390,6 @@ class RedisStreamQueue:
                     count=self._LEGACY_PENDING_BATCH,
                     idle=min_idle_ms,
                 )
-                eligible = pending[:1]
             except TypeError:
                 pending = self.redis.xpending_range(
                     self.stream,
@@ -393,16 +398,7 @@ class RedisStreamQueue:
                     max="+",
                     count=self._LEGACY_PENDING_BATCH,
                 )
-                eligible = [
-                    entry
-                    for entry in pending
-                    if int(
-                        entry.get("time_since_delivered", 0)
-                        if isinstance(entry, dict)
-                        else entry[2]
-                    )
-                    >= min_idle_ms
-                ][:1]
+            eligible = [entry for entry in pending if self._idle_ms(entry) >= min_idle_ms][:1]
             if eligible:
                 entry = eligible[0]
                 message_id = entry["message_id"] if isinstance(entry, dict) else entry[0]
