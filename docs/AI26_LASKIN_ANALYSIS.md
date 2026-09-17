@@ -83,10 +83,21 @@ The real runtime lives in the private repository (never committed publicly):
 ```bash
 cd /path/to/LaclauGPT-Data-Analysis
 python3.11 -m venv .venv
-.venv/bin/python -m pip install -e '.[remote,ollama]'
+.venv/bin/python -m pip install -e '.[remote,ollama,dev]'
 ```
 
-`remote` provides MongoDB/Redis/boto3; `ollama` provides the local client.
+`remote` provides MongoDB/Redis/boto3; `ollama` provides the local client. The
+`dev` extra is installed on Laskin because the documented verification runs the
+full repository test suite and therefore needs the same scientific/RDF test
+dependencies as CI.
+
+Verify the checkout before enabling cron:
+
+```bash
+.venv/bin/python -m pytest
+```
+
+A runtime-only installation may omit `dev` when no repository tests will be run.
 
 ## Ollama
 
@@ -257,7 +268,8 @@ longer than the interval — reduce `--max-tasks` or check the log.
 crontab -l | grep -v 'run_ai26_laskin.sh' | crontab -   # pause
 cd /path/to/LaclauGPT-Data-Analysis
 git pull --ff-only origin main
-.venv/bin/python -m pip install -e '.[remote,ollama]'
+.venv/bin/python -m pip install -e '.[remote,ollama,dev]'
+.venv/bin/python -m pytest                              # verify updated checkout
 .venv/bin/laclaugpt-preflight
 ./scripts/run_ai26_laskin.sh --once                     # verify manually
 # re-freeze if the analysis config or codebook changed
