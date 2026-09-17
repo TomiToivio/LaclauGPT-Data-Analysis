@@ -11,7 +11,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 def _id(prefix: str) -> str:
@@ -30,6 +30,39 @@ class Provenance(Model):
     pipeline_version: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def adapt_cross_module_provenance(cls, value: Any) -> Any:
+        """Normalize richer Collection provenance without discarding capture evidence.
+
+        Collection owns capture provenance and therefore carries fields that are not
+        first-class Analysis provenance attributes. Keep the Analysis model strict by
+        moving those cross-module fields into ``metadata`` at validation time. This
+        makes Collection -> Analysis handoffs forward-compatible while preserving the
+        original values for audit/provenance use.
+        """
+        if not isinstance(value, dict):
+            return value
+
+        data = dict(value)
+        captured_at = data.get("captured_at")
+        method_hint = data.get("module") or data.get("collector") or data.get("stage")
+        known = set(cls.model_fields)
+        extras = {key: item for key, item in data.items() if key not in known}
+
+        if extras:
+            metadata = dict(data.get("metadata") or {})
+            for key, item in extras.items():
+                metadata.setdefault(key, item)
+                data.pop(key, None)
+            data["metadata"] = metadata
+
+        if not data.get("method"):
+            data["method"] = str(method_hint or "collection")
+        if data.get("created_at") in (None, "") and captured_at not in (None, ""):
+            data["created_at"] = captured_at
+        return data
 
     @field_validator("created_at", mode="before")
     @classmethod
