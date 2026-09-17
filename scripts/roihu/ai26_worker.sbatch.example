@@ -12,6 +12,11 @@ set -euo pipefail
 # a private deployment file if the CSC project/partition/account requires changes.
 # Real endpoints, credentials, project paths, codebooks and run manifests stay
 # outside Git under the private runtime root.
+#
+# Before submitting/running this worker on CSC, configure Allas for the account:
+#   module load allas
+#   allas-conf
+# boto3 then uses ~/.aws/credentials and ~/.aws/config directly.
 
 ROOT_DIR=${LACLAUGPT_REPO_ROOT:-$PWD}
 ENV_FILE=${LACLAUGPT_ENV_FILE:-"$ROOT_DIR/data/config/ai26/roihu.env"}
@@ -26,7 +31,6 @@ set +a
 : "${LACLAUGPT_PRIVATE_CONFIG_DIR:?required}"
 : "${LACLAUGPT_MONGODB_URI:?required}"
 : "${LACLAUGPT_REDIS_URL:?required}"
-: "${LACLAUGPT_S3_ENDPOINT:?required}"
 : "${LACLAUGPT_S3_BUCKET:?required}"
 : "${OLLAMA_HOST:?required}"
 
