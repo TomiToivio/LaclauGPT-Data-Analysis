@@ -1,0 +1,44 @@
+@prefix laclaugpt: <https://w3id.org/laclaugpt/> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Synced from TomiToivio/LaclauGPT/schemas/laclaugpt-rdf.shacl.ttl.
+# The meta-repository remains authoritative.
+
+laclaugpt:ArticulationShape a sh:NodeShape ;
+    sh:targetClass laclaugpt:Articulation ;
+    sh:property [
+        sh:path laclaugpt:articulates ;
+        sh:minCount 2 ;
+        sh:message "An articulation must connect at least two articulated resources."@en
+    ] ;
+    sh:property [
+        sh:path prov:wasGeneratedBy ;
+        sh:minCount 1 ;
+        sh:message "An analytical articulation must retain generation provenance."@en
+    ] ;
+    sh:property [
+        sh:path laclaugpt:reviewState ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+        sh:in ("PROVISIONAL" "ACCEPTED" "REJECTED" "REVISED" "CANONICAL" "SUPERSEDED")
+    ] ;
+    sh:property [
+        sh:path laclaugpt:confidence ;
+        sh:minInclusive 0 ;
+        sh:maxInclusive 1
+    ] .
+
+laclaugpt:SignifierRoleShape a sh:NodeShape ;
+    sh:targetClass laclaugpt:EmptySignifier, laclaugpt:FloatingSignifier, laclaugpt:NodalPoint ;
+    sh:property [
+        sh:path prov:wasGeneratedBy ;
+        sh:minCount 1 ;
+        sh:message "Theory-specific signifier-role claims must retain provenance."@en
+    ] ;
+    sh:property [
+        sh:path laclaugpt:reviewState ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string
+    ] .
