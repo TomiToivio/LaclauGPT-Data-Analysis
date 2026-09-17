@@ -1,0 +1,36 @@
+codebook_id: hungary26-public-context
+version: "1.0"
+title: Hungary26 public election context
+project: hungary26
+arena: hungary-parliamentary-election-2026
+description: >-
+  Public factual context used only for recognition, chronology and disambiguation.
+  It is never an automatic substantive label for a social-media record.
+required_sections:
+  - source_registry
+  - interpretation_guardrails
+entries: []
+sections:
+  source_registry:
+    - source: OSCE/ODIHR election mission page
+      url: https://odihr.osce.org/node/661804
+      use: chronology, election vocabulary, mission-document discovery
+    - source: OSCE/ODIHR Statement of Preliminary Findings and Conclusions
+      date: "2026-04-13"
+      url: https://odihr.osce.org/odihr/663199
+      use: attributed campaign/election context only
+    - source: official Hungarian election administration
+      use: official election terminology, candidates/organizations/results where applicable
+      review_required: true
+    - source: Palonen and project-cited academic literature
+      use: theoretical context for discourse/populism analysis, not item labels
+  interpretation_guardrails:
+    - Public context supports recognition and disambiguation only.
+    - Contested assessments stay attributed to their sources.
+    - Party or account metadata cannot determine ideology, populism or formation.
+    - A codebook match is not evidence of articulation or a political frontier.
+    - Signifier categories remain provisional until supported by source and corpus evidence.
+  provenance_classes:
+    researcher_private: workbook/researcher-grounded material kept in LaclauGPT-Private
+    public_context: dated public factual context such as the source registry above
+    model_candidate: model-discovered candidate requiring human review before promotion
