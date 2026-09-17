@@ -51,6 +51,10 @@ ollama = [
 rag = [
   "neo4j>=5.25,<7",
 ]
+rdf = [
+  "rdflib>=7.1,<8",
+  "pyshacl>=0.30,<1",
+]
 remote = [
   "pymongo>=4.8",
   "redis>=5.0",
@@ -63,6 +67,8 @@ dev = [
   "numpy>=1.26",
   "scipy>=1.14",
   "networkx>=3.3",
+  "rdflib>=7.1,<8",
+  "pyshacl>=0.30,<1",
 ]
 all = [
   "pandas>=2.2",
@@ -82,6 +88,8 @@ all = [
   "gensim>=4.3",
   "ollama>=0.6,<1",
   "neo4j>=5.25,<7",
+  "rdflib>=7.1,<8",
+  "pyshacl>=0.30,<1",
   "pymongo>=4.8",
   "redis>=5.0",
   "boto3>=1.35",
