@@ -23,10 +23,14 @@ def _record_id(record: CanonicalRecord) -> str:
     return record.source_url
 
 
-def _parse_datetime(value: str | None) -> datetime | None:
-    if not value:
+def _parse_datetime(value: datetime | str | None) -> datetime | None:
+    if value is None:
         return None
+    if isinstance(value, datetime):
+        return value
     text = value.strip().replace("Z", "+00:00")
+    if not text:
+        return None
     try:
         return datetime.fromisoformat(text)
     except ValueError:
