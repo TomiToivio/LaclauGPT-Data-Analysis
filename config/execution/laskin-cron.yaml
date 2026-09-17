@@ -1,0 +1,49 @@
+# Cron execution layer (public-safe template).
+#
+# Declares WHEN and HOW work runs. It must not define study semantics (project
+# layer) or machine capability (machine layer).
+#
+# Architecture decision (2026-09-17): the AI26 worker is a BOUNDED process that
+# claims a limited number of tasks and exits. Therefore the correct design is
+# bounded cron-triggered queue draining — NOT a perpetual worker supervised by
+# cron. Cron is the only scheduler; the wrapper never starts a long-lived
+# process or an internal scheduler.
+
+execution: cron
+
+schedule:
+  # Every 5 minutes: near-real-time relative to the hourly Collection cadence.
+  interval_minutes: 5
+  # Bounded work per tick. Small enough that a tick always finishes well inside
+  # its interval, so ticks never stack.
+  max_tasks_per_tick: 10
+  # Reclaim tasks whose lease went idle (crashed worker, interrupted host).
+  reclaim_idle_ms: 300000
+
+concurrency:
+  # OS-level lock prevents overlapping mutating runs. The wrapper takes flock
+  # and exits cleanly when another tick still holds it.
+  overlap_lock: flock
+  lock_name: ai26-laskin-analysis.lock
+
+behaviour:
+  seed_ready: true            # mirror bounded ready handoffs into the task stream
+  exit_nonzero_on_failure: true
+  work_until_idle: false      # one bounded batch per tick, then exit
+  perpetual_scheduler: false  # cron owns scheduling
+
+logging:
+  # Operational logs belong under the private runtime root.
+  directory: data/logs
+  file: ai26-laskin-analysis.log
+  # Debug diagnostics are opt-in; trace mode additionally requires an explicit
+  # acknowledgement because prompts/evidence may contain research data.
+  debug_env: LACLAUGPT_DEBUG
+  trace_env: LACLAUGPT_TRACE
+
+# Failure handling mirrors the worker contract: a handled failure is requeued
+# with an incremented attempt and eventually dead-lettered; the durable failure
+# history is preserved rather than overwritten.
+retry:
+  max_attempts: 3
+  dead_letter: true
