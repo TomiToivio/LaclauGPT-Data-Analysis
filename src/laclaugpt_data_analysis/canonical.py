@@ -7,6 +7,7 @@ summary. Legacy dataframe fields are deterministic projections of this record.
 """
 from __future__ import annotations
 
+import email.utils
 from datetime import UTC, datetime
 from typing import Any, Literal
 
@@ -99,6 +100,24 @@ class FrameReference(Model):
     provenance_id: str = ""
 
 
+class SourceLocation(Model):
+    """Factual location metadata provided directly by the source.
+
+    Mirrors the Collection contract: these are source-provided place names and
+    coordinates with their provenance. Geocoder-, model- or researcher-inferred
+    locations belong to downstream analysis and must never be written here as if
+    they were source truth.
+    """
+
+    name: str = ""
+    country: str = ""
+    region: str = ""
+    locality: str = ""
+    latitude: float | None = None
+    longitude: float | None = None
+    source_field: str = ""
+
+
 class SourceSection(Model):
     platform: str = ""
     source_type: str = ""
@@ -110,9 +129,35 @@ class SourceSection(Model):
     collection_method: str = ""
     language: str = ""
     country: str = ""
+    locations: list[SourceLocation] = Field(default_factory=list)
     parent_source_url: str | None = None
     raw_metadata: dict[str, Any] = Field(default_factory=dict)
     raw_ref: str | None = None
+
+    @field_validator("created_at", "collected_at", mode="before")
+    @classmethod
+    def parse_feed_timestamp(cls, value: Any) -> Any:
+        """Accept the timestamp formats that collectors actually store.
+
+        RSS/Atom feeds publish RFC 2822 dates ("Wed, 16 Sep 2026 00:34:03 GMT"),
+        so a strict ISO-only parse rejects a real share of the collected corpus.
+        Unknown or malformed values are preserved in ``raw_metadata`` by the
+        caller; here they degrade to ``None`` rather than failing the record.
+        """
+        if value in (None, "") or isinstance(value, datetime):
+            return value
+        text = str(value).strip()
+        if not text:
+            return None
+        try:
+            return datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+        # RFC 2822 / RFC 1123, as emitted by most feed readers.
+        try:
+            return email.utils.parsedate_to_datetime(text)
+        except (TypeError, ValueError):
+            return None
 
 
 class ContentSection(Model):

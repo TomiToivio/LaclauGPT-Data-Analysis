@@ -82,21 +82,42 @@ def configured_llm_modes() -> list[tuple[str, str]]:
 def resolve_llm_host(explicit: str | None = None) -> str:
     """Resolve one Ollama endpoint consistently across every runtime path.
 
-    Precedence: explicit argument, native ``OLLAMA_HOST``, then the documented
-    ``LACLAUGPT_LLM_ENDPOINT`` setting. Empty values are ignored.
+    Precedence: explicit argument, then the **project-scoped** documented
+    ``LACLAUGPT_LLM_ENDPOINT`` setting, then the machine-global native
+    ``OLLAMA_HOST``. Empty values are ignored.
+
+    The project-scoped setting deliberately outranks the native variable. The
+    AI26 deployment documents a dedicated endpoint, and an ambient
+    ``OLLAMA_HOST`` (another tool, a stale export, a machine default) must not
+    silently redirect the run to a different Ollama server than the one named in
+    the configuration.
     """
     if explicit is not None and explicit.strip():
         return explicit.strip()
-    native = os.environ.get(LLM_HOST_ENV, "").strip()
-    if native:
-        return native
-    return os.environ.get(LLM_ENDPOINT_ENV_ALIAS, "").strip()
+    endpoint = os.environ.get(LLM_ENDPOINT_ENV_ALIAS, "").strip()
+    if endpoint:
+        return endpoint
+    return os.environ.get(LLM_HOST_ENV, "").strip()
 
 
 def publish_llm_host(explicit: str | None = None) -> str:
-    """Publish the resolved endpoint to ``OLLAMA_HOST`` without overriding it."""
+    """Publish the resolved endpoint to ``OLLAMA_HOST``.
+
+    A stale native value must not survive next to a different resolved endpoint:
+    since the project-scoped ``LACLAUGPT_LLM_ENDPOINT`` takes precedence, child
+    processes that read ``OLLAMA_HOST`` directly would otherwise talk to a
+    different server than this process. An explicit argument keeps the original
+    conservative behaviour of never overriding an existing native value.
+    """
     host = resolve_llm_host(explicit)
-    if host and not os.environ.get(LLM_HOST_ENV, "").strip():
+    if not host:
+        return host
+    native = os.environ.get(LLM_HOST_ENV, "").strip()
+    if explicit is not None and explicit.strip():
+        if not native:
+            os.environ[LLM_HOST_ENV] = host
+        return host
+    if native != host:
         os.environ[LLM_HOST_ENV] = host
     return host
 
