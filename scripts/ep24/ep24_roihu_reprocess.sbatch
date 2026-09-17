@@ -28,6 +28,8 @@ export OLLAMA_KEEP_ALIVE=${OLLAMA_KEEP_ALIVE:-24h}
 export LLM_MODE=local
 export LLM_ALLOW_CLOUD_FALLBACK=0
 export EP24_REQUIRE_HUMAN_CODEBOOK=1
+export EP24_RUN_MODE=${EP24_RUN_MODE:-pilot}
+export EP24_SAMPLE_SIZE=${EP24_SAMPLE_SIZE:-20}
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}
 export OMP_PLACES=cores
 export OMP_PROC_BIND=spread
@@ -37,7 +39,7 @@ mkdir -p \
   "${LACLAUGPT_MEMORY_DIR}" \
   "${OLLAMA_MODELS}" \
   "${LACLAUGPT_DATA_DIR}/ollama-logs" \
-  "${LACLAUGPT_DATA_DIR}"/ep24/{csv,videos,annotations,human_reports,reviews,tmp,private_codebooks,run_configs}
+  "${LACLAUGPT_DATA_DIR}"/ep24/{csv,videos,annotations,human_reports,reviews,tmp,private_codebooks,run_configs,audits,comparisons,private_pipeline}
 
 cd "${LACLAUGPT_REPO_ROOT}"
 
@@ -118,7 +120,7 @@ ollama pull "${EP24_ANALYSIS_MODEL:-gemma4:26b}"
 ollama pull "${EP24_TRANSLATION_MODEL:-translategemma:27b}"
 
 for country in finland poland; do
-  echo "=== Starting public EP24 reprocessing harness: ${country} ==="
-  srun --ntasks=1 bash scripts/ep24/run_country_reprocess.sh "${country}"
+  echo "=== Starting EP24 ${EP24_RUN_MODE}: ${country} ==="
+  srun --ntasks=1 bash scripts/ep24/run_country_reprocess_v2.sh "${country}"
   echo "=== Finished: ${country} ==="
 done
