@@ -88,7 +88,7 @@ def test_worker_publishes_frozen_private_config_to_pipeline_context(
         def __init__(self, *args, **kwargs):
             pass
 
-    def fake_pipeline(record, *, context, **kwargs):
+    def fake_pipeline(record, context, **kwargs):
         captured["context"] = context
         return record
 
