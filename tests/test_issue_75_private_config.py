@@ -78,7 +78,7 @@ def test_worker_publishes_frozen_private_config_to_pipeline_context(
     monkeypatch.setattr("laclaugpt_data_analysis.distributed_worker.OllamaProvider", _Provider)
     monkeypatch.setattr("laclaugpt_data_analysis.distributed_worker.run_canonical_pipeline", fake_pipeline)
 
-    handler = AI26Handler(binding, Settings(project_id="ai26"), _Handoff(), stager=None)
+    handler = AI26Handler(binding, Settings(project_id="ai26"), _Handoff())
     handler(type("Task", (), {"record_ref": "https://example.invalid/75"})())
 
     context = captured["context"]
@@ -100,7 +100,7 @@ def test_worker_fails_closed_on_malformed_private_config(tmp_path: Path, monkeyp
     monkeypatch.setattr("laclaugpt_data_analysis.distributed_worker.OllamaProvider", _Provider)
 
     with pytest.raises(ValueError, match="unreadable or malformed"):
-        AI26Handler(binding, Settings(project_id="ai26"), _Handoff(), stager=None)
+        AI26Handler(binding, Settings(project_id="ai26"), _Handoff())
 
 
 def test_worker_fails_closed_on_non_object_private_config(tmp_path: Path, monkeypatch) -> None:
@@ -113,4 +113,4 @@ def test_worker_fails_closed_on_non_object_private_config(tmp_path: Path, monkey
     monkeypatch.setattr("laclaugpt_data_analysis.distributed_worker.OllamaProvider", _Provider)
 
     with pytest.raises(ValueError, match="must be a JSON object"):
-        AI26Handler(binding, Settings(project_id="ai26"), _Handoff(), stager=None)
+        AI26Handler(binding, Settings(project_id="ai26"), _Handoff())
