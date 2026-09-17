@@ -9,6 +9,7 @@ from laclaugpt_data_analysis.config import Settings
 from laclaugpt_data_analysis.critical_ai import critical_ai_enabled
 from laclaugpt_data_analysis.distributed_worker import AI26Handler, AI26_MODEL, WorkerBinding
 from laclaugpt_data_analysis.dna_statement_coding import dna_statement_coding_enabled
+from laclaugpt_data_analysis.task_queue import TaskEnvelope
 
 
 def _sha(path: Path) -> str:
@@ -49,6 +50,21 @@ def _binding(tmp_path: Path, config_text: str) -> WorkerBinding:
     )
 
 
+def _task(binding: WorkerBinding) -> TaskEnvelope:
+    manifest = binding.manifest
+    return TaskEnvelope(
+        task_id="analysis:test-75",
+        idempotency_key="test-75",
+        project_id=manifest.project_id,
+        run_id=manifest.run_id,
+        task_type="analyze-record",
+        record_ref="https://example.invalid/75",
+        schema_version=manifest.schema_version,
+        config_revision=manifest.config_sha256,
+        codebook_revision=manifest.codebook_sha256,
+    )
+
+
 class _Handoff:
     def resolve(self, source_url: str) -> CanonicalRecord:
         return CanonicalRecord(source_url=source_url)
@@ -79,7 +95,7 @@ def test_worker_publishes_frozen_private_config_to_pipeline_context(
     monkeypatch.setattr("laclaugpt_data_analysis.distributed_worker.run_canonical_pipeline", fake_pipeline)
 
     handler = AI26Handler(binding, Settings(project_id="ai26"), _Handoff())
-    handler(type("Task", (), {"record_ref": "https://example.invalid/75"})())
+    handler(_task(binding))
 
     context = captured["context"]
     assert context.project_config == config
