@@ -149,19 +149,23 @@ class PeriodicDiscourseSummary(BaseModel):
             "window_start": self.window_start.isoformat(),
             "window_end": self.window_end.isoformat(),
             "scope": self.scope.key,
-            "coverage": stats.coverage.model_dump(mode="json"),
-            "major_changes": stats.change_categories,
             "top_signifiers": top(stats.signifiers),
             "top_formations": top(stats.formations),
             "top_frontiers": top(stats.frontiers),
             "top_topics": top(stats.topics),
+            "major_changes": stats.change_categories,
             "relation_changes": relation_changes,
+            "coverage": stats.coverage.model_dump(mode="json"),
             "narrative_excerpt": self.narrative[:2500],
         }
 
     def context_text(self, *, max_chars: int = 12_000) -> str:
         header = "HISTORICAL SUMMARY CONTEXT - NOT CURRENT-SOURCE EVIDENCE\n"
-        payload = json.dumps(self.context_payload(), ensure_ascii=False, sort_keys=True, indent=2)
+        payload = json.dumps(
+            self.context_payload(),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
         return (header + payload)[:max_chars]
 
 
@@ -367,13 +371,15 @@ def _bounded_append(
     limit: int,
 ) -> None:
     bucket = mapping[key]
+    if len(bucket) >= limit:
+        return
     seen = set(bucket)
     for value in values:
+        if len(bucket) >= limit:
+            break
         if value and value not in seen:
             bucket.append(value)
             seen.add(value)
-        if len(bucket) >= limit:
-            break
 
 
 def _aggregate_records(
