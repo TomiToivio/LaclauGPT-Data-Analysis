@@ -5,7 +5,8 @@ Behaviour migrated from the monolith's ``llm.py``:
 - mode resolution: explicit ``LLM_MODE=local|cloud|external|auto`` wins; auto
   probes a reachable Ollama endpoint's VRAM (>= ``LLM_LOCAL_MIN_VRAM_GB``,
   default 16) before choosing local;
-- ``OLLAMA_HOST`` is honoured for local and remote Ollama servers alike;
+- an explicit provider host wins, then ``OLLAMA_HOST``, then the documented
+  ``LACLAUGPT_LLM_ENDPOINT`` runtime setting;
 - local -> cloud fallback is forbidden by default and must be explicitly
   authorised per call or via ``LLM_ALLOW_CLOUD_FALLBACK=1``;
 - thinking-mode budget burn on structured output is disabled unless
@@ -37,6 +38,7 @@ logger = logging.getLogger(__name__)
 LLM_MODE_ENV = "LLM_MODE"
 LLM_MODE_ENV_ALIAS = "LACLAUGPT_OLLAMA_MODE"
 LLM_HOST_ENV = "OLLAMA_HOST"
+LLM_ENDPOINT_ENV_ALIAS = "LACLAUGPT_LLM_ENDPOINT"
 LLM_CLOUD_ENV = "LLM_CLOUD_MODEL"
 LLM_LOCAL_MODEL_ENV = "LLM_LOCAL_MODEL"
 LLM_ALLOW_CLOUD_FALLBACK_ENV = "LLM_ALLOW_CLOUD_FALLBACK"
@@ -48,6 +50,29 @@ _CAPABLE_HOST_MARKERS = os.environ.get(
 ).split(",")
 _LOCAL_ENDPOINTS = {"", "127.0.0.1", "localhost", "::1"}
 _TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def resolve_llm_host(explicit: str | None = None) -> str:
+    """Resolve one Ollama endpoint for every provider path.
+
+    Precedence is intentionally narrow and predictable: an explicit provider
+    argument wins, then the native Ollama variable, then the documented
+    LaclauGPT-prefixed runtime setting. Empty values are ignored.
+    """
+    if explicit is not None and explicit.strip():
+        return explicit.strip()
+    native = os.environ.get(LLM_HOST_ENV, "").strip()
+    if native:
+        return native
+    return os.environ.get(LLM_ENDPOINT_ENV_ALIAS, "").strip()
+
+
+def publish_llm_host(explicit: str | None = None) -> str:
+    """Publish the resolved endpoint to ``OLLAMA_HOST`` without overriding it."""
+    host = resolve_llm_host(explicit)
+    if host and not os.environ.get(LLM_HOST_ENV, "").strip():
+        os.environ[LLM_HOST_ENV] = host
+    return host
 
 
 def _endpoint_hostname(endpoint: str) -> str:
@@ -108,7 +133,7 @@ def resolve_endpoint(model_hint: str | None = None) -> tuple[str, str]:
     allowed_modes = ("auto", "local", "cloud", "external")
     if mode_env and mode_env not in allowed_modes:
         raise ValueError(f"LLM mode must be one of: {', '.join(allowed_modes)}")
-    host = os.environ.get(LLM_HOST_ENV, "")
+    host = resolve_llm_host()
     if mode_env in ("", "auto"):
         if host and _external_endpoint(host):
             mode = "external"
@@ -121,7 +146,9 @@ def resolve_endpoint(model_hint: str | None = None) -> tuple[str, str]:
     else:
         mode = mode_env
     if mode == "external" and not host:
-        raise ValueError("external Ollama mode requires OLLAMA_HOST")
+        raise ValueError(
+            "external Ollama mode requires OLLAMA_HOST or LACLAUGPT_LLM_ENDPOINT"
+        )
     if model_hint and model_hint.casefold() == "auto":
         model_hint = None
     configured = os.environ.get("LACLAUGPT_OLLAMA_MODEL") or os.environ.get("OLLAMA_MODEL")
@@ -144,7 +171,7 @@ def resolve_endpoint(model_hint: str | None = None) -> tuple[str, str]:
 
 def describe_routing(model_hint: str | None = None) -> str:
     mode, model = resolve_endpoint(model_hint)
-    host = os.environ.get(LLM_HOST_ENV, "").strip() or "default endpoint"
+    host = resolve_llm_host() or "default endpoint"
     if mode == "cloud":
         return f"cloud Ollama via {host} (weak-GPU machine) -> {model}"
     if mode == "external":
@@ -161,7 +188,7 @@ def _client(host: str | None = None):
             "the ollama package is required for the Ollama provider; "
             "install laclaugpt-data-analysis[ollama] or use a mock provider"
         ) from exc
-    host = (host or os.environ.get(LLM_HOST_ENV, "")).strip()
+    host = resolve_llm_host(host)
     kwargs: dict[str, Any] = {"host": host} if host else {}
     api_key = os.environ.get("OLLAMA_API_KEY", "").strip()
     if api_key and "ollama.com" in host:
@@ -249,7 +276,7 @@ class OllamaProvider:
         ]
         if os.environ.get("OLLAMA_THINK", "").strip().casefold() not in _TRUE_VALUES:
             kwargs["think"] = False
-        host = self._host_override or os.environ.get(LLM_HOST_ENV, "").strip()
+        host = resolve_llm_host(self._host_override)
         client = _client(host)
         try:
             response = client.chat(model=use_model, messages=messages, options=opts, **kwargs)
