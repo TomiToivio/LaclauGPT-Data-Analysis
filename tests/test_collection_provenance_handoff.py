@@ -1,5 +1,5 @@
-from laclaugpt_data_analysis.distributed_worker import MongoCollectionHandoff
 from laclaugpt_data_analysis.models import Provenance
+from laclaugpt_data_analysis.distributed_worker import MongoCollectionHandoff
 
 
 COLLECTION_PROVENANCE = {
