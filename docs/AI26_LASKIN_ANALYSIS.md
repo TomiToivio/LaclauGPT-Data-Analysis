@@ -153,14 +153,15 @@ authenticated URLs. Exit code `0` is healthy, `2` reports problems.
 ## Run once
 
 ```bash
-./scripts/run_ai26_laskin.sh --check          # preflight only, no work claimed
-./scripts/run_ai26_laskin.sh --debug --once   # verbose, one bounded cycle
-./scripts/run_ai26_laskin.sh --once           # normal bounded cycle
+LACLAUGPT_PRIVATE_ROOT=/mnt/workspace/LaclauGPT-Private ./scripts/run_ai26_laskin.sh --check
+LACLAUGPT_PRIVATE_ROOT=/mnt/workspace/LaclauGPT-Private ./scripts/run_ai26_laskin.sh --debug --once
+LACLAUGPT_PRIVATE_ROOT=/mnt/workspace/LaclauGPT-Private ./scripts/run_ai26_laskin.sh --once
 ```
 
 The wrapper resolves the repository, loads the **private** environment itself
 (cron inherits no interactive shell), verifies Ollama, takes `flock`, runs a
-bounded batch and exits. Exit codes:
+bounded batch and exits. `LACLAUGPT_PRIVATE_ROOT` names the private repository
+root, not the `runtime/ai26` log directory. Exit codes:
 
 ```text
 0  success
@@ -174,7 +175,7 @@ monitoring can detect a broken analysis path instead of silently accepting it.
 ## Debug mode
 
 ```bash
-LACLAUGPT_DEBUG=1 ./scripts/run_ai26_laskin.sh --once
+LACLAUGPT_PRIVATE_ROOT=/mnt/workspace/LaclauGPT-Private LACLAUGPT_DEBUG=1 ./scripts/run_ai26_laskin.sh --once
 ```
 
 Debug mode adds operational detail: composed profile, connectivity checks,
@@ -223,15 +224,20 @@ Preferred installation is the idempotent helper:
 
 ```bash
 cd /mnt/workspace/LaclauGPT-Data-Analysis
-LACLAUGPT_PRIVATE_ROOT=/mnt/workspace/LaclauGPT-Private/runtime/ai26 \
+LACLAUGPT_PRIVATE_ROOT=/mnt/workspace/LaclauGPT-Private \
   bash scripts/install_ai26_laskin_cron.sh
 ```
 
-It installs exactly one tagged entry and replaces older invocations of the same
-wrapper. The resulting canonical entry is:
+The installer defaults to `/mnt/workspace/LaclauGPT-Private` when the variable is
+omitted. It installs exactly one tagged entry, replaces older invocations of the
+same wrapper, then runs the wrapper in `--check` mode using the exact private-root
+contract that cron will receive. Installation exits non-zero when that preflight
+fails.
+
+The resulting canonical entry is:
 
 ```cron
-5 * * * * /bin/bash /mnt/workspace/LaclauGPT-Data-Analysis/scripts/run_ai26_laskin.sh >> /mnt/workspace/LaclauGPT-Private/runtime/ai26/analysis/ai26-laskin-analysis.log 2>&1 # LaclauGPT AI26 analysis
+5 * * * * LACLAUGPT_PRIVATE_ROOT=/mnt/workspace/LaclauGPT-Private /bin/bash /mnt/workspace/LaclauGPT-Data-Analysis/scripts/run_ai26_laskin.sh >> /mnt/workspace/LaclauGPT-Private/runtime/ai26/analysis/ai26-laskin-analysis.log 2>&1 # LaclauGPT AI26 analysis
 ```
 
 This is intentionally staggered from the Collection jobs (`:10` collect,
@@ -260,8 +266,9 @@ Cron provides a minimal environment, which is the usual cause of a job that
 works by hand but not on schedule:
 
 ```bash
-env -i LACLAUGPT_PRIVATE_ROOT=/mnt/workspace/LaclauGPT-Private/runtime/ai26 \
-  /bin/bash /mnt/workspace/LaclauGPT-Data-Analysis/scripts/run_ai26_laskin.sh --once
+env -i HOME="$HOME" PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
+  LACLAUGPT_PRIVATE_ROOT=/mnt/workspace/LaclauGPT-Private \
+  /bin/bash /mnt/workspace/LaclauGPT-Data-Analysis/scripts/run_ai26_laskin.sh --check
 
 tail -50 /mnt/workspace/LaclauGPT-Private/runtime/ai26/analysis/ai26-laskin-analysis.log
 crontab -l | grep run_ai26_laskin
@@ -303,9 +310,9 @@ git pull --ff-only origin main
 .venv/bin/python -m pip install -e '.[remote,ollama,dev]'
 .venv/bin/python -m pytest
 .venv/bin/laclaugpt-preflight
-./scripts/run_ai26_laskin.sh --once
+LACLAUGPT_PRIVATE_ROOT=/mnt/workspace/LaclauGPT-Private ./scripts/run_ai26_laskin.sh --once
 # re-freeze if the analysis config or codebook changed
-LACLAUGPT_PRIVATE_ROOT=/mnt/workspace/LaclauGPT-Private/runtime/ai26 \
+LACLAUGPT_PRIVATE_ROOT=/mnt/workspace/LaclauGPT-Private \
   bash scripts/install_ai26_laskin_cron.sh
 ```
 
