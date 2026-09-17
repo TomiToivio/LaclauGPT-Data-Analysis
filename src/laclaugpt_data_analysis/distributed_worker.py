@@ -118,8 +118,6 @@ class FrozenRunManifest:
     codebook_sha256: str
     model: str
     public_git_sha: str
-    # Hash of the analysed source tree at freeze time. Optional so manifests
-    # written before this field existed still load (see validate_runtime_code).
     source_tree_sha256: str = ""
 
     @classmethod
@@ -129,15 +127,11 @@ class FrozenRunManifest:
         return cls(**{key: value for key, value in payload.items() if key in known})
 
 
-# Directories whose contents define the analysed behaviour. Documentation, CI
-# configuration and test changes do not alter analysis semantics, so they must
-# not invalidate a frozen run (issue #121).
 _SOURCE_TREE_ROOTS = ("src",)
 _SOURCE_TREE_SUFFIXES = (".py",)
 
 
 def _source_tree_sha256(repo_root: Path | None = None) -> str:
-    """Hash the analysed source tree, independent of commits and comments."""
     root = repo_root or Path(__file__).resolve().parents[2]
     digest = hashlib.sha256()
     files: list[Path] = []
@@ -148,7 +142,6 @@ def _source_tree_sha256(repo_root: Path | None = None) -> str:
         for path in base.rglob("*"):
             if path.is_file() and path.suffix in _SOURCE_TREE_SUFFIXES:
                 files.append(path)
-    # Deterministic order so the hash does not depend on filesystem traversal.
     for path in sorted(files, key=lambda item: item.as_posix()):
         digest.update(path.relative_to(root).as_posix().encode("utf-8"))
         digest.update(b"\0")
@@ -208,15 +201,6 @@ class WorkerBinding:
             raise ValueError("codebook hash does not match frozen run manifest")
 
     def validate_runtime_code(self) -> None:
-        """Require the analysed source tree — not just the commit — to be unchanged.
-
-        The commit SHA identifies the whole repository, so a docs-only,
-        CI-only or test-only merge would invalidate a frozen run and stop a
-        scheduled job for no analytical reason (issue #121). The source-tree hash
-        covers exactly what affects analysis semantics. When a manifest predates
-        this field, or the checkout is not a git repository, fall back to the
-        strict commit comparison so the guarantee is never silently dropped.
-        """
         frozen_tree = (self.manifest.source_tree_sha256 or "").strip()
         if frozen_tree:
             runtime_tree = _source_tree_sha256()
@@ -227,7 +211,6 @@ class WorkerBinding:
                 f"manifest={frozen_tree} runtime={runtime_tree}. "
                 "Re-freeze the run with laclaugpt-freeze-ai26 before analysing."
             )
-
         runtime_sha = _runtime_public_git_sha()
         if runtime_sha != self.manifest.public_git_sha:
             raise ValueError(
@@ -252,7 +235,6 @@ class WorkerBinding:
             raise ValueError(f"unsupported task type: {task.task_type}")
 
     def task_from_handoff(self, handoff: dict[str, Any]) -> TaskEnvelope:
-        """Translate Collection's durable handoff envelope into a reference-only task."""
         if str(handoff.get("status") or "") != "ready":
             raise ValueError("only ready Collection handoffs may be queued")
         source_url = str(handoff.get("source_url") or "")
@@ -290,13 +272,11 @@ class WorkerBinding:
 def enforce_local_model(manifest: FrozenRunManifest) -> None:
     if manifest.model != AI26_MODEL:
         raise ValueError(f"AI26 distributed test requires model {AI26_MODEL}")
-
     for name, mode in configured_llm_modes():
         if mode != "local":
             raise ValueError(
                 f"AI26 distributed test forbids cloud/external Ollama mode: {name}={mode}"
             )
-
     fallback = os.environ.get("LLM_ALLOW_CLOUD_FALLBACK", "").strip().casefold()
     if fallback in {"1", "true", "yes", "on"}:
         raise ValueError("AI26 distributed test forbids cloud fallback")
@@ -329,7 +309,6 @@ def _int_env(name: str, default: int) -> int:
 
 
 def build_media_stager(settings: Settings) -> MediaStager | None:
-    """Build the multimodal staging cache for this run, or ``None`` when local-only."""
     if settings.object_backend != "s3":
         return None
     cache_raw = os.environ.get("LACLAUGPT_STAGING_MAX_CACHE_BYTES", "").strip()
@@ -351,8 +330,6 @@ def build_media_stager(settings: Settings) -> MediaStager | None:
 
 
 class MongoCollectionHandoff:
-    """Read Collection's durable canonical records and ready handoff envelopes."""
-
     def __init__(self, settings: Settings):
         if not settings.mongo_url:
             raise ValueError("MongoDB is required for the AI26 distributed worker")
@@ -372,14 +349,7 @@ class MongoCollectionHandoff:
         clean = {key: value for key, value in row.items() if key in CanonicalRecord.model_fields}
         return CanonicalRecord.model_validate(clean)
 
-    def ready_handoffs(
-        self,
-        run_id: str,
-        *,
-        limit: int,
-        offset: int = 0,
-    ) -> list[dict[str, Any]]:
-        """Return a stable page of ready handoffs for bounded forward scanning."""
+    def ready_handoffs(self, run_id: str, *, limit: int, offset: int = 0) -> list[dict[str, Any]]:
         if limit < 1:
             return []
         cursor = self.collection.find(
@@ -401,99 +371,31 @@ class MongoCollectionHandoff:
 
 
 class AI26Handler:
-    def __init__(
-        self,
-        binding: WorkerBinding,
-        settings: Settings,
-        handoff: MongoCollectionHandoff,
-        *,
-        stager: MediaStager | None = None,
-    ):
+    def __init__(self, binding: WorkerBinding, settings: Settings, handoff: MongoCollectionHandoff):
         self.binding = binding
         self.settings = settings
         self.handoff = handoff
-        self.project_config = _load_project_config(binding.private_config)
+        project_config = _load_project_config(binding.private_config)
         self.codebook = load_codebook(binding.codebook)
-        self.provider = OllamaProvider(host=resolve_llm_host() or None)
-        self.stager = stager if stager is not None else build_media_stager(settings)
+        self.context = PipelineContext(
+            project_id=settings.project_id,
+            run_id=binding.manifest.run_id,
+            project_config=project_config,
+            codebook=self.codebook,
+            llm=OllamaProvider(
+                host=resolve_llm_host(),
+                model=AI26_MODEL,
+            ),
+            media_stager=build_media_stager(settings),
+        )
 
     def __call__(self, task: TaskEnvelope) -> dict[str, Any]:
+        self.binding.validate_task(task)
         record = self.handoff.resolve(task.record_ref)
-        staging_provenance: dict[str, list[str]] = {}
-        if self.stager is not None:
-            report = self.stager.stage_record(record)
-            # ``PipelineContext.provenance`` is ``dict[str, list[str]]``; the
-            # staging report is richer, so flatten it at this boundary instead
-            # of weakening either contract.
-            staging_provenance = _flatten_provenance(report.provenance())
-            retriable = [item for item in report.staged if item.retriable]
-            if retriable:
-                raise ObjectUnavailableError(
-                    "media staging failed (retriable): "
-                    + ", ".join(f"{item.cache_key}:{item.reason}" for item in retriable)
-                )
-            _publish_local_media_refs(record, report)
-        context = PipelineContext(
-            project_context="AI26 distributed bounded test",
-            project_config=self.project_config,
-            project_config_revision=self.binding.manifest.config_sha256,
-            config_revision=self.binding.manifest.config_sha256,
-            codebook_revision=self.binding.manifest.codebook_sha256,
-            provenance={
-                "private_config_sha256": [self.binding.manifest.config_sha256],
-                "codebook_sha256": [self.binding.manifest.codebook_sha256],
-                **staging_provenance,
-            },
-        )
-        analyzed = run_canonical_pipeline(
-            record,
-            provider=self.provider,
-            context=context,
-            codebook_entries=self.codebook.entries,
-            model=AI26_MODEL,
-            project_profile="ai26",
-            allow_cloud_fallback=False,
-        )
-        return analyzed.model_dump(mode="json")
-
-
-def _flatten_provenance(payload: Any) -> dict[str, list[str]]:
-    """Flatten a rich provenance mapping into ``dict[str, list[str]]``.
-
-    ``PipelineContext.provenance`` only accepts lists of strings, while staging
-    and other stages produce nested structures. Each top-level key becomes a
-    list of ``key=value`` strings, so no information is dropped and the value
-    stays within the declared contract.
-    """
-    def render(value: Any) -> str:
-        if isinstance(value, str):
-            return value
-        if isinstance(value, bool | int | float) or value is None:
-            return str(value)
-        return json.dumps(value, sort_keys=True, ensure_ascii=False, default=str)
-
-    flattened: dict[str, list[str]] = {}
-    for key, value in dict(payload or {}).items():
-        if isinstance(value, list | tuple):
-            flattened[str(key)] = [render(item) for item in value]
-        else:
-            flattened[str(key)] = [render(value)]
-    return flattened
-
-
-def _publish_local_media_refs(record: Any, report: Any) -> None:
-    """Point frames/media at staged local files so the multimodal adapter can attach them."""
-    by_ref = {item.ref: item for item in report.staged if item.local_available}
-    if not by_ref:
-        return
-    for frame in getattr(record.content, "frames", []) or []:
-        ref = getattr(frame, "media_ref", None)
-        if ref and ref in by_ref:
-            frame.media_ref = str(by_ref[ref].path)
-    for media in getattr(record.content, "media_references", []) or []:
-        ref = getattr(media, "object_ref", None)
-        if ref and ref in by_ref:
-            media.local_ref = str(by_ref[ref].path)
+        try:
+            return run_canonical_pipeline(record, self.context)
+        except ObjectUnavailableError:
+            raise
 
 
 class AI26TaskWorker(TaskWorker):
@@ -508,22 +410,15 @@ class AI26TaskWorker(TaskWorker):
             claimed = self.queue.claim()
         if claimed is None:
             return "idle"
-
         task = claimed.task
         if self.validator is not None:
             self.validator(task)
-
         if self.durable_store.has_result(task.idempotency_key):
             self.queue.ack(claimed.message_id)
             return "duplicate"
-
         try:
             result = self.handler(task)
-            inserted = self.durable_store.write_result(
-                task,
-                result,
-                self.provenance,
-            )
+            inserted = self.durable_store.write_result(task, result, self.provenance)
             self.queue.ack(claimed.message_id)
             return "completed" if inserted else "duplicate"
         except Exception as exc:
@@ -534,7 +429,6 @@ class AI26TaskWorker(TaskWorker):
                 self.queue.dead_letter(task, error)
                 self.queue.ack(claimed.message_id)
                 return "dead-letter"
-
             retry_task = replace(task, attempt=task.attempt + 1)
             retry_task.validate()
             self.queue.publish(retry_task)
@@ -551,23 +445,13 @@ def seed_ready_tasks(
     limit: int,
     page_size: int | None = None,
 ) -> int:
-    """Seed up to ``limit`` new handoffs while paging past completed results.
-
-    ``--max-tasks`` remains the consumption/seed bound, but completed handoffs no
-    longer consume that budget. Each cron cycle scans stable pages until it finds
-    new work or exhausts the ready handoff set.
-    """
     if limit < 1:
         return 0
     batch_size = max(1, page_size or limit)
     count = 0
     offset = 0
     while count < limit:
-        envelopes = handoff.ready_handoffs(
-            binding.manifest.run_id,
-            limit=batch_size,
-            offset=offset,
-        )
+        envelopes = handoff.ready_handoffs(binding.manifest.run_id, limit=batch_size, offset=offset)
         if not envelopes:
             break
         offset += len(envelopes)
@@ -608,11 +492,26 @@ def build_worker(binding: WorkerBinding, settings: Settings) -> tuple[TaskWorker
 
 
 def _cycle_exit_code(counts: dict[str, int]) -> int:
-    """Fail a bounded cycle only when attempted work failed without any completion."""
     failures = counts.get("retry", 0) + counts.get("dead-letter", 0)
     if counts.get("completed", 0) == 0 and failures > 0:
         return 1
     return 0
+
+
+def _cycle_exit_status(
+    *,
+    attempted: int,
+    completed: int,
+    duplicate: int = 0,
+    retry: int = 0,
+    dead_letter: int = 0,
+) -> int:
+    """Compatibility helper used by regression tests for issue #101."""
+    if attempted <= 0 or completed > 0 or duplicate == attempted:
+        return 0
+    if retry == 0 and dead_letter == 0:
+        return 0
+    return 1
 
 
 def _parser() -> argparse.ArgumentParser:

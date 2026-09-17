@@ -412,6 +412,7 @@ class TaskWorker:
         self.max_attempts = max_attempts
 
     def run_once(self, *, reclaim_idle_ms: int | None = None) -> str:
+        self.last_failure_class = None
         claimed = None
         if reclaim_idle_ms is not None:
             claimed = self.queue.reclaim(min_idle_ms=reclaim_idle_ms)
@@ -434,7 +435,8 @@ class TaskWorker:
             self.queue.ack(claimed.message_id)
             return "completed" if inserted else "duplicate"
         except Exception as exc:
-            error = f"{type(exc).__name__}: {exc}"
+            self.last_failure_class = type(exc).__name__
+            error = f"{self.last_failure_class}: {exc}"
             self.durable_store.write_failure(task, error, self.provenance)
             if task.attempt >= self.max_attempts:
                 self.queue.dead_letter(task, error)
