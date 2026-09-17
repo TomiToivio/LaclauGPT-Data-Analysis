@@ -310,8 +310,37 @@ class RedisStreamQueue:
             if "BUSYGROUP" not in str(exc):
                 raise
 
+    @staticmethod
+    def _text(value: Any) -> str:
+        return value.decode("utf-8") if isinstance(value, bytes) else str(value)
+
+    @staticmethod
+    def _field(values: Mapping[Any, Any], name: str) -> Any:
+        return values.get(name) if name in values else values.get(name.encode())
+
+    @classmethod
+    def _decode_task(cls, values: Mapping[Any, Any]) -> TaskEnvelope:
+        raw = cls._field(values, "task")
+        if raw is None:
+            raise ValueError("Redis task entry is missing task payload")
+        return TaskEnvelope.from_dict(json.loads(cls._text(raw)))
+
+    @classmethod
+    def _next_stream_id(cls, value: Any) -> str:
+        text = cls._text(value)
+        milliseconds, separator, sequence = text.rpartition("-")
+        if separator and milliseconds.isdigit() and sequence.isdigit():
+            return f"{milliseconds}-{int(sequence) + 1}"
+        return text
+
+    @staticmethod
+    def _idle_ms(entry: Any) -> int:
+        if isinstance(entry, Mapping):
+            return int(entry.get("time_since_delivered", 0))
+        return int(entry[2])
+
     def publish(self, task: TaskEnvelope) -> str:
-        return str(self.redis.xadd(self.stream, {"task": json.dumps(task.to_dict())}))
+        return self._text(self.redis.xadd(self.stream, {"task": json.dumps(task.to_dict())}))
 
     def claim(self) -> ClaimedTask | None:
         response = self.redis.xreadgroup(
@@ -325,11 +354,9 @@ class RedisStreamQueue:
             return None
         _, entries = response[0]
         message_id, values = entries[0]
-        return ClaimedTask(str(message_id), TaskEnvelope.from_dict(json.loads(values["task"])))
+        return ClaimedTask(self._text(message_id), self._decode_task(values))
 
     def reclaim(self, *, min_idle_ms: int) -> ClaimedTask | None:
-        # Prefer XAUTOCLAIM where available, but retain an XPENDING/XCLAIM
-        # fallback for older Redis servers and redis-py clients.
         try:
             response = self.redis.xautoclaim(
                 self.stream,
@@ -341,41 +368,56 @@ class RedisStreamQueue:
             )
         except (AttributeError, TypeError):
             response = None
+        except RuntimeError as exc:
+            message = str(exc).casefold()
+            if "unknown command" not in message or "xautoclaim" not in message:
+                raise
+            response = None
         if response:
             entries = response[1] if len(response) > 1 else []
             if entries:
                 message_id, values = entries[0]
-                return ClaimedTask(
-                    str(message_id),
-                    TaskEnvelope.from_dict(json.loads(values["task"])),
-                )
+                return ClaimedTask(self._text(message_id), self._decode_task(values))
 
-        pending = self.redis.xpending_range(
-            self.stream,
-            self.group,
-            min="-",
-            max="+",
-            count=self._LEGACY_PENDING_BATCH,
-            idle=min_idle_ms,
-        )
-        if not pending:
-            return None
-        entry = pending[0]
-        message_id = entry["message_id"] if isinstance(entry, dict) else entry[0]
-        claimed = self.redis.xclaim(
-            self.stream,
-            self.group,
-            self.consumer,
-            min_idle_ms,
-            [message_id],
-        )
-        if not claimed:
-            return None
-        claimed_id, values = claimed[0]
-        return ClaimedTask(
-            str(claimed_id),
-            TaskEnvelope.from_dict(json.loads(values["task"])),
-        )
+        start = "-"
+        while True:
+            try:
+                pending = self.redis.xpending_range(
+                    self.stream,
+                    self.group,
+                    min=start,
+                    max="+",
+                    count=self._LEGACY_PENDING_BATCH,
+                    idle=min_idle_ms,
+                )
+            except TypeError:
+                pending = self.redis.xpending_range(
+                    self.stream,
+                    self.group,
+                    min=start,
+                    max="+",
+                    count=self._LEGACY_PENDING_BATCH,
+                )
+            eligible = [entry for entry in pending if self._idle_ms(entry) >= min_idle_ms][:1]
+            if eligible:
+                entry = eligible[0]
+                message_id = entry["message_id"] if isinstance(entry, dict) else entry[0]
+                claimed = self.redis.xclaim(
+                    self.stream,
+                    self.group,
+                    self.consumer,
+                    min_idle_ms,
+                    [message_id],
+                )
+                if not claimed:
+                    return None
+                claimed_id, values = claimed[0]
+                return ClaimedTask(self._text(claimed_id), self._decode_task(values))
+            if not pending or len(pending) < self._LEGACY_PENDING_BATCH:
+                return None
+            last = pending[-1]
+            last_id = last["message_id"] if isinstance(last, dict) else last[0]
+            start = self._next_stream_id(last_id)
 
     def ack(self, message_id: str) -> None:
         self.redis.xack(self.stream, self.group, message_id)
@@ -472,8 +514,8 @@ def redis_queue_from_settings(
 def durable_store_from_settings(settings: Settings, *, run_id: str) -> MongoTaskStore:
     namespace = settings.distributed_namespace
     return MongoTaskStore(
-        settings.mongodb_url,
-        database=settings.mongodb_database,
+        settings.mongo_url,
+        database=settings.mongo_database,
         result_collection=namespace.mongo_collection("analysis_results"),
         failure_collection=namespace.mongo_collection("analysis_failures"),
         project_id=settings.project_id,

@@ -12,6 +12,8 @@ _MONGO_KINDS = {
     "runs",
     "artifacts",
     "periodic_summaries",
+    "analysis_results",
+    "analysis_failures",
     # Cross-module pipeline states from issue #20. These correspond to
     # Collection -> Analysis-in-progress -> Visualization-ready records.
     "raw",

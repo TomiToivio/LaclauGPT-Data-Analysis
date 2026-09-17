@@ -14,7 +14,7 @@ from laclaugpt_data_analysis.distributed_worker import (
     collection_records_name,
     enforce_local_model,
 )
-from laclaugpt_data_analysis.task_queue import InMemoryTaskQueue, SqliteTaskStore, TaskEnvelope
+from laclaugpt_data_analysis.task_queue import InMemoryTaskQueue, InMemoryTaskStore, TaskEnvelope
 
 
 def sha(path: Path) -> str:
@@ -147,7 +147,7 @@ def test_collection_ready_handoff_becomes_reference_only_analysis_task(tmp_path:
     assert task.record_ref == "https://example.invalid/source/1"
     assert task.config_revision == binding.manifest.config_sha256
     assert task.codebook_revision == binding.manifest.codebook_sha256
-    assert "payload" not in task.to_fields()
+    assert "payload" not in task.to_dict()
 
 
 def test_collection_mongo_contract_uses_records_collection() -> None:
@@ -216,9 +216,9 @@ def test_cloud_mode_is_rejected(monkeypatch) -> None:
         enforce_local_model(manifest)
 
 
-def test_ai26_retry_requeues_with_incremented_attempt(tmp_path: Path) -> None:
+def test_ai26_retry_requeues_with_incremented_attempt() -> None:
     queue = InMemoryTaskQueue()
-    store = SqliteTaskStore(tmp_path / "tasks.sqlite3")
+    store = InMemoryTaskStore()
     calls = 0
 
     def flaky(task: TaskEnvelope):
@@ -240,19 +240,25 @@ def test_ai26_retry_requeues_with_incremented_attempt(tmp_path: Path) -> None:
         codebook_revision="cb",
     )
     queue.publish(task)
-    worker = AI26TaskWorker(queue, store, flaky, "worker-1", {}, max_attempts=3)
+    worker = AI26TaskWorker(
+        queue=queue,
+        durable_store=store,
+        handler=flaky,
+        worker_id="worker-1",
+        provenance={},
+        max_attempts=3,
+    )
 
     assert worker.run_once() == "retry"
-    assert not queue.pending
-    assert len(queue.ready) == 1
-    assert queue.ready[0].task.attempt == 2
+    assert len(queue.pending) == 1
+    assert queue.pending[0].task.attempt == 2
     assert worker.run_once() == "completed"
     assert store.has_result("id-1")
 
 
-def test_ai26_retry_reaches_dead_letter_instead_of_looping_forever(tmp_path: Path) -> None:
+def test_ai26_retry_reaches_dead_letter_instead_of_looping_forever() -> None:
     queue = InMemoryTaskQueue()
-    store = SqliteTaskStore(tmp_path / "tasks.sqlite3")
+    store = InMemoryTaskStore()
     task = TaskEnvelope(
         task_id="task-1",
         idempotency_key="id-1",
@@ -266,18 +272,17 @@ def test_ai26_retry_reaches_dead_letter_instead_of_looping_forever(tmp_path: Pat
     )
     queue.publish(task)
     worker = AI26TaskWorker(
-        queue,
-        store,
-        lambda _: (_ for _ in ()).throw(RuntimeError("still broken")),
-        "worker-1",
-        {},
+        queue=queue,
+        durable_store=store,
+        handler=lambda _: (_ for _ in ()).throw(RuntimeError("still broken")),
+        worker_id="worker-1",
+        provenance={},
         max_attempts=3,
     )
 
     assert worker.run_once() == "retry"
     assert worker.run_once() == "retry"
     assert worker.run_once() == "dead-letter"
-    assert len(queue.dead) == 1
-    assert queue.dead[0][0].attempt == 3
+    assert len(queue.dead_letters) == 1
+    assert queue.dead_letters[0]["task"]["attempt"] == 3
     assert not queue.pending
-    assert not queue.ready
