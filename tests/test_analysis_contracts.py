@@ -24,6 +24,38 @@ def test_provenance_and_representation_are_storage_neutral():
     assert representation.provenance_id == provenance.provenance_id
 
 
+def test_provenance_accepts_collection_handoff_fields_without_losing_evidence():
+    provenance = Provenance.model_validate(
+        {
+            "provenance_id": "collection-prov-1",
+            "stage": "collection",
+            "collector": "laclaugpt-data-collection",
+            "collector_version": "0.1.0",
+            "captured_at": "2026-09-17T13:10:05.797645+00:00",
+            "capture_id": "capture-1",
+            "run_id": "ai26-distributed-001",
+            "module": "rss-feedparser",
+            "module_version": "1.2.3",
+            "git_commit": "abc123",
+            "visited_url": "https://www.lesswrong.com/feed.xml?view=frontpage",
+            "api_url": "https://www.lesswrong.com/posts/example",
+            "transformations": ["rss-atom-parse", "map-entry"],
+            "metadata": {"existing": "kept"},
+        }
+    )
+
+    assert provenance.provenance_id == "collection-prov-1"
+    assert provenance.method == "rss-feedparser"
+    assert provenance.created_at.isoformat() == "2026-09-17T13:10:05.797645+00:00"
+    assert provenance.metadata["existing"] == "kept"
+    assert provenance.metadata["collector_version"] == "0.1.0"
+    assert provenance.metadata["capture_id"] == "capture-1"
+    assert provenance.metadata["run_id"] == "ai26-distributed-001"
+    assert provenance.metadata["module"] == "rss-feedparser"
+    assert provenance.metadata["visited_url"].endswith("feed.xml?view=frontpage")
+    assert provenance.metadata["transformations"] == ["rss-atom-parse", "map-entry"]
+
+
 def test_optional_backends_import_without_optional_dependencies():
     for backend in (
         bertopic_backend,
