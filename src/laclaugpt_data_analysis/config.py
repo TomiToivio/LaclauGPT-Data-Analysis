@@ -68,6 +68,8 @@ class Settings:
     s3_endpoint_url: str | None = None
     s3_bucket: str | None = None
     s3_region: str | None = None
+    s3_addressing_style: str = "auto"
+    s3_signature_version: str = "auto"
     s3_prefix_root: str = "projects"
     collection_data_dir: Path | None = None
 
@@ -145,7 +147,10 @@ def load_settings() -> Settings:
         mongo_vector_index=_env("MONGO_VECTOR_INDEX", "laclaugpt_record_embedding") or "laclaugpt_record_embedding",
         object_backend=_env("OBJECT_BACKEND", "local") or "local",
         s3_endpoint_url=_env("S3_ENDPOINT") or _env("S3_ENDPOINT_URL"),
-        s3_bucket=_env("S3_BUCKET"), s3_region=_env("S3_REGION"),
+        s3_bucket=_env("S3_BUCKET"),
+        s3_region=_env("S3_REGION"),
+        s3_addressing_style=_env("S3_ADDRESSING_STYLE", "auto") or "auto",
+        s3_signature_version=_env("S3_SIGNATURE_VERSION", "auto") or "auto",
         s3_prefix_root=_env("S3_PREFIX_ROOT", "projects") or "projects",
         collection_data_dir=Path(collection_data) if collection_data else None,
         rag_enabled=_bool_env("RAG_ENABLED", False),
@@ -174,6 +179,10 @@ def load_settings() -> Settings:
     errors = settings.deployment_profile.validate()
     if settings.storage_backend.casefold() not in {"auto", "mongodb", "csv", "sqlite"}:
         errors.append(f"unsupported storage backend: {settings.storage_backend}")
+    if settings.s3_addressing_style.casefold() not in {"auto", "path", "virtual"}:
+        errors.append(f"unsupported S3 addressing style: {settings.s3_addressing_style}")
+    if settings.s3_signature_version.casefold() not in {"auto", "s3", "s3v2", "v2", "s3v4", "v4"}:
+        errors.append(f"unsupported S3 signature version: {settings.s3_signature_version}")
     if settings.rag_mode.casefold() not in {"none", "vector", "graph", "hybrid"}:
         errors.append(f"unsupported RAG mode: {settings.rag_mode}")
     if settings.rag_backend.casefold() not in {"mongodb", "neo4j", "none"}:
