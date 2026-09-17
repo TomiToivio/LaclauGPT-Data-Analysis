@@ -11,6 +11,7 @@ import subprocess
 from functools import lru_cache
 
 from ..deployment import CLOUD_MODELS, DeploymentProfile
+from .ollama import resolve_llm_host
 
 MODELS: dict[str, str] = {
     "e2b": "gemma4:e2b",
@@ -39,7 +40,7 @@ _TIER_VRAM_GB = {"e2b": 6, "e4b": 8, "12b": 13, "26b": 17, "31b": 20}
 
 @lru_cache(maxsize=1)
 def _loaded_models() -> set[str]:
-    host = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
+    host = (resolve_llm_host() or "http://127.0.0.1:11434").rstrip("/")
     try:
         raw = subprocess.run(
             ["curl", "-s", f"{host}/api/tags"],
