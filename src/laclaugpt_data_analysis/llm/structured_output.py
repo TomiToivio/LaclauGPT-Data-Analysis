@@ -75,6 +75,69 @@ def _schema_example(model_cls: type[T]) -> str:
     return render(schema, 0)
 
 
+def _resolve_schema(node: dict[str, Any], defs: dict[str, Any]) -> dict[str, Any]:
+    """Resolve local Pydantic JSON-schema references and nullable wrappers."""
+    seen: set[str] = set()
+    current = node
+    while "$ref" in current:
+        ref = str(current["$ref"])
+        if ref in seen:
+            return current
+        seen.add(ref)
+        target = defs.get(ref.rsplit("/", 1)[-1])
+        if not isinstance(target, dict):
+            return current
+        current = target
+    branches = current.get("anyOf")
+    if isinstance(branches, list):
+        non_null = [branch for branch in branches if isinstance(branch, dict) and branch.get("type") != "null"]
+        if len(non_null) == 1:
+            return _resolve_schema(non_null[0], defs)
+    return current
+
+
+def _coerce_single_string_lists(
+    value: Any,
+    schema: dict[str, Any],
+    defs: dict[str, Any],
+) -> Any:
+    """Coerce only unambiguous scalar strings into schema-declared ``list[str]`` values.
+
+    LLMs routinely emit a bare string when a list contains one textual value. This
+    normalises that shape before Pydantic validation while leaving dictionaries,
+    numbers, and other genuinely incompatible values untouched so real schema errors
+    still surface and trigger the normal validation-aware retry.
+    """
+    node = _resolve_schema(schema, defs)
+    node_type = node.get("type")
+
+    if node_type == "array":
+        item_schema = node.get("items") or {}
+        resolved_item = _resolve_schema(item_schema, defs) if isinstance(item_schema, dict) else {}
+        if isinstance(value, str) and resolved_item.get("type") == "string":
+            text = value.strip()
+            return [text] if text else []
+        if isinstance(value, list):
+            return [
+                _coerce_single_string_lists(item, item_schema, defs)
+                if isinstance(item_schema, dict)
+                else item
+                for item in value
+            ]
+        return value
+
+    if (node_type == "object" or "properties" in node) and isinstance(value, dict):
+        properties = node.get("properties") or {}
+        return {
+            key: _coerce_single_string_lists(item, properties[key], defs)
+            if key in properties and isinstance(properties[key], dict)
+            else item
+            for key, item in value.items()
+        }
+
+    return value
+
+
 def _validation_feedback(exc: Exception, max_chars: int = 1800) -> str:
     """Compact retry feedback carrying Pydantic/theory validator messages."""
     text = " ".join(str(exc).split())
@@ -95,8 +158,15 @@ def build_structured_prompt(user_prompt: str, model_cls: type[T]) -> str:
 
 
 def parse_structured(content: str, model_cls: type[T]) -> T:
-    """Validate fenced-or-plain JSON content against the Pydantic model."""
-    return model_cls.model_validate_json(strip_code_fences(content))
+    """Validate fenced-or-plain JSON content against the Pydantic model.
+
+    A scalar string is accepted for a schema-declared ``list[str]`` and preserved as
+    a one-element list. Other shape errors remain strict.
+    """
+    payload = json.loads(strip_code_fences(content))
+    schema = model_cls.model_json_schema()
+    normalized = _coerce_single_string_lists(payload, schema, schema.get("$defs", {}))
+    return model_cls.model_validate(normalized)
 
 
 def chat_structured(
