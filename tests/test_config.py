@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from laclaugpt_data_analysis.config import load_settings
 
 
@@ -8,7 +10,7 @@ def test_local_defaults_are_zero_config(monkeypatch):
         "PROFILE", "DATA_BACKEND", "DATABASE_URL", "DATA_DIR", "ARTIFACT_DIR",
         "CACHE_BACKEND", "REDIS_URL", "MONGO_URL", "MONGODB_URI", "MONGO_DATABASE",
         "OBJECT_BACKEND", "S3_ENDPOINT", "S3_ENDPOINT_URL", "S3_BUCKET", "S3_REGION",
-        "COLLECTION_DATA_DIR",
+        "S3_ADDRESSING_STYLE", "S3_SIGNATURE_VERSION", "COLLECTION_DATA_DIR",
     ):
         monkeypatch.delenv(f"LACLAUGPT_{name}", raising=False)
     settings = load_settings()
@@ -20,6 +22,8 @@ def test_local_defaults_are_zero_config(monkeypatch):
     assert settings.collection_data_dir is None
     assert settings.cache_backend == "memory"
     assert settings.object_backend == "local"
+    assert settings.s3_addressing_style == "auto"
+    assert settings.s3_signature_version == "auto"
     assert settings.remote_enabled is False
 
 
@@ -44,6 +48,21 @@ def test_remote_profile_is_environment_driven(monkeypatch):
 def test_umbrella_distributed_environment_names_are_supported(monkeypatch):
     monkeypatch.setenv("LACLAUGPT_MONGODB_URI", "mongodb://example.invalid:27017")
     monkeypatch.setenv("LACLAUGPT_S3_ENDPOINT", "https://object.example.invalid")
+    monkeypatch.setenv("LACLAUGPT_S3_ADDRESSING_STYLE", "virtual")
+    monkeypatch.setenv("LACLAUGPT_S3_SIGNATURE_VERSION", "s3v2")
     settings = load_settings()
     assert settings.mongo_url == "mongodb://example.invalid:27017"
     assert settings.s3_endpoint_url == "https://object.example.invalid"
+    assert settings.s3_addressing_style == "virtual"
+    assert settings.s3_signature_version == "s3v2"
+
+
+def test_invalid_s3_transport_values_fail_configuration(monkeypatch):
+    monkeypatch.setenv("LACLAUGPT_S3_ADDRESSING_STYLE", "maybe")
+    with pytest.raises(ValueError, match="S3 addressing style"):
+        load_settings()
+
+    monkeypatch.setenv("LACLAUGPT_S3_ADDRESSING_STYLE", "auto")
+    monkeypatch.setenv("LACLAUGPT_S3_SIGNATURE_VERSION", "s3v5")
+    with pytest.raises(ValueError, match="S3 signature version"):
+        load_settings()
