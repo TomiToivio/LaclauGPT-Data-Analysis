@@ -184,7 +184,7 @@ class SqliteTaskStore:
 
 
 class MongoTaskStore:
-    """Durable distributed result/failure history with atomic idempotency."""
+    """Durable distributed result/failure history with canonical source identity."""
 
     def __init__(
         self,
@@ -275,6 +275,7 @@ class MongoTaskStore:
             {
                 "project_id": self.project_id,
                 "run_id": self.run_id,
+                "source_url": task.record_ref,
                 "task_id": task.task_id,
                 "idempotency_key": task.idempotency_key,
                 "source_url": task.record_ref,
