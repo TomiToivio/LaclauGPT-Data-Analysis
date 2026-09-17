@@ -10,6 +10,7 @@ from laclaugpt_data_analysis.interchange import (
     write_jsonl,
     write_sqlite,
 )
+from laclaugpt_data_analysis.research_record import ensure_research_layers
 
 FIXTURE = Path(__file__).parent / "fixtures" / "canonical_parity_v1.json"
 
@@ -42,7 +43,7 @@ def test_shared_fixture_normalizes_through_analysis_canonical_path() -> None:
 
 
 def test_shared_fixture_round_trips_local_storage_adapters(tmp_path) -> None:
-    record = record_from_json(FIXTURE.read_text(encoding="utf-8"))
+    record = ensure_research_layers(record_from_json(FIXTURE.read_text(encoding="utf-8")))
     reference = record.canonical_dict()
 
     jsonl = tmp_path / "fixture.jsonl"
