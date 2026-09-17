@@ -143,7 +143,7 @@ def test_expanded_discourse_fields_survive_pipeline_serialization_and_rendering(
     )
 
     assert any(
-        "RETRIEVED CODEBOOK CANDIDATES (NOT EVIDENCE)" in request.user
+        "[CONTEXT: CODEBOOK CANDIDATES, NOT EVIDENCE]" in request.user
         for request in provider.requests
     )
     assert result.source_url == source_url
@@ -198,7 +198,7 @@ def test_text_only_parity_does_not_manufacture_multimodal_evidence():
     provider = ParityProvider()
     result = analyze_record(record, provider=provider, model="fake-model")
     assert all(
-        "RETRIEVED CODEBOOK CANDIDATES (NOT EVIDENCE)" not in request.user
+        "[CONTEXT: CODEBOOK CANDIDATES, NOT EVIDENCE]" not in request.user
         for request in provider.requests
     )
     assert result.content.frames == []
