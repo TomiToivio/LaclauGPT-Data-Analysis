@@ -6,6 +6,8 @@ pluggable so the same pipeline can run on a laptop, CSC Roihu, or a Linux server
 """
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -27,9 +29,16 @@ class PipelineContext(BaseModel):
     memory_context: str = ""
     rag_context: str = ""
     provenance: dict[str, list[str]] = Field(default_factory=dict)
+    config_revision: str = ""
+    codebook_revision: str = ""
+    context_revision: str = ""
+    project_config_revision: str = ""
+    project_config: dict[str, Any] = Field(default_factory=dict)
 
 
 class FrameProposal(BaseModel):
+    """Historical frame schema retained for EP24/generic reproducibility."""
+
     description: str = ""
     framing: list[str] = Field(default_factory=list)
     subjects: list[str] = Field(default_factory=list)
@@ -43,6 +52,23 @@ class FrameProposal(BaseModel):
     uncertainty: list[str] = Field(default_factory=list)
 
 
+class MultimodalFrameProposal(BaseModel):
+    """Evidence-first semiotic frame description used by the AI26 pre-analysis path."""
+
+    material_canvas_organisation: list[str] = Field(default_factory=list)
+    scene_and_participants: list[str] = Field(default_factory=list)
+    subjects: list[str] = Field(default_factory=list)
+    objects: list[str] = Field(default_factory=list)
+    activities: list[str] = Field(default_factory=list)
+    visual_composition: list[str] = Field(default_factory=list)
+    visible_text: list[str] = Field(default_factory=list)
+    usernames: list[str] = Field(default_factory=list)
+    symbols_and_interface_cues: list[str] = Field(default_factory=list)
+    provenance_and_usage_cues: list[str] = Field(default_factory=list)
+    semiotic_contribution: str = ""
+    uncertainty: list[str] = Field(default_factory=list)
+
+
 class EventCandidate(BaseModel):
     description: str = ""
     time: str = ""
@@ -53,6 +79,8 @@ class EventCandidate(BaseModel):
 
 
 class SummaryProposal(BaseModel):
+    """Historical summary schema retained for EP24/generic reproducibility."""
+
     summary: str = ""
     narrative: str = ""
     domain_classification: str = ""
@@ -74,6 +102,39 @@ class SummaryProposal(BaseModel):
     feared_futures: list[str] = Field(default_factory=list)
     sociotechnical_imaginary_candidates: list[str] = Field(default_factory=list)
     ownership_governance_assumptions: list[str] = Field(default_factory=list)
+    uncertainty: list[str] = Field(default_factory=list)
+
+
+class CastellsContextProposal(BaseModel):
+    """Light, evidence-backed Network Society context; not formal SNA."""
+
+    actors_organisations_institutions: list[str] = Field(default_factory=list)
+    networks_relations: list[str] = Field(default_factory=list)
+    flows: list[str] = Field(default_factory=list)
+    nodes_hubs_channels: list[str] = Field(default_factory=list)
+    space_of_places: list[str] = Field(default_factory=list)
+    space_of_flows: list[str] = Field(default_factory=list)
+    power_access_exclusion: list[str] = Field(default_factory=list)
+    uncertainty: list[str] = Field(default_factory=list)
+
+
+class MultimodalSummaryProposal(BaseModel):
+    """AI26 item-level semiotic synthesis before discourse-theoretical analysis."""
+
+    summary: str = ""
+    narrative: str = ""
+    semiotic_modes: list[str] = Field(default_factory=list)
+    cross_modal_relations: list[str] = Field(default_factory=list)
+    difficult_language: list[str] = Field(default_factory=list)
+    topics: list[str] = Field(default_factory=list)
+    entities: list[str] = Field(default_factory=list)
+    sentiment_observations: list[str] = Field(default_factory=list)
+    claims: list[str] = Field(default_factory=list)
+    demands: list[str] = Field(default_factory=list)
+    grievances: list[str] = Field(default_factory=list)
+    event_candidates: list[EventCandidate] = Field(default_factory=list)
+    castells_context: CastellsContextProposal = Field(default_factory=CastellsContextProposal)
+    later_analysis_cues: list[str] = Field(default_factory=list)
     uncertainty: list[str] = Field(default_factory=list)
 
 
@@ -122,6 +183,25 @@ class VectorSink(Protocol):
 
 
 Preprocessor = Callable[[CanonicalRecord], dict[str, Any] | None]
+SummaryResult = SummaryProposal | MultimodalSummaryProposal
+
+
+_AI26_FRAME_NOTE = (
+    "AI26 relevance guide only, not source evidence: when actually present, pay attention to "
+    "AI/LLM interfaces and demos; labs, firms, researchers, investors and policy actors; "
+    "data centres, compute, chips and energy infrastructure; robots/embodied AI; AI-generated "
+    "media; benchmarks, charts and technical diagrams; regulation, safety, labour, automation "
+    "and environmental material; protests, memes, online communities and movement imagery; "
+    "and quoted news/media/platform material. Do not classify ideology at frame level."
+)
+
+_AI26_SUMMARY_NOTE = (
+    "AI26 relevance guide only, not source evidence: keep attention available for AI/LLM "
+    "interfaces, firms/labs/policy actors, compute/data-centre infrastructure, embodied AI, "
+    "generated media, benchmarks/charts, regulation/safety/labour/environmental material, "
+    "protests/memes/online communities and quoted media when they are actually evidenced. "
+    "Keep ideological formations, populism, hegemony, DNA and Critical AI Studies for later stages."
+)
 
 
 def _append_stage(record: CanonicalRecord, name: str, payload: dict[str, Any]) -> None:
@@ -163,6 +243,79 @@ def _envelope(
         context_provenance=context.provenance,
         prompt_version=prompt_version,
     )
+
+
+def _project_config_sha256(context: PipelineContext) -> str:
+    if not context.project_config:
+        return ""
+    payload = json.dumps(context.project_config, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _model_run_metadata(
+    context: PipelineContext,
+    response,
+    prompt_meta: dict[str, Any],
+    *,
+    prompt_version: str,
+    stage: str,
+) -> dict[str, Any]:
+    return {
+        **response.provenance.to_dict(),
+        "prompt_version": prompt_version,
+        "stage": stage,
+        "config_revision": context.config_revision,
+        "codebook_revision": context.codebook_revision,
+        "context_revision": context.context_revision,
+        "project_config_revision": context.project_config_revision,
+        "project_config_sha256": _project_config_sha256(context),
+        **prompt_meta,
+    }
+
+
+def prompt_ids_for_stage(project_profile: str, stage: str) -> tuple[str, str]:
+    """Return exact system/task prompt IDs for a canonical pipeline stage."""
+    profile = project_profile.casefold()
+    if stage == "frame":
+        if profile == "ai26":
+            return "multimodal.system", "multimodal.frame_analysis"
+        return "laclau.system", "laclau.frame_analysis"
+    if stage == "summary":
+        if profile == "ai26":
+            return "multimodal.system", "multimodal.summary_analysis"
+        return "laclau.system", "laclau.summary_analysis"
+    if stage == "discourse":
+        return "laclau.system", "laclau.discourse_analysis"
+    raise ValueError(f"unsupported canonical pipeline stage: {stage}")
+
+
+def _summary_markdown(proposal: MultimodalSummaryProposal) -> str:
+    parts = ["# Multimodal item synthesis", proposal.narrative or proposal.summary]
+    if proposal.cross_modal_relations:
+        parts.extend(("## Cross-modal relations", "\n".join(f"- {x}" for x in proposal.cross_modal_relations)))
+    castells = proposal.castells_context
+    castells_rows = {
+        "Actors / organisations / institutions": castells.actors_organisations_institutions,
+        "Networks / relations": castells.networks_relations,
+        "Flows": castells.flows,
+        "Nodes / hubs / channels": castells.nodes_hubs_channels,
+        "Space of places": castells.space_of_places,
+        "Space of flows": castells.space_of_flows,
+        "Power / access / exclusion": castells.power_access_exclusion,
+    }
+    rendered_castells = [
+        f"**{label}:** " + "; ".join(values)
+        for label, values in castells_rows.items()
+        if values
+    ]
+    if rendered_castells:
+        parts.extend(("## Light Castells sociological context", "\n\n".join(rendered_castells)))
+    if proposal.later_analysis_cues:
+        parts.extend(("## Later analysis cues", "\n".join(f"- {x}" for x in proposal.later_analysis_cues)))
+    if proposal.uncertainty or castells.uncertainty:
+        uncertainty = list(dict.fromkeys(proposal.uncertainty + castells.uncertainty))
+        parts.extend(("## Uncertainty / evidence limits", "\n".join(f"- {x}" for x in uncertainty)))
+    return "\n\n".join(part for part in parts if part).strip()
 
 
 def preprocess_record(
@@ -207,20 +360,20 @@ def analyze_frames(
     """Stage 2: analyse each canonical frame/image independently."""
     if not record.content.frames:
         return record
-    system_resource = load_prompt("laclau.system", version="v1")
-    task_resource = load_prompt("laclau.frame_analysis", version="v1")
+    system_id, task_id = prompt_ids_for_stage(project_profile, "frame")
+    system_resource = load_prompt(system_id, version="v1")
+    task_resource = load_prompt(task_id, version="v1")
+    ai26_multimodal = project_profile.casefold() == "ai26"
     for frame in record.content.frames:
-        if project_profile.lower() == "ep24":
+        if project_profile.casefold() == "ep24":
             profile_note = (
                 "EP24: preserve legacy election visual categories: framing, scene, activity, "
                 "objects, subjects, flags/symbols, platform cues and visible text."
             )
+        elif ai26_multimodal:
+            profile_note = _AI26_FRAME_NOTE
         else:
-            profile_note = (
-                "AI26/generic AI: also inspect labs/models/demos/data centres/robots/LLM "
-                "interfaces, AI-generated media, corporate/policy material, protests, charts "
-                "and candidate future-oriented AI signifiers."
-            )
+            profile_note = "Generic descriptive frame analysis; avoid unsupported identities or claims."
         rendered_task = task_resource.render(
             frame_id=frame.id,
             timestamp_seconds=frame.timestamp_seconds,
@@ -233,9 +386,10 @@ def analyze_frames(
             codebook_entries=codebook_entries,
             prompt_version=prompt_version,
         )
+        proposal_model = MultimodalFrameProposal if ai26_multimodal else FrameProposal
         proposal, response = chat_structured(
             provider,
-            FrameProposal,
+            proposal_model,
             model=model,
             system_prompt=system_resource.text,
             user_prompt=envelope.render(),
@@ -246,6 +400,13 @@ def analyze_frames(
             task_resource,
             rendered=rendered_task,
         )
+        run_meta = _model_run_metadata(
+            context,
+            response,
+            prompt_meta,
+            prompt_version=prompt_version,
+            stage="multimodal_frame" if ai26_multimodal else "frame",
+        )
         record.intermediate.frame_analysis.append(
             {
                 "frame_id": frame.id,
@@ -254,17 +415,10 @@ def analyze_frames(
                 "prompt_version": prompt_version,
                 **prompt_meta,
                 "context_provenance": envelope.provenance_snapshot(),
-                "model_run": {**response.provenance.to_dict(), **prompt_meta},
+                "model_run": run_meta,
             }
         )
-        record.analysis.model_runs.append(
-            {
-                **response.provenance.to_dict(),
-                "prompt_version": prompt_version,
-                "stage": "frame",
-                **prompt_meta,
-            }
-        )
+        record.analysis.model_runs.append(run_meta)
     return record
 
 
@@ -278,17 +432,13 @@ def summarize_record(
     prompt_version: str,
     project_profile: str,
     allow_cloud_fallback: bool | None,
-) -> SummaryProposal:
-    """Stage 3: human-readable summary and generic social-data-science pre-analysis."""
-    project_note = "(none)"
-    if project_profile.lower() == "ai26":
-        project_note = (
-            "For AI26 also record claims about what AI is/can do, desirable and feared futures, "
-            "sociotechnical-imaginary candidates, and ownership/control/governance assumptions. "
-            "A personal prediction is not by itself an institutionally stabilized imaginary."
-        )
-    system_resource = load_prompt("laclau.system", version="v1")
-    task_resource = load_prompt("laclau.summary_analysis", version="v1")
+) -> SummaryResult:
+    """Stage 3: human-readable multimodal synthesis and light social context."""
+    ai26_multimodal = project_profile.casefold() == "ai26"
+    project_note = _AI26_SUMMARY_NOTE if ai26_multimodal else "(none)"
+    system_id, task_id = prompt_ids_for_stage(project_profile, "summary")
+    system_resource = load_prompt(system_id, version="v1")
+    task_resource = load_prompt(task_id, version="v1")
     rendered_task = task_resource.render(project_note=project_note)
     envelope = _envelope(
         record,
@@ -297,54 +447,99 @@ def summarize_record(
         codebook_entries=codebook_entries,
         prompt_version=prompt_version,
     )
+    proposal_model = MultimodalSummaryProposal if ai26_multimodal else SummaryProposal
     proposal, response = chat_structured(
         provider,
-        SummaryProposal,
+        proposal_model,
         model=model,
         system_prompt=system_resource.text,
         user_prompt=envelope.render(),
         allow_cloud_fallback=allow_cloud_fallback,
     )
     prompt_meta = prompt_provenance(system_resource, task_resource, rendered=rendered_task)
+    run_meta = _model_run_metadata(
+        context,
+        response,
+        prompt_meta,
+        prompt_version=prompt_version,
+        stage="multimodal_summary" if ai26_multimodal else "summary",
+    )
     now = datetime.now(UTC).isoformat()
     record.human_readable.summary = proposal.summary
-    record.human_readable.markdown = proposal.narrative or proposal.summary
     record.human_readable.generated_at = now
-    record.human_readable.sections.update(
-        {
-            "narrative": proposal.narrative,
-            "topics": "\n".join(proposal.topics),
-            "entities": "\n".join(proposal.entities),
-            "sentiment": "\n".join(proposal.sentiment_observations),
-            "claims": "\n".join(proposal.claims),
-            "demands": "\n".join(proposal.demands),
-            "grievances": "\n".join(proposal.grievances),
-            "candidate_signifiers": "\n".join(proposal.candidate_signifiers),
-            "sociotechnical_imaginaries": "\n".join(
-                proposal.sociotechnical_imaginary_candidates
-            ),
-        }
-    )
-    _append_stage(
-        record,
-        "summary_preanalysis",
-        {
+
+    if isinstance(proposal, MultimodalSummaryProposal):
+        record.human_readable.markdown = _summary_markdown(proposal)
+        record.human_readable.sections.update(
+            {
+                "multimodal_narrative": proposal.narrative,
+                "semiotic_modes": "\n".join(proposal.semiotic_modes),
+                "cross_modal_relations": "\n".join(proposal.cross_modal_relations),
+                "topics": "\n".join(proposal.topics),
+                "entities": "\n".join(proposal.entities),
+                "sentiment": "\n".join(proposal.sentiment_observations),
+                "claims": "\n".join(proposal.claims),
+                "demands": "\n".join(proposal.demands),
+                "grievances": "\n".join(proposal.grievances),
+                "castells_context": json.dumps(
+                    proposal.castells_context.model_dump(mode="json"),
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ),
+                "later_analysis_cues": "\n".join(proposal.later_analysis_cues),
+            }
+        )
+        synthesis_payload = {
             "created_at": now,
             "prompt_version": prompt_version,
             **prompt_meta,
             "context_provenance": envelope.provenance_snapshot(),
             "proposal": proposal.model_dump(mode="json"),
-            "model_run": {**response.provenance.to_dict(), **prompt_meta},
-        },
-    )
-    record.analysis.model_runs.append(
-        {
-            **response.provenance.to_dict(),
-            "prompt_version": prompt_version,
-            "stage": "summary",
-            **prompt_meta,
+            "model_run": run_meta,
         }
-    )
+        _append_stage(record, "multimodal_synthesis", synthesis_payload)
+        _append_stage(
+            record,
+            "castells_context",
+            {
+                "created_at": now,
+                "prompt_version": prompt_version,
+                **prompt_meta,
+                "context_provenance": envelope.provenance_snapshot(),
+                "proposal": proposal.castells_context.model_dump(mode="json"),
+                "model_run": run_meta,
+            },
+        )
+    else:
+        record.human_readable.markdown = proposal.narrative or proposal.summary
+        record.human_readable.sections.update(
+            {
+                "narrative": proposal.narrative,
+                "topics": "\n".join(proposal.topics),
+                "entities": "\n".join(proposal.entities),
+                "sentiment": "\n".join(proposal.sentiment_observations),
+                "claims": "\n".join(proposal.claims),
+                "demands": "\n".join(proposal.demands),
+                "grievances": "\n".join(proposal.grievances),
+                "candidate_signifiers": "\n".join(proposal.candidate_signifiers),
+                "sociotechnical_imaginaries": "\n".join(
+                    proposal.sociotechnical_imaginary_candidates
+                ),
+            }
+        )
+        _append_stage(
+            record,
+            "summary_preanalysis",
+            {
+                "created_at": now,
+                "prompt_version": prompt_version,
+                **prompt_meta,
+                "context_provenance": envelope.provenance_snapshot(),
+                "proposal": proposal.model_dump(mode="json"),
+                "model_run": run_meta,
+            },
+        )
+    record.analysis.model_runs.append(run_meta)
     return proposal
 
 
@@ -361,15 +556,16 @@ def discourse_analysis(
 ) -> DiscourseProposal:
     """Stage 4: dedicated evidence-first Laclau/Mouffe/Palonen pre-analysis."""
     project_note = "(none)"
-    if project_profile.lower() == "ai26":
+    if project_profile.casefold() == "ai26":
         project_note = (
             "Also identify evidence-supported candidate sociotechnical imaginaries, including "
             "projected social order, feared/desirable futures, agents of change, beneficiaries "
             "or harmed groups, and ownership/control/governance assumptions. Do not claim "
             "stabilization from a single document."
         )
-    system_resource = load_prompt("laclau.system", version="v1")
-    task_resource = load_prompt("laclau.discourse_analysis", version="v1")
+    system_id, task_id = prompt_ids_for_stage(project_profile, "discourse")
+    system_resource = load_prompt(system_id, version="v1")
+    task_resource = load_prompt(task_id, version="v1")
     rendered_task = task_resource.render(project_note=project_note)
     envelope = _envelope(
         record,
@@ -387,6 +583,13 @@ def discourse_analysis(
         allow_cloud_fallback=allow_cloud_fallback,
     )
     prompt_meta = prompt_provenance(system_resource, task_resource, rendered=rendered_task)
+    run_meta = _model_run_metadata(
+        context,
+        response,
+        prompt_meta,
+        prompt_version=prompt_version,
+        stage="discourse",
+    )
     _append_stage(
         record,
         "discourse_analysis",
@@ -396,17 +599,10 @@ def discourse_analysis(
             **prompt_meta,
             "context_provenance": envelope.provenance_snapshot(),
             "proposal": proposal.model_dump(mode="json"),
-            "model_run": {**response.provenance.to_dict(), **prompt_meta},
+            "model_run": run_meta,
         },
     )
-    record.analysis.model_runs.append(
-        {
-            **response.provenance.to_dict(),
-            "prompt_version": prompt_version,
-            "stage": "discourse",
-            **prompt_meta,
-        }
-    )
+    record.analysis.model_runs.append(run_meta)
     return proposal
 
 
@@ -458,7 +654,7 @@ def _objects(
 
 def postprocess_record(
     record: CanonicalRecord,
-    summary: SummaryProposal,
+    summary: SummaryResult,
     discourse: DiscourseProposal,
 ) -> CanonicalRecord:
     """Stage 5: validated stage outputs -> canonical record without discarding prose."""
@@ -469,11 +665,14 @@ def postprocess_record(
         for index, label in enumerate(summary.entities, start=1)
     ]
 
-    summary_signifiers = [
-        DiscursiveElement(label=label, uncertainty="summary-stage candidate")
-        for label in summary.candidate_signifiers
-    ]
-    record.analysis.signifiers = _objects(record, summary_signifiers, "signifier")
+    if isinstance(summary, SummaryProposal):
+        summary_signifiers = [
+            DiscursiveElement(label=label, uncertainty="summary-stage candidate")
+            for label in summary.candidate_signifiers
+        ]
+        record.analysis.signifiers = _objects(record, summary_signifiers, "signifier")
+    else:
+        record.analysis.signifiers = []
     record.analysis.signifiers.extend(
         _objects(record, discourse.floating_signifier_candidates, "floating_signifier")
     )
