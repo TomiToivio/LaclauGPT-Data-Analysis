@@ -19,7 +19,12 @@ PRIVATE_DIR=${LACLAUGPT_PRIVATE_CONFIG_DIR:-"$ROOT_DIR/data/config/ai26"}
 : "${LACLAUGPT_MONGODB_URI:?required}"
 : "${LACLAUGPT_REDIS_URL:?required}"
 : "${LACLAUGPT_S3_BUCKET:?required}"
-: "${OLLAMA_HOST:?required}"
+: "${LACLAUGPT_LLM_ENDPOINT:?required}"
+
+# The project-prefixed endpoint is authoritative for this deployment. Export the
+# same value as OLLAMA_HOST so native Ollama clients and the analysis provider
+# cannot silently talk to different servers.
+export OLLAMA_HOST="$LACLAUGPT_LLM_ENDPOINT"
 
 export LACLAUGPT_PROJECT_ID=ai26
 export LACLAUGPT_MACHINE=linux-server
@@ -29,8 +34,10 @@ export LACLAUGPT_DATA_BACKEND=mongodb
 export LACLAUGPT_CACHE_BACKEND=redis
 export LACLAUGPT_OBJECT_BACKEND=s3
 export LLM_MODE=${LLM_MODE:-local}
+export LACLAUGPT_LLM_MODE=${LACLAUGPT_LLM_MODE:-local-ollama}
 export LLM_ALLOW_CLOUD_FALLBACK=${LLM_ALLOW_CLOUD_FALLBACK:-0}
-export LACLAUGPT_OLLAMA_MODEL=${LACLAUGPT_OLLAMA_MODEL:-gemma4:12b}
+export LACLAUGPT_LLM_MODEL=${LACLAUGPT_LLM_MODEL:-gemma4:12b}
+export LACLAUGPT_OLLAMA_MODEL=${LACLAUGPT_OLLAMA_MODEL:-$LACLAUGPT_LLM_MODEL}
 export LACLAUGPT_PRIVATE_CONFIG_DIR="$PRIVATE_DIR"
 
 exec 9>"$LOCK_FILE"
@@ -40,7 +47,7 @@ if ! flock -n 9; then
 fi
 
 cd "$ROOT_DIR"
-echo "[$(date -Is)] AI26 Laskin analysis start run=$LACLAUGPT_RUN_ID"
+echo "[$(date -Is)] AI26 Laskin analysis start run=$LACLAUGPT_RUN_ID endpoint=$LACLAUGPT_LLM_ENDPOINT"
 laclaugpt-analysis-worker \
   --run-manifest "$PRIVATE_DIR/run-manifest.json" \
   --private-config "$PRIVATE_DIR/analysis.json" \
