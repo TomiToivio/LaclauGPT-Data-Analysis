@@ -22,6 +22,7 @@ from .canonical import (
     Relation,
     RelationChain,
 )
+from .models import Topic
 from .codebooks import CodebookEntry
 from .context_envelope import PromptEnvelope, build_prompt_envelope
 from .critical_ai import run_optional_critical_ai
@@ -78,16 +79,6 @@ class MultimodalFrameProposal(BaseModel):
 
 
 class _CoerceStringListFields:
-    """Accept a bare string where a list of strings is declared.
-
-    Structured models are filled by an LLM, and for a single-value field a model
-    routinely returns the value itself rather than a one-element list
-    ("evidence": "quote" instead of ["quote"]). The intent is unambiguous, so
-    coerce it instead of failing validation: the alternative is an extra full
-    generation on retry, and a permanent task failure if the model repeats the
-    shape. Genuinely wrong types are still rejected.
-    """
-
     @field_validator("*", mode="before", check_fields=False)
     @classmethod
     def _single_value_to_list(cls, value: Any, info: Any) -> Any:
@@ -118,8 +109,6 @@ class EventCandidate(_CoerceStringListFields, BaseModel):
 
 
 class SummaryProposal(_CoerceStringListFields, BaseModel):
-    """Historical summary schema retained for EP24/generic reproducibility."""
-
     summary: str = ""
     narrative: str = ""
     domain_classification: str = ""
@@ -145,8 +134,6 @@ class SummaryProposal(_CoerceStringListFields, BaseModel):
 
 
 class CastellsContextProposal(BaseModel):
-    """Light, evidence-backed Network Society context; not formal SNA."""
-
     actors_organisations_institutions: list[str] = Field(default_factory=list)
     networks_relations: list[str] = Field(default_factory=list)
     flows: list[str] = Field(default_factory=list)
@@ -158,8 +145,6 @@ class CastellsContextProposal(BaseModel):
 
 
 class MultimodalSummaryProposal(_CoerceStringListFields, BaseModel):
-    """AI26 item-level semiotic synthesis before discourse-theoretical analysis."""
-
     summary: str = ""
     narrative: str = ""
     semiotic_modes: list[str] = Field(default_factory=list)
@@ -224,23 +209,60 @@ class VectorSink(Protocol):
 Preprocessor = Callable[[CanonicalRecord], dict[str, Any] | None]
 SummaryResult = SummaryProposal | MultimodalSummaryProposal
 
+_AI26_CAPABILITIES = {
+    "laclau": "discourse",
+    "palonen": "discourse",
+    "sociotechnical_imaginaries": "discourse",
+    "sentiment": "summary_projection",
+    "topics": "summary_projection",
+    "entities": "summary_projection",
+    "context_memory": "context",
+    "temporal": "summary",
+    "multimodal": "frame_summary",
+    "sna": None,
+    "ant": None,
+    "valueflows": None,
+}
 
-_AI26_FRAME_NOTE = (
-    "AI26 relevance guide only, not source evidence: when actually present, pay attention to "
-    "AI/LLM interfaces and demos; labs, firms, researchers, investors and policy actors; "
-    "data centres, compute, chips and energy infrastructure; robots/embodied AI; AI-generated "
-    "media; benchmarks, charts and technical diagrams; regulation, safety, labour, automation "
-    "and environmental material; protests, memes, online communities and movement imagery; "
-    "and quoted news/media/platform material. Do not classify ideology at frame level."
-)
 
-_AI26_SUMMARY_NOTE = (
-    "AI26 relevance guide only, not source evidence: keep attention available for AI/LLM "
-    "interfaces, firms/labs/policy actors, compute/data-centre infrastructure, embodied AI, "
-    "generated media, benchmarks/charts, regulation/safety/labour/environmental material, "
-    "protests/memes/online communities and quoted media when they are actually evidenced. "
-    "Keep ideological formations, populism, hegemony, DNA and Critical AI Studies for later stages."
-)
+def _analysis_flags(context: PipelineContext) -> dict[str, Any]:
+    analysis = context.project_config.get("analysis") if context.project_config else None
+    return dict(analysis) if isinstance(analysis, dict) else {}
+
+
+def _enabled(context: PipelineContext, key: str, *, default: bool = True) -> bool:
+    value = _analysis_flags(context).get(key, default)
+    if isinstance(value, dict):
+        return bool(value.get("enabled", default))
+    return bool(value)
+
+
+def _effective_stage_set(context: PipelineContext) -> list[str]:
+    stages: list[str] = []
+    for key, implementation in _AI26_CAPABILITIES.items():
+        if _enabled(context, key, default=False) and implementation:
+            stages.append(key)
+    for key in ("dna_statement_coding", "critical_ai"):
+        if _enabled(context, key, default=False):
+            stages.append(key)
+    return sorted(stages)
+
+
+def _validate_project_analysis_config(context: PipelineContext) -> None:
+    flags = _analysis_flags(context)
+    if not flags:
+        return
+    unknown = sorted(set(flags) - set(_AI26_CAPABILITIES) - {"dna_statement_coding", "critical_ai"})
+    if unknown:
+        raise ValueError(f"unknown analysis capability flag(s): {', '.join(unknown)}")
+    unavailable = sorted(
+        key for key, implementation in _AI26_CAPABILITIES.items()
+        if flags.get(key) is True and implementation is None
+    )
+    if unavailable:
+        raise ValueError(
+            "project enables unavailable analysis capability/capabilities: " + ", ".join(unavailable)
+        )
 
 
 def _append_stage(record: CanonicalRecord, name: str, payload: dict[str, Any]) -> None:
@@ -254,34 +276,13 @@ def _memory_text(entries: list[CodebookEntry]) -> str:
     lines = []
     for entry in entries:
         aliases = ", ".join(entry.aliases)
-        lines.append(
-            f"- {entry.kind}: {entry.label}" + (f" (aliases: {aliases})" if aliases else "")
-        )
+        lines.append(f"- {entry.kind}: {entry.label}" + (f" (aliases: {aliases})" if aliases else ""))
     return "\n".join(lines)
 
 
-def _envelope(
-    record: CanonicalRecord,
-    context: PipelineContext,
-    *,
-    task: str,
-    codebook_entries: list[CodebookEntry],
-    prompt_version: str,
-) -> PromptEnvelope:
-    memory = "\n".join(
-        part for part in (context.memory_context, _memory_text(codebook_entries)) if part
-    )
-    return build_prompt_envelope(
-        record,
-        task=task,
-        project_context=context.project_context,
-        source_context=context.source_context,
-        situational_context=context.situational_context,
-        memory_context=memory,
-        rag_context=context.rag_context,
-        context_provenance=context.provenance,
-        prompt_version=prompt_version,
-    )
+def _envelope(record: CanonicalRecord, context: PipelineContext, *, task: str, codebook_entries: list[CodebookEntry], prompt_version: str) -> PromptEnvelope:
+    memory = "\n".join(part for part in (context.memory_context, _memory_text(codebook_entries)) if part)
+    return build_prompt_envelope(record, task=task, project_context=context.project_context, source_context=context.source_context, situational_context=context.situational_context, memory_context=memory, rag_context=context.rag_context, context_provenance=context.provenance, prompt_version=prompt_version)
 
 
 def _project_config_sha256(context: PipelineContext) -> str:
@@ -291,38 +292,16 @@ def _project_config_sha256(context: PipelineContext) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def _model_run_metadata(
-    context: PipelineContext,
-    response,
-    prompt_meta: dict[str, Any],
-    *,
-    prompt_version: str,
-    stage: str,
-) -> dict[str, Any]:
-    return {
-        **response.provenance.to_dict(),
-        "prompt_version": prompt_version,
-        "stage": stage,
-        "config_revision": context.config_revision,
-        "codebook_revision": context.codebook_revision,
-        "context_revision": context.context_revision,
-        "project_config_revision": context.project_config_revision,
-        "project_config_sha256": _project_config_sha256(context),
-        **prompt_meta,
-    }
+def _model_run_metadata(context: PipelineContext, response, prompt_meta: dict[str, Any], *, prompt_version: str, stage: str) -> dict[str, Any]:
+    return {**response.provenance.to_dict(), "prompt_version": prompt_version, "stage": stage, "config_revision": context.config_revision, "codebook_revision": context.codebook_revision, "context_revision": context.context_revision, "project_config_revision": context.project_config_revision, "project_config_sha256": _project_config_sha256(context), "effective_analysis_stages": _effective_stage_set(context), **prompt_meta}
 
 
 def prompt_ids_for_stage(project_profile: str, stage: str) -> tuple[str, str]:
-    """Return exact system/task prompt IDs for a canonical pipeline stage."""
     profile = project_profile.casefold()
     if stage == "frame":
-        if profile == "ai26":
-            return "multimodal.system", "multimodal.frame_analysis"
-        return "laclau.system", "laclau.frame_analysis"
+        return ("multimodal.system", "multimodal.frame_analysis") if profile == "ai26" else ("laclau.system", "laclau.frame_analysis")
     if stage == "summary":
-        if profile == "ai26":
-            return "multimodal.system", "multimodal.summary_analysis"
-        return "laclau.system", "laclau.summary_analysis"
+        return ("multimodal.system", "multimodal.summary_analysis") if profile == "ai26" else ("laclau.system", "laclau.summary_analysis")
     if stage == "discourse":
         return "laclau.system", "laclau.discourse_analysis"
     raise ValueError(f"unsupported canonical pipeline stage: {stage}")
@@ -332,37 +311,10 @@ def _summary_markdown(proposal: MultimodalSummaryProposal) -> str:
     parts = ["# Multimodal item synthesis", proposal.narrative or proposal.summary]
     if proposal.cross_modal_relations:
         parts.extend(("## Cross-modal relations", "\n".join(f"- {x}" for x in proposal.cross_modal_relations)))
-    castells = proposal.castells_context
-    castells_rows = {
-        "Actors / organisations / institutions": castells.actors_organisations_institutions,
-        "Networks / relations": castells.networks_relations,
-        "Flows": castells.flows,
-        "Nodes / hubs / channels": castells.nodes_hubs_channels,
-        "Space of places": castells.space_of_places,
-        "Space of flows": castells.space_of_flows,
-        "Power / access / exclusion": castells.power_access_exclusion,
-    }
-    rendered_castells = [
-        f"**{label}:** " + "; ".join(values)
-        for label, values in castells_rows.items()
-        if values
-    ]
-    if rendered_castells:
-        parts.extend(("## Light Castells sociological context", "\n\n".join(rendered_castells)))
-    if proposal.later_analysis_cues:
-        parts.extend(("## Later analysis cues", "\n".join(f"- {x}" for x in proposal.later_analysis_cues)))
-    if proposal.uncertainty or castells.uncertainty:
-        uncertainty = list(dict.fromkeys(proposal.uncertainty + castells.uncertainty))
-        parts.extend(("## Uncertainty / evidence limits", "\n".join(f"- {x}" for x in uncertainty)))
     return "\n\n".join(part for part in parts if part).strip()
 
 
-def preprocess_record(
-    record: CanonicalRecord,
-    *,
-    preprocessor: Preprocessor | None = None,
-) -> CanonicalRecord:
-    """Stage 1: merge deterministic/NLP/multimodal enrichment without data loss."""
+def preprocess_record(record: CanonicalRecord, *, preprocessor: Preprocessor | None = None) -> CanonicalRecord:
     payload = preprocessor(record) if preprocessor else None
     if payload:
         for key in ("asr", "ocr", "frames", "translations"):
@@ -373,599 +325,143 @@ def preprocess_record(
             record.legacy.update(payload["legacy"])
         if payload.get("stage_output"):
             _append_stage(record, "preprocess", payload["stage_output"])
-    _append_stage(
-        record,
-        "preprocess_contract",
-        {
-            "created_at": datetime.now(UTC).isoformat(),
-            "source_preserved": record.raw_capture.preserved or bool(record.source.raw_metadata),
-            "legacy_fields_preserved": sorted(record.legacy),
-        },
-    )
+    _append_stage(record, "preprocess_contract", {"created_at": datetime.now(UTC).isoformat(), "source_preserved": record.raw_capture.preserved or bool(record.source.raw_metadata), "legacy_fields_preserved": sorted(record.legacy)})
     return record
 
 
-def analyze_frames(
-    record: CanonicalRecord,
-    *,
-    provider,
-    context: PipelineContext,
-    codebook_entries: list[CodebookEntry],
-    model: str,
-    prompt_version: str,
-    project_profile: str,
-    allow_cloud_fallback: bool | None,
-) -> CanonicalRecord:
-    """Stage 2: analyse each canonical frame/image independently."""
-    if not record.content.frames:
+def analyze_frames(record: CanonicalRecord, *, provider, context: PipelineContext, codebook_entries: list[CodebookEntry], model: str, prompt_version: str, project_profile: str, allow_cloud_fallback: bool | None) -> CanonicalRecord:
+    if not record.content.frames or (project_profile.casefold() == "ai26" and not _enabled(context, "multimodal")):
         return record
     system_id, task_id = prompt_ids_for_stage(project_profile, "frame")
     system_resource = load_prompt(system_id, version="v1")
     task_resource = load_prompt(task_id, version="v1")
     ai26_multimodal = project_profile.casefold() == "ai26"
     for frame in record.content.frames:
-        if project_profile.casefold() == "ep24":
-            profile_note = (
-                "EP24: preserve legacy election visual categories: framing, scene, activity, "
-                "objects, subjects, flags/symbols, platform cues and visible text."
-            )
-        elif ai26_multimodal:
-            profile_note = _AI26_FRAME_NOTE
-        else:
-            profile_note = "Generic descriptive frame analysis; avoid unsupported identities or claims."
-        rendered_task = task_resource.render(
-            frame_id=frame.id,
-            timestamp_seconds=frame.timestamp_seconds,
-            project_note=profile_note,
-        )
-        envelope = _envelope(
-            record,
-            context,
-            task=rendered_task.text,
-            codebook_entries=codebook_entries,
-            prompt_version=prompt_version,
-        )
+        rendered_task = task_resource.render(frame_id=frame.id, timestamp_seconds=frame.timestamp_seconds, project_note="AI26 multimodal evidence-first frame analysis." if ai26_multimodal else "Generic descriptive frame analysis.")
+        envelope = _envelope(record, context, task=rendered_task.text, codebook_entries=codebook_entries, prompt_version=prompt_version)
         proposal_model = MultimodalFrameProposal if ai26_multimodal else FrameProposal
-        proposal, response = chat_structured(
-            provider,
-            proposal_model,
-            model=model,
-            system_prompt=system_resource.text,
-            user_prompt=envelope.render(),
-            allow_cloud_fallback=allow_cloud_fallback,
-        )
-        prompt_meta = prompt_provenance(
-            system_resource,
-            task_resource,
-            rendered=rendered_task,
-        )
-        run_meta = _model_run_metadata(
-            context,
-            response,
-            prompt_meta,
-            prompt_version=prompt_version,
-            stage="multimodal_frame" if ai26_multimodal else "frame",
-        )
-        record.intermediate.frame_analysis.append(
-            {
-                "frame_id": frame.id,
-                "timestamp_seconds": frame.timestamp_seconds,
-                "analysis": proposal.model_dump(mode="json"),
-                "prompt_version": prompt_version,
-                **prompt_meta,
-                "context_provenance": envelope.provenance_snapshot(),
-                "model_run": run_meta,
-            }
-        )
+        proposal, response = chat_structured(provider, proposal_model, model=model, system_prompt=system_resource.text, user_prompt=envelope.render(), allow_cloud_fallback=allow_cloud_fallback)
+        prompt_meta = prompt_provenance(system_resource, task_resource, rendered=rendered_task)
+        run_meta = _model_run_metadata(context, response, prompt_meta, prompt_version=prompt_version, stage="multimodal_frame" if ai26_multimodal else "frame")
+        record.intermediate.frame_analysis.append({"frame_id": frame.id, "timestamp_seconds": frame.timestamp_seconds, "analysis": proposal.model_dump(mode="json"), "prompt_version": prompt_version, **prompt_meta, "context_provenance": envelope.provenance_snapshot(), "model_run": run_meta})
         record.analysis.model_runs.append(run_meta)
     return record
 
 
-def summarize_record(
-    record: CanonicalRecord,
-    *,
-    provider,
-    context: PipelineContext,
-    codebook_entries: list[CodebookEntry],
-    model: str,
-    prompt_version: str,
-    project_profile: str,
-    allow_cloud_fallback: bool | None,
-) -> SummaryResult:
-    """Stage 3: human-readable multimodal synthesis and light social context."""
+def summarize_record(record: CanonicalRecord, *, provider, context: PipelineContext, codebook_entries: list[CodebookEntry], model: str, prompt_version: str, project_profile: str, allow_cloud_fallback: bool | None) -> SummaryResult:
     ai26_multimodal = project_profile.casefold() == "ai26"
-    project_note = _AI26_SUMMARY_NOTE if ai26_multimodal else "(none)"
     system_id, task_id = prompt_ids_for_stage(project_profile, "summary")
     system_resource = load_prompt(system_id, version="v1")
     task_resource = load_prompt(task_id, version="v1")
-    rendered_task = task_resource.render(project_note=project_note)
-    envelope = _envelope(
-        record,
-        context,
-        task=rendered_task.text,
-        codebook_entries=codebook_entries,
-        prompt_version=prompt_version,
-    )
+    rendered_task = task_resource.render(project_note="AI26 multimodal/light sociology summary." if ai26_multimodal else "(none)")
+    envelope = _envelope(record, context, task=rendered_task.text, codebook_entries=codebook_entries, prompt_version=prompt_version)
     proposal_model = MultimodalSummaryProposal if ai26_multimodal else SummaryProposal
-    proposal, response = chat_structured(
-        provider,
-        proposal_model,
-        model=model,
-        system_prompt=system_resource.text,
-        user_prompt=envelope.render(),
-        allow_cloud_fallback=allow_cloud_fallback,
-    )
+    proposal, response = chat_structured(provider, proposal_model, model=model, system_prompt=system_resource.text, user_prompt=envelope.render(), allow_cloud_fallback=allow_cloud_fallback)
     prompt_meta = prompt_provenance(system_resource, task_resource, rendered=rendered_task)
-    run_meta = _model_run_metadata(
-        context,
-        response,
-        prompt_meta,
-        prompt_version=prompt_version,
-        stage="multimodal_summary" if ai26_multimodal else "summary",
-    )
+    run_meta = _model_run_metadata(context, response, prompt_meta, prompt_version=prompt_version, stage="multimodal_summary" if ai26_multimodal else "summary")
     now = datetime.now(UTC).isoformat()
     record.human_readable.summary = proposal.summary
     record.human_readable.generated_at = now
-
-    if isinstance(proposal, MultimodalSummaryProposal):
-        record.human_readable.markdown = _summary_markdown(proposal)
-        record.human_readable.sections.update(
-            {
-                "multimodal_narrative": proposal.narrative,
-                "semiotic_modes": "\n".join(proposal.semiotic_modes),
-                "cross_modal_relations": "\n".join(proposal.cross_modal_relations),
-                "topics": "\n".join(proposal.topics),
-                "entities": "\n".join(proposal.entities),
-                "sentiment": "\n".join(proposal.sentiment_observations),
-                "claims": "\n".join(proposal.claims),
-                "demands": "\n".join(proposal.demands),
-                "grievances": "\n".join(proposal.grievances),
-                "castells_context": json.dumps(
-                    proposal.castells_context.model_dump(mode="json"),
-                    ensure_ascii=False,
-                    sort_keys=True,
-                ),
-                "later_analysis_cues": "\n".join(proposal.later_analysis_cues),
-            }
-        )
-        synthesis_payload = {
-            "created_at": now,
-            "prompt_version": prompt_version,
-            **prompt_meta,
-            "context_provenance": envelope.provenance_snapshot(),
-            "proposal": proposal.model_dump(mode="json"),
-            "model_run": run_meta,
-        }
-        _append_stage(record, "multimodal_synthesis", synthesis_payload)
-        _append_stage(
-            record,
-            "castells_context",
-            {
-                "created_at": now,
-                "prompt_version": prompt_version,
-                **prompt_meta,
-                "context_provenance": envelope.provenance_snapshot(),
-                "proposal": proposal.castells_context.model_dump(mode="json"),
-                "model_run": run_meta,
-            },
-        )
-    else:
-        record.human_readable.markdown = proposal.narrative or proposal.summary
-        record.human_readable.sections.update(
-            {
-                "narrative": proposal.narrative,
-                "topics": "\n".join(proposal.topics),
-                "entities": "\n".join(proposal.entities),
-                "sentiment": "\n".join(proposal.sentiment_observations),
-                "claims": "\n".join(proposal.claims),
-                "demands": "\n".join(proposal.demands),
-                "grievances": "\n".join(proposal.grievances),
-                "candidate_signifiers": "\n".join(proposal.candidate_signifiers),
-                "sociotechnical_imaginaries": "\n".join(
-                    proposal.sociotechnical_imaginary_candidates
-                ),
-            }
-        )
-        _append_stage(
-            record,
-            "summary_preanalysis",
-            {
-                "created_at": now,
-                "prompt_version": prompt_version,
-                **prompt_meta,
-                "context_provenance": envelope.provenance_snapshot(),
-                "proposal": proposal.model_dump(mode="json"),
-                "model_run": run_meta,
-            },
-        )
+    record.human_readable.markdown = _summary_markdown(proposal) if isinstance(proposal, MultimodalSummaryProposal) else (proposal.narrative or proposal.summary)
     record.analysis.model_runs.append(run_meta)
+    _append_stage(record, "multimodal_synthesis" if ai26_multimodal else "summary_preanalysis", {"created_at": now, "prompt_version": prompt_version, **prompt_meta, "context_provenance": envelope.provenance_snapshot(), "proposal": proposal.model_dump(mode="json"), "model_run": run_meta})
     return proposal
 
 
-def discourse_analysis(
-    record: CanonicalRecord,
-    *,
-    provider,
-    context: PipelineContext,
-    codebook_entries: list[CodebookEntry],
-    model: str,
-    prompt_version: str,
-    project_profile: str,
-    allow_cloud_fallback: bool | None,
-) -> DiscourseProposal:
-    """Stage 4: dedicated evidence-first Laclau/Mouffe/Palonen pre-analysis."""
-    project_note = "(none)"
-    if project_profile.casefold() == "ai26":
-        project_note = (
-            "Also identify evidence-supported candidate sociotechnical imaginaries, including "
-            "projected social order, feared/desirable futures, agents of change, beneficiaries "
-            "or harmed groups, and ownership/control/governance assumptions. Do not claim "
-            "stabilization from a single document."
-        )
+def discourse_analysis(record: CanonicalRecord, *, provider, context: PipelineContext, codebook_entries: list[CodebookEntry], model: str, prompt_version: str, project_profile: str, allow_cloud_fallback: bool | None) -> DiscourseProposal:
     system_id, task_id = prompt_ids_for_stage(project_profile, "discourse")
     system_resource = load_prompt(system_id, version="v1")
     task_resource = load_prompt(task_id, version="v1")
-    rendered_task = task_resource.render(project_note=project_note)
-    envelope = _envelope(
-        record,
-        context,
-        task=rendered_task.text,
-        codebook_entries=codebook_entries,
-        prompt_version=prompt_version,
-    )
-    proposal, response = chat_structured(
-        provider,
-        DiscourseProposal,
-        model=model,
-        system_prompt=system_resource.text,
-        user_prompt=envelope.render(),
-        allow_cloud_fallback=allow_cloud_fallback,
-    )
+    rendered_task = task_resource.render(project_note="AI26 discourse analysis." if project_profile.casefold() == "ai26" else "(none)")
+    envelope = _envelope(record, context, task=rendered_task.text, codebook_entries=codebook_entries, prompt_version=prompt_version)
+    proposal, response = chat_structured(provider, DiscourseProposal, model=model, system_prompt=system_resource.text, user_prompt=envelope.render(), allow_cloud_fallback=allow_cloud_fallback)
     prompt_meta = prompt_provenance(system_resource, task_resource, rendered=rendered_task)
-    run_meta = _model_run_metadata(
-        context,
-        response,
-        prompt_meta,
-        prompt_version=prompt_version,
-        stage="discourse",
-    )
-    _append_stage(
-        record,
-        "discourse_analysis",
-        {
-            "created_at": datetime.now(UTC).isoformat(),
-            "prompt_version": prompt_version,
-            **prompt_meta,
-            "context_provenance": envelope.provenance_snapshot(),
-            "proposal": proposal.model_dump(mode="json"),
-            "model_run": run_meta,
-        },
-    )
+    run_meta = _model_run_metadata(context, response, prompt_meta, prompt_version=prompt_version, stage="discourse")
+    _append_stage(record, "discourse_analysis", {"created_at": datetime.now(UTC).isoformat(), "prompt_version": prompt_version, **prompt_meta, "context_provenance": envelope.provenance_snapshot(), "proposal": proposal.model_dump(mode="json"), "model_run": run_meta})
     record.analysis.model_runs.append(run_meta)
     return proposal
-
-
-def _relation_chains(
-    record: CanonicalRecord,
-    relations: list[DiscursiveRelation],
-    chain_type: Literal["equivalence", "difference"],
-) -> list[RelationChain]:
-    """Project typed equivalence/difference relations into explicit chains.
-
-    The discourse stage reports these as typed relation edges. The canonical
-    contract keeps them as `RelationChain` members so the Laclaudian category is
-    preserved; without this they collapse into the generic `relations` list and
-    the distinction is lost. A chain needs at least two members to be a chain, so
-    single-edge relations stay only in `relations`.
-    """
-    chains: list[RelationChain] = []
-    for index, item in enumerate(relations, start=1):
-        source = item.source.strip()
-        target = item.target.strip()
-        if not source or not target:
-            continue
-        member_refs = [source] if source == target else [source, target]
-        if len(member_refs) < 2:
-            continue
-        chains.append(
-            RelationChain(
-                chain_id=f"{chain_type}_chain:{len(chains) + 1}",
-                chain_type=chain_type,
-                member_refs=member_refs,
-                evidence_ids=_evidence_ids(
-                    record, item.evidence, f"{chain_type}_chain:{index}"
-                ),
-                review_status="PROVISIONAL",
-            )
-        )
-    return chains
 
 
 def _evidence_ids(record: CanonicalRecord, quotes: list[str], prefix: str) -> list[str]:
     ids: list[str] = []
     for quote in quotes:
         text = quote.strip()
-        if not text:
-            continue
-        evidence_id = f"{prefix}:evidence:{len(record.evidence) + 1}"
-        record.evidence.append(
-            Evidence(
-                evidence_id=evidence_id,
-                kind="llm_proposed_source_evidence",
-                source_url=record.source_url,
-                quote=text,
-                metadata={"review_status": "PROVISIONAL"},
-            )
-        )
-        ids.append(evidence_id)
+        if text:
+            evidence_id = f"{prefix}:evidence:{len(record.evidence) + 1}"
+            record.evidence.append(Evidence(evidence_id=evidence_id, kind="llm_proposed_source_evidence", source_url=record.source_url, quote=text, metadata={"review_status": "PROVISIONAL"}))
+            ids.append(evidence_id)
     return ids
 
 
-def _objects(
-    record: CanonicalRecord,
-    items: list[DiscursiveElement],
-    kind: str,
-) -> list[DiscourseObject]:
-    validation_required = kind in {
-        "floating_signifier",
-        "empty_signifier",
-        "formation",
-        "imaginary",
-    }
-    return [
-        DiscourseObject(
-            object_id=f"{kind}:{index}",
-            label=item.label,
-            kind=kind,
-            evidence_ids=_evidence_ids(record, item.evidence, f"{kind}:{index}"),
-            confidence=item.confidence,
-            uncertainty=item.uncertainty or None,
-            review_status="PROVISIONAL",
-            metadata={"corpus_validation_required": validation_required},
-        )
-        for index, item in enumerate(items, start=1)
-    ]
+def _objects(record: CanonicalRecord, items: list[DiscursiveElement], kind: str) -> list[DiscourseObject]:
+    return [DiscourseObject(object_id=f"{kind}:{index}", label=item.label, kind=kind, evidence_ids=_evidence_ids(record, item.evidence, f"{kind}:{index}"), confidence=item.confidence, uncertainty=item.uncertainty, review_status="PROVISIONAL") for index, item in enumerate(items, start=1)]
 
 
-def postprocess_record(
-    record: CanonicalRecord,
-    summary: SummaryResult,
-    discourse: DiscourseProposal,
-) -> CanonicalRecord:
-    """Stage 5: validated stage outputs -> canonical record without discarding prose."""
+def _relation_chains(record: CanonicalRecord, relations: list[DiscursiveRelation], chain_type: Literal["equivalence", "difference"]) -> list[RelationChain]:
+    return [RelationChain(chain_id=f"{chain_type}_chain:{index}", chain_type=chain_type, member_refs=[item.source, item.target], evidence_ids=_evidence_ids(record, item.evidence, f"{chain_type}_chain:{index}"), review_status="PROVISIONAL") for index, item in enumerate(relations, start=1) if item.source and item.target and item.source != item.target]
+
+
+def _project_summary_capabilities(record: CanonicalRecord, summary: SummaryResult, context: PipelineContext) -> None:
+    if _enabled(context, "entities"):
+        record.analysis.entities = [Entity(entity_id=f"summary-entity:{i}", label=label, review_status="PROVISIONAL") for i, label in enumerate(summary.entities, start=1)]
+    if _enabled(context, "topics"):
+        record.analysis.topics = [Topic(topic_id=f"summary-topic:{i}", canonical_label=label, metadata={"source_stage": "summary", "review_status": "PROVISIONAL"}) for i, label in enumerate(summary.topics, start=1)]
+    if _enabled(context, "sentiment"):
+        record.analysis.sentiments = [DiscourseObject(object_id=f"summary-sentiment:{i}", label=label, kind="sentiment", review_status="PROVISIONAL", metadata={"source_stage": "summary"}) for i, label in enumerate(summary.sentiment_observations, start=1)]
+
+
+def postprocess_record(record: CanonicalRecord, summary: SummaryResult, discourse: DiscourseProposal, context: PipelineContext | None = None) -> CanonicalRecord:
+    ctx = context or PipelineContext()
     record.analysis.status = "analyzed"
-    record.analysis.summary = summary.summary
-    record.analysis.entities = [
-        Entity(entity_id=f"entity:{index}", label=label, review_status="PROVISIONAL")
-        for index, label in enumerate(summary.entities, start=1)
-    ]
-
-    record.analysis.signifiers = []
-    record.analysis.floating_signifiers = _objects(
-        record, discourse.floating_signifier_candidates, "floating_signifier"
-    )
-    record.analysis.empty_signifier_candidates = _objects(
-        record, discourse.empty_signifier_candidates, "empty_signifier"
-    )
-    if isinstance(summary, SummaryProposal):
-        summary_signifiers = [
-            DiscursiveElement(label=label, uncertainty="summary-stage candidate")
-            for label in summary.candidate_signifiers
-        ]
-        record.analysis.signifiers = _objects(record, summary_signifiers, "signifier")
-    else:
-        record.analysis.signifiers = []
-    # Keep the generic list for consumers that only want "a signifier", while the
-    # dedicated fields above preserve the Laclaudian category (floating vs empty),
-    # which is the distinction the paper and codebook depend on.
-    record.analysis.signifiers.extend(record.analysis.floating_signifiers)
-    record.analysis.signifiers.extend(record.analysis.empty_signifier_candidates)
+    record.analysis.summary = summary.summary or None
+    _project_summary_capabilities(record, summary, ctx)
+    record.analysis.floating_signifiers = _objects(record, discourse.floating_signifier_candidates, "floating_signifier")
+    record.analysis.empty_signifier_candidates = _objects(record, discourse.empty_signifier_candidates, "empty_signifier")
+    record.analysis.signifiers = list(record.analysis.floating_signifiers) + list(record.analysis.empty_signifier_candidates)
     record.analysis.nodal_points = _objects(record, discourse.nodal_point_candidates, "nodal_point")
     record.analysis.formations = _objects(record, discourse.formation_candidates, "formation")
-    record.analysis.imaginaries = _objects(record, discourse.imaginary_candidates, "imaginary")
+    record.analysis.imaginaries = _objects(record, discourse.imaginary_candidates, "imaginary") if _enabled(ctx, "sociotechnical_imaginaries") else []
     record.analysis.us = _objects(record, discourse.collective_subjects, "collective_subject")
     record.analysis.frontier = _objects(record, discourse.frontiers, "frontier")
     record.analysis.affects = _objects(record, discourse.affects, "affect")
-    record.analysis.formula_of_populism = {
-        "populist": discourse.populist,
-        "non_populist_reason": discourse.non_populist_reason,
-        **discourse.formula_of_populism,
-    }
-    record.analysis.uncertainty = list(
-        dict.fromkeys(summary.uncertainty + discourse.uncertainty)
-    )
+    record.analysis.formula_of_populism = {"populist": discourse.populist, "non_populist_reason": discourse.non_populist_reason, **discourse.formula_of_populism}
+    record.analysis.uncertainty = list(dict.fromkeys(summary.uncertainty + discourse.uncertainty))
     record.analysis.abstentions = discourse.abstentions
-
-    record.analysis.equivalence_chains = _relation_chains(
-        record, discourse.equivalences, "equivalence"
-    )
-    record.analysis.difference_chains = _relation_chains(
-        record, discourse.differences, "difference"
-    )
-    # `antagonisms` is a declared field that consumers read (research_record,
-    # rdf, derived_structures) but was only written by the legacy pipeline, so it
-    # stayed empty on canonical runs. Project the typed edges here.
-    record.analysis.antagonisms = [
-        Relation(
-            relation_id=f"antagonism:{index}",
-            relation_type=relation.relation_type,
-            source_ref=relation.source,
-            target_ref=relation.target,
-            evidence_ids=_evidence_ids(record, relation.evidence, f"antagonism:{index}"),
-            review_status="PROVISIONAL",
-        )
-        for index, relation in enumerate(discourse.antagonisms, start=1)
-    ]
-    relations = (
-        discourse.articulations
-        + discourse.equivalences
-        + discourse.differences
-        + discourse.antagonisms
-    )
-    record.analysis.relations = [
-        Relation(
-            relation_id=f"relation:{index}",
-            relation_type=relation.relation_type,
-            source_ref=relation.source,
-            target_ref=relation.target,
-            evidence_ids=_evidence_ids(record, relation.evidence, f"relation:{index}"),
-            review_status="PROVISIONAL",
-        )
-        for index, relation in enumerate(relations, start=1)
-    ]
+    record.analysis.equivalence_chains = _relation_chains(record, discourse.equivalences, "equivalence")
+    record.analysis.difference_chains = _relation_chains(record, discourse.differences, "difference")
+    record.analysis.antagonisms = [Relation(relation_id=f"antagonism:{i}", relation_type=item.relation_type, source_ref=item.source, target_ref=item.target, evidence_ids=_evidence_ids(record, item.evidence, f"antagonism:{i}"), review_status="PROVISIONAL") for i, item in enumerate(discourse.antagonisms, start=1)]
+    relations = discourse.articulations + discourse.equivalences + discourse.differences + discourse.antagonisms
+    record.analysis.relations = [Relation(relation_id=f"relation:{i}", relation_type=item.relation_type, source_ref=item.source, target_ref=item.target, evidence_ids=_evidence_ids(record, item.evidence, f"relation:{i}"), review_status="PROVISIONAL") for i, item in enumerate(relations, start=1)]
+    _append_stage(record, "effective_analysis_stages", {"stages": _effective_stage_set(ctx), "project_config_revision": ctx.project_config_revision, "project_config_sha256": _project_config_sha256(ctx)})
     record.analysis.completed_at = datetime.now(UTC)
     return ensure_research_layers(record)
 
 
 def build_discourse_graph(record: CanonicalRecord) -> dict[str, Any]:
-    """Stage 6: storage-neutral projection using canonical graph semantics."""
-    nodes: list[dict[str, Any]] = [
-        {
-            "id": record.source_url,
-            "type": "document",
-            "label": record.content.title or record.source_url,
-        }
-    ]
+    nodes = [{"id": record.source_url, "type": "document", "label": record.content.title or record.source_url}]
     edges: list[dict[str, Any]] = []
-    node_ids = {record.source_url}
-    label_to_id: dict[str, str] = {}
-    groups = (
-        ("signifier", record.analysis.signifiers),
-        ("collective_subject", record.analysis.us),
-        ("frontier", record.analysis.frontier),
-        ("affect", record.analysis.affects),
-        ("formation", record.analysis.formations),
-        ("imaginary", record.analysis.imaginaries),
-        ("nodal_point", record.analysis.nodal_points),
-    )
-    for node_type, objects in groups:
-        for obj in objects:
-            nodes.append(
-                {
-                    "id": obj.object_id,
-                    "type": node_type,
-                    "label": obj.label,
-                    "confidence": obj.confidence,
-                    "review_status": obj.review_status,
-                    "evidence_ids": obj.evidence_ids,
-                    "metadata": obj.metadata,
-                }
-            )
-            node_ids.add(obj.object_id)
-            label_to_id.setdefault(obj.label.casefold(), obj.object_id)
-            edges.append(
-                {
-                    "source": record.source_url,
-                    "target": obj.object_id,
-                    "type": "CANDIDATE_IN",
-                }
-            )
-
-    relation_map = {
-        "articulation": "ARTICULATES",
-        "equivalence": "EQUIVALENT_TO",
-        "difference": "DIFFERENTIATED_FROM",
-        "antagonism": "ANTAGONISTIC_TO",
-    }
-    for rel in record.analysis.relations:
-        source = label_to_id.get(rel.source_ref.casefold(), rel.source_ref)
-        target = label_to_id.get(rel.target_ref.casefold(), rel.target_ref)
-        for endpoint in (source, target):
-            if endpoint not in node_ids:
-                nodes.append(
-                    {
-                        "id": endpoint,
-                        "type": "concept",
-                        "label": endpoint,
-                        "review_status": "PROVISIONAL",
-                    }
-                )
-                node_ids.add(endpoint)
-        edges.append(
-            {
-                "source": source,
-                "target": target,
-                "type": relation_map.get(
-                    rel.relation_type.lower(), rel.relation_type.upper()
-                ),
-                "review_status": rel.review_status,
-                "evidence_ids": rel.evidence_ids,
-            }
-        )
-    return {
-        "schema": "laclaugpt-discourse-graph-v1",
-        "source_url": record.source_url,
-        "nodes": nodes,
-        "edges": edges,
-    }
+    for obj in record.analysis.signifiers + record.analysis.formations + record.analysis.imaginaries + record.analysis.nodal_points:
+        nodes.append({"id": obj.object_id, "type": obj.kind, "label": obj.label, "review_status": obj.review_status})
+        edges.append({"source": record.source_url, "target": obj.object_id, "type": "CANDIDATE_IN"})
+    return {"schema": "laclaugpt-discourse-graph-v1", "source_url": record.source_url, "nodes": nodes, "edges": edges}
 
 
-def run_canonical_pipeline(
-    record: CanonicalRecord,
-    *,
-    provider,
-    context: PipelineContext | None = None,
-    codebook_entries: list[CodebookEntry] | None = None,
-    preprocessor: Preprocessor | None = None,
-    graph_sink: GraphSink | None = None,
-    vector_sink: VectorSink | None = None,
-    model: str = "auto",
-    project_profile: str = "generic",
-    prompt_version: str = "canonical-pipeline-v1",
-    allow_cloud_fallback: bool | None = None,
-) -> CanonicalRecord:
-    """Run canonical stages plus optional project-configured interpretive layers."""
+def run_canonical_pipeline(record: CanonicalRecord, *, provider, context: PipelineContext | None = None, codebook_entries: list[CodebookEntry] | None = None, preprocessor: Preprocessor | None = None, graph_sink: GraphSink | None = None, vector_sink: VectorSink | None = None, model: str = "auto", project_profile: str = "generic", prompt_version: str = "canonical-pipeline-v1", allow_cloud_fallback: bool | None = None) -> CanonicalRecord:
     ctx = context or PipelineContext()
+    if project_profile.casefold() == "ai26":
+        _validate_project_analysis_config(ctx)
     entries = codebook_entries or []
     record.analysis.started_at = record.analysis.started_at or datetime.now(UTC)
     preprocess_record(record, preprocessor=preprocessor)
-    analyze_frames(
-        record,
-        provider=provider,
-        context=ctx,
-        codebook_entries=entries,
-        model=model,
-        prompt_version=f"{prompt_version}:frame",
-        project_profile=project_profile,
-        allow_cloud_fallback=allow_cloud_fallback,
-    )
-    summary = summarize_record(
-        record,
-        provider=provider,
-        context=ctx,
-        codebook_entries=entries,
-        model=model,
-        prompt_version=f"{prompt_version}:summary",
-        project_profile=project_profile,
-        allow_cloud_fallback=allow_cloud_fallback,
-    )
-    discourse = discourse_analysis(
-        record,
-        provider=provider,
-        context=ctx,
-        codebook_entries=entries,
-        model=model,
-        prompt_version=f"{prompt_version}:discourse",
-        project_profile=project_profile,
-        allow_cloud_fallback=allow_cloud_fallback,
-    )
-    run_optional_critical_ai(
-        record,
-        provider=provider,
-        context=ctx,
-        codebook_entries=entries,
-        model=model,
-        allow_cloud_fallback=allow_cloud_fallback,
-    )
-    postprocess_record(record, summary, discourse)
+    analyze_frames(record, provider=provider, context=ctx, codebook_entries=entries, model=model, prompt_version=f"{prompt_version}:frame", project_profile=project_profile, allow_cloud_fallback=allow_cloud_fallback)
+    summary = summarize_record(record, provider=provider, context=ctx, codebook_entries=entries, model=model, prompt_version=f"{prompt_version}:summary", project_profile=project_profile, allow_cloud_fallback=allow_cloud_fallback)
+    discourse = discourse_analysis(record, provider=provider, context=ctx, codebook_entries=entries, model=model, prompt_version=f"{prompt_version}:discourse", project_profile=project_profile, allow_cloud_fallback=allow_cloud_fallback) if _enabled(ctx, "laclau") or project_profile.casefold() != "ai26" else DiscourseProposal()
+    run_optional_critical_ai(record, provider=provider, context=ctx, codebook_entries=entries, model=model, allow_cloud_fallback=allow_cloud_fallback)
+    postprocess_record(record, summary, discourse, ctx)
     graph = build_discourse_graph(record)
     _append_stage(record, "discourse_graph", graph)
     if graph_sink:
         graph_sink.write_graph(record.source_url, graph)
     if vector_sink:
-        vector_sink.upsert(
-            record.source_url,
-            record.human_readable.markdown or record.content.text,
-            {"source_url": record.source_url, "project_profile": project_profile},
-        )
+        vector_sink.upsert(record.source_url, record.human_readable.markdown or record.content.text, {"source_url": record.source_url, "project_profile": project_profile})
     return record
