@@ -1,0 +1,14 @@
+# Optional DNA-compatible statement coding for AI26.
+# Disabled by default in application code. This example shows explicit opt-in.
+analysis:
+  dna_statement_coding:
+    enabled: true
+    provider: ollama
+    model: gemma4:12b
+    prompt_version: v1
+    concept_mode: codebook_or_provisional
+    require_binary_agreement: false
+    duplicate_policy: preserve
+    include_prior_analysis: true
+    include_rag: true
+    include_periodic_context: false
