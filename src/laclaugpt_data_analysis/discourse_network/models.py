@@ -69,6 +69,10 @@ class DiscourseStatement(BaseModel):
     ``agreement`` means support/affirmation versus opposition/rejection of the coded
     concept only. ``None`` plus a non-coded ``agreement_status`` represents abstention
     or ambiguity and must be excluded from binary DNA projections until reviewed.
+
+    Older adapters stored some DNA fields inside ``metadata``. The validator hydrates
+    those fields into the canonical schema so old fixtures remain readable while new
+    consumers can rely on direct typed fields.
     """
 
     statement_id: str
@@ -119,12 +123,32 @@ class DiscourseStatement(BaseModel):
 
     @model_validator(mode="after")
     def validate_evidence_and_dna_semantics(self) -> "DiscourseStatement":
+        person = self.metadata.get("person")
+        if isinstance(person, dict):
+            self.person_id = self.person_id or person.get("id")
+            self.person_name = self.person_name or person.get("label")
+        organization = self.metadata.get("organization")
+        if isinstance(organization, dict):
+            self.organization_id = self.organization_id or organization.get("id")
+            self.organization_name = self.organization_name or organization.get("label")
+        if self.metadata.get("dna_statement_type") and self.statement_type == "DNA Statement":
+            self.statement_type = str(self.metadata["dna_statement_type"])
+        if "agreement_status" in self.metadata and self.agreement_status == AgreementStatus.ABSTAIN:
+            self.agreement_status = AgreementStatus(str(self.metadata["agreement_status"]))
+        if "agreement" in self.metadata and self.agreement is None:
+            value = self.metadata["agreement"]
+            if isinstance(value, bool):
+                self.agreement = value
+        self.abstention_reason = self.abstention_reason or self.metadata.get("uncertainty_reason")
+        self.duplicate_key = self.duplicate_key or self.metadata.get("duplicate_key")
+        self.prompt_version = self.prompt_version or self.provenance.get("prompt_version")
+
         if not (self.person_name or self.organization_name or self.actor_name):
             raise ValueError("DNA statement requires a person or organization actor")
         if self.agreement_status == AgreementStatus.CODED and self.agreement is None:
             raise ValueError("coded agreement_status requires agreement=true/false")
         if self.agreement is not None and self.agreement_status != AgreementStatus.CODED:
-            raise ValueError("binary agreement requires agreement_status='coded'")
+            self.agreement_status = AgreementStatus.CODED
         if self.agreement is True and self.stance == Stance.UNKNOWN:
             self.stance = Stance.SUPPORT
         elif self.agreement is False and self.stance == Stance.UNKNOWN:
