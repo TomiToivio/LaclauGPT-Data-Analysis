@@ -328,8 +328,6 @@ class RedisStreamQueue:
         return ClaimedTask(str(message_id), TaskEnvelope.from_dict(json.loads(values["task"])))
 
     def reclaim(self, *, min_idle_ms: int) -> ClaimedTask | None:
-        # Prefer XAUTOCLAIM where available, but retain an XPENDING/XCLAIM
-        # fallback for older Redis servers and redis-py clients.
         try:
             response = self.redis.xautoclaim(
                 self.stream,
@@ -472,8 +470,8 @@ def redis_queue_from_settings(
 def durable_store_from_settings(settings: Settings, *, run_id: str) -> MongoTaskStore:
     namespace = settings.distributed_namespace
     return MongoTaskStore(
-        settings.mongodb_url,
-        database=settings.mongodb_database,
+        settings.mongo_url,
+        database=settings.mongo_database,
         result_collection=namespace.mongo_collection("analysis_results"),
         failure_collection=namespace.mongo_collection("analysis_failures"),
         project_id=settings.project_id,
