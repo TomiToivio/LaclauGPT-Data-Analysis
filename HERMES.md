@@ -21,6 +21,7 @@ Rules:
 - distributed operation uses MongoDB + Redis + S3/CSC Allas through existing adapters;
 - Roihu/Slurm, Laskin/cron and localhost are execution profiles, not separate scientific pipelines;
 - agent-triggered work carries `caller=hermes-agent` and full model/config/run provenance;
+- run the offline cross-module contract check (`python tools/verify_contracts.py`) when a change touches the record model, adapters or storage selector;
 - run repository quality gates before proposing merges.
 
 See `docs/DEPLOYMENT_AND_HERMES.md` and the repository skill for operational details.
