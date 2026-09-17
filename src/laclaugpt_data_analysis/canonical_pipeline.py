@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from .canonical import CanonicalRecord, DiscourseObject, Entity, Evidence, Relation
 from .codebooks import CodebookEntry
 from .context_envelope import PromptEnvelope, build_prompt_envelope
+from .critical_ai import run_optional_critical_ai
 from .llm.structured_output import chat_structured
 from .prompt_library import load_prompt, prompt_provenance
 from .research_record import ensure_research_layers
@@ -813,7 +814,7 @@ def run_canonical_pipeline(
     prompt_version: str = "canonical-pipeline-v1",
     allow_cloud_fallback: bool | None = None,
 ) -> CanonicalRecord:
-    """Run stages 1-6; aggregate reports and exports operate on the resulting corpus."""
+    """Run canonical stages plus optional project-configured interpretive layers."""
     ctx = context or PipelineContext()
     entries = codebook_entries or []
     record.analysis.started_at = record.analysis.started_at or datetime.now(UTC)
@@ -846,6 +847,14 @@ def run_canonical_pipeline(
         model=model,
         prompt_version=f"{prompt_version}:discourse",
         project_profile=project_profile,
+        allow_cloud_fallback=allow_cloud_fallback,
+    )
+    run_optional_critical_ai(
+        record,
+        provider=provider,
+        context=ctx,
+        codebook_entries=entries,
+        model=model,
         allow_cloud_fallback=allow_cloud_fallback,
     )
     postprocess_record(record, summary, discourse)
