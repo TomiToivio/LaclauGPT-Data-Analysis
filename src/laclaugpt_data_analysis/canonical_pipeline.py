@@ -22,11 +22,11 @@ from .canonical import (
     Relation,
     RelationChain,
 )
-from .models import Topic
 from .codebooks import CodebookEntry
 from .context_envelope import PromptEnvelope, build_prompt_envelope
 from .critical_ai import run_optional_critical_ai
 from .llm.structured_output import chat_structured
+from .models import Topic
 from .prompt_library import load_prompt, prompt_provenance
 from .research_record import ensure_research_layers
 
@@ -365,6 +365,8 @@ def summarize_record(record: CanonicalRecord, *, provider, context: PipelineCont
     record.human_readable.markdown = _summary_markdown(proposal) if isinstance(proposal, MultimodalSummaryProposal) else (proposal.narrative or proposal.summary)
     record.analysis.model_runs.append(run_meta)
     _append_stage(record, "multimodal_synthesis" if ai26_multimodal else "summary_preanalysis", {"created_at": now, "prompt_version": prompt_version, **prompt_meta, "context_provenance": envelope.provenance_snapshot(), "proposal": proposal.model_dump(mode="json"), "model_run": run_meta})
+    if isinstance(proposal, MultimodalSummaryProposal):
+        _append_stage(record, "castells_context", {"created_at": now, "proposal": proposal.castells_context.model_dump(mode="json")})
     return proposal
 
 
