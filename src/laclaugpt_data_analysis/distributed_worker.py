@@ -417,6 +417,7 @@ class AI26TaskWorker(TaskWorker):
     """Task worker with explicit retry requeue so attempt counters actually advance."""
 
     def run_once(self, *, reclaim_idle_ms: int | None = None) -> str:
+        self.last_failure_class: str | None = None
         claimed = None
         if reclaim_idle_ms is not None:
             claimed = self.queue.reclaim(min_idle_ms=reclaim_idle_ms)
@@ -443,7 +444,8 @@ class AI26TaskWorker(TaskWorker):
             self.queue.ack(claimed.message_id)
             return "completed" if inserted else "duplicate"
         except Exception as exc:
-            error = f"{type(exc).__name__}: {exc}"
+            self.last_failure_class = type(exc).__name__
+            error = f"{self.last_failure_class}: {exc}"
             self.durable_store.write_failure(task, error, self.provenance)
             if task.attempt >= self.max_attempts:
                 self.queue.dead_letter(task, error)
@@ -522,6 +524,14 @@ def build_worker(binding: WorkerBinding, settings: Settings) -> tuple[TaskWorker
     return worker, handoff
 
 
+def _cycle_exit_code(counts: dict[str, int]) -> int:
+    """Fail a bounded cycle only when attempted work failed without any completion."""
+    failures = counts.get("retry", 0) + counts.get("dead-letter", 0)
+    if counts.get("completed", 0) == 0 and failures > 0:
+        return 1
+    return 0
+
+
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run one or more AI26 distributed analysis tasks")
     parser.add_argument("--run-manifest", required=True)
@@ -557,8 +567,9 @@ def main(argv: list[str] | None = None) -> int:
         raise ValueError("LACLAUGPT_RUN_ID does not match frozen run manifest")
     settings = load_settings()
     worker, handoff = build_worker(binding, settings)
+    seeded = 0
     if args.seed_ready:
-        seed_ready_tasks(
+        seeded = seed_ready_tasks(
             binding,
             handoff,
             worker.queue,
@@ -566,15 +577,48 @@ def main(argv: list[str] | None = None) -> int:
             limit=max(args.max_tasks, 0),
         )
     worker.heartbeat(run_id=binding.manifest.run_id, status="starting")
+    counts = {"completed": 0, "duplicate": 0, "retry": 0, "dead-letter": 0}
     processed = 0
+    last_failure_class: str | None = None
     for _ in range(max(args.max_tasks, 0)):
         status = worker.run_once(reclaim_idle_ms=args.reclaim_idle_ms)
         worker.heartbeat(run_id=binding.manifest.run_id, status=status)
         if status == "idle":
             break
+        if status in counts:
+            counts[status] += 1
         processed += 1
-    worker.heartbeat(run_id=binding.manifest.run_id, status="finished", processed=str(processed))
-    return 0
+        failure_class = getattr(worker, "last_failure_class", None)
+        if failure_class:
+            last_failure_class = str(failure_class)
+
+    exit_code = _cycle_exit_code(counts)
+    summary = (
+        f"AI26 analysis summary status={exit_code} seeded={seeded} "
+        f"completed={counts['completed']} duplicate={counts['duplicate']} "
+        f"retry={counts['retry']} dead-letter={counts['dead-letter']}"
+    )
+    if last_failure_class:
+        summary += f" last_failure_class={last_failure_class}"
+    print(summary, flush=True)
+
+    heartbeat_fields = {
+        "processed": str(processed),
+        "seeded": str(seeded),
+        "completed": str(counts["completed"]),
+        "duplicate": str(counts["duplicate"]),
+        "retry": str(counts["retry"]),
+        "dead_letter": str(counts["dead-letter"]),
+        "exit_status": str(exit_code),
+    }
+    if last_failure_class:
+        heartbeat_fields["last_failure_class"] = last_failure_class
+    worker.heartbeat(
+        run_id=binding.manifest.run_id,
+        status="finished" if exit_code == 0 else "failed",
+        **heartbeat_fields,
+    )
+    return exit_code
 
 
 if __name__ == "__main__":
