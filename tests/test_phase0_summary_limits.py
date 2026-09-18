@@ -13,6 +13,8 @@ class FakeOllama:
 
     def chat(self, **kwargs):
         self.calls.append(kwargs)
+        if isinstance(self.content, list):
+            return {"message": {"content": self.content[len(self.calls) - 1]}}
         return {"message": {"content": self.content}}
 
 
@@ -54,12 +56,48 @@ def test_summary_bounds_long_input_and_sets_context_options(monkeypatch):
         "sent_chars": 100,
         "truncated": True,
         "max_chars": 100,
+        "attempt_count": 1,
+        "empty_retry_count": 0,
     }
+
+
+def test_summary_retries_empty_response_then_succeeds(monkeypatch):
+    fake = FakeOllama(["", "   ", json.dumps(_valid_summary())])
+    monkeypatch.setattr(laclaugpt_summary.ollama, "chat", fake.chat)
+    monkeypatch.setenv("LACLAUGPT_SUMMARY_EMPTY_RETRIES", "2")
+
+    raw, parsed = laclaugpt_summary.summarize_record(
+        {"document_id": "doc-retry", "metadata": {}},
+        "text",
+    )
+
+    assert raw
+    assert len(fake.calls) == 3
+    assert parsed["input_metadata"]["attempt_count"] == 3
+    assert parsed["input_metadata"]["empty_retry_count"] == 2
+
+
+def test_summary_does_not_retry_nonempty_invalid_json(monkeypatch):
+    fake = FakeOllama("<bad-json>")
+    monkeypatch.setattr(laclaugpt_summary.ollama, "chat", fake.chat)
+    monkeypatch.setenv("LACLAUGPT_SUMMARY_EMPTY_RETRIES", "5")
+
+    with pytest.raises(laclaugpt_summary.SummaryParseError) as caught:
+        laclaugpt_summary.summarize_record(
+            {"document_id": "doc-bad-json", "metadata": {}},
+            "text",
+        )
+
+    assert len(fake.calls) == 1
+    assert caught.value.raw_response == "<bad-json>"
+    assert caught.value.metadata["attempt_count"] == 1
+    assert caught.value.metadata["empty_retry_count"] == 0
 
 
 def test_summary_parse_error_keeps_raw_and_names_document(monkeypatch):
     fake = FakeOllama("")
     monkeypatch.setattr(laclaugpt_summary.ollama, "chat", fake.chat)
+    monkeypatch.setenv("LACLAUGPT_SUMMARY_EMPTY_RETRIES", "2")
 
     with pytest.raises(laclaugpt_summary.SummaryParseError) as caught:
         laclaugpt_summary.summarize_record(
@@ -67,10 +105,14 @@ def test_summary_parse_error_keeps_raw_and_names_document(monkeypatch):
             "text",
         )
 
+    assert len(fake.calls) == 3
     assert caught.value.raw_response == ""
     assert caught.value.metadata["document_id"] == "doc-empty"
+    assert caught.value.metadata["attempt_count"] == 3
+    assert caught.value.metadata["empty_retry_count"] == 2
     assert "doc-empty" in str(caught.value)
     assert "4 chars" in str(caught.value)
+    assert "attempts=3" in str(caught.value)
 
 
 def test_process_persists_raw_response_on_summary_parse_failure(monkeypatch):
@@ -79,13 +121,15 @@ def test_process_persists_raw_response_on_summary_parse_failure(monkeypatch):
     def fail_summary(record, normalized_text):
         raise laclaugpt_summary.SummaryParseError(
             "Summary JSON parse failed for doc-1",
-            raw_response="<bad-json>",
+            raw_response="",
             metadata={
                 "document_id": "doc-1",
                 "original_chars": 12,
                 "sent_chars": 12,
                 "truncated": False,
                 "max_chars": 24000,
+                "attempt_count": 3,
+                "empty_retry_count": 2,
             },
         )
 
@@ -111,7 +155,9 @@ def test_process_persists_raw_response_on_summary_parse_failure(monkeypatch):
         project_id="ai26",
     )
 
-    assert writes[-1]["phase0_summary_raw"] == "<bad-json>"
+    assert "phase0_summary_raw" in writes[-1]
+    assert writes[-1]["phase0_summary_raw"] == ""
     assert writes[-1]["phase0_summary_error_metadata"]["document_id"] == "doc-1"
+    assert writes[-1]["phase0_summary_error_metadata"]["attempt_count"] == 3
     assert writes[-1]["phase0.summary"]["status"] == "error"
     assert "doc-1" in writes[-1]["phase0.summary"]["error"]
