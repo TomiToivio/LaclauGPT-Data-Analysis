@@ -101,6 +101,7 @@ def run_document(source: dict[str, Any], stage: str = "all", dry_run: bool = Fal
             if not dry_run:
                 update_document(source, {
                     "phase0_discourse_raw": exc.raw_response,
+                    "phase0_discourse_error_metadata": exc.metadata,
                     "phase0.discourse": _status("error", str(exc)),
                 }, project_id=project_id)
         except Exception as exc:
