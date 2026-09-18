@@ -10,10 +10,13 @@ DEFAULT_PROJECT_ID = os.getenv("LACLAUGPT_PROJECT_ID", "ai26")
 
 
 def _collection(project_id: str | None = None):
-    mongo_uri = os.getenv("MONGO_URI")
-    mongo_db_name = os.getenv("MONGO_DB_NAME")
+    mongo_uri = os.getenv("MONGO_URI") or os.getenv("LACLAUGPT_MONGODB_URI")
+    mongo_db_name = os.getenv("MONGO_DB_NAME") or os.getenv("LACLAUGPT_MONGODB_DATABASE")
     if not mongo_uri or not mongo_db_name:
-        raise RuntimeError("MONGO_URI and MONGO_DB_NAME are required")
+        raise RuntimeError(
+            "MongoDB configuration is required via MONGO_URI/MONGO_DB_NAME "
+            "or LACLAUGPT_MONGODB_URI/LACLAUGPT_MONGODB_DATABASE"
+        )
     client = MongoClient(mongo_uri)
     db = client[mongo_db_name]
     project = project_id or DEFAULT_PROJECT_ID
