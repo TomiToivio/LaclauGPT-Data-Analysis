@@ -85,11 +85,26 @@ def test_worker_publishes_frozen_private_config_to_pipeline_context(
     captured = {}
 
     class _Provider:
-        def __init__(self, *args, **kwargs):
-            pass
+        def __init__(self, host=None, min_vram_gb=None):
+            captured["provider_args"] = {"host": host, "min_vram_gb": min_vram_gb}
 
-    def fake_pipeline(record, context, **kwargs):
+    def fake_pipeline(
+        record,
+        *,
+        provider,
+        context=None,
+        codebook_entries=None,
+        model="auto",
+        project_profile="generic",
+        allow_cloud_fallback=None,
+        **kwargs,
+    ):
+        captured["provider"] = provider
         captured["context"] = context
+        captured["codebook_entries"] = codebook_entries
+        captured["model"] = model
+        captured["project_profile"] = project_profile
+        captured["allow_cloud_fallback"] = allow_cloud_fallback
         return record
 
     monkeypatch.setattr("laclaugpt_data_analysis.distributed_worker.OllamaProvider", _Provider)
@@ -103,8 +118,20 @@ def test_worker_publishes_frozen_private_config_to_pipeline_context(
 
     context = captured["context"]
     assert context.project_config == config
-    assert context.config_revision == ""
-    assert context.codebook_revision == ""
+    assert context.config_revision == binding.manifest.config_sha256
+    assert context.project_config_revision == binding.manifest.config_sha256
+    assert context.codebook_revision == binding.manifest.codebook_sha256
+    assert context.provenance["private_config_sha256"] == [binding.manifest.config_sha256]
+    assert context.provenance["codebook_sha256"] == [binding.manifest.codebook_sha256]
+    assert captured["provider_args"] == {
+        "host": __import__("laclaugpt_data_analysis.distributed_worker", fromlist=["resolve_llm_host"]).resolve_llm_host() or None,
+        "min_vram_gb": None,
+    }
+    assert captured["provider"] is handler.provider
+    assert captured["codebook_entries"] == handler.codebook.entries
+    assert captured["model"] == AI26_MODEL
+    assert captured["project_profile"] == "ai26"
+    assert captured["allow_cloud_fallback"] is False
     assert critical_ai_enabled(context.project_config) is enabled
     assert dna_statement_coding_enabled(context.project_config) is enabled
 
@@ -133,3 +160,15 @@ def test_worker_fails_closed_on_non_object_private_config(tmp_path: Path, monkey
 
     with pytest.raises(ValueError, match="must be a JSON object"):
         AI26Handler(binding, Settings(project_id="ai26"), _Handoff())
+
+
+def test_ai26_handler_uses_real_runtime_signatures(tmp_path: Path, monkeypatch) -> None:
+    binding = _binding(tmp_path, "{}")
+    monkeypatch.delenv("LACLAUGPT_LLM_ENDPOINT", raising=False)
+    monkeypatch.delenv("OLLAMA_HOST", raising=False)
+
+    handler = AI26Handler(binding, Settings(project_id="ai26"), _Handoff())
+
+    assert handler.provider.__class__.__name__ == "OllamaProvider"
+    assert not hasattr(handler, "context")
+    assert handler.stager is None
