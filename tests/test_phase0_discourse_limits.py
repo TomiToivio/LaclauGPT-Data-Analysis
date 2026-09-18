@@ -88,6 +88,8 @@ def test_process_persists_raw_response_on_discourse_parse_failure(monkeypatch):
         )
 
     monkeypatch.setattr(laclaugpt_process, "analyze_discourse", fail_discourse)
+    # The stage records failures through record_stage_failure (which also maintains the
+    # attempt counters), not through a bare update_document call.
     monkeypatch.setattr(
         laclaugpt_process,
         "record_stage_failure",

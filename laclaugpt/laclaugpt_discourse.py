@@ -31,10 +31,18 @@ DEFAULT_DISCOURSE_NUM_PREDICT = 2048
 class DiscourseParseError(ValueError):
     """Raised when Ollama returned text that is not valid discourse JSON."""
 
-    def __init__(self, message: str, *, raw_response: str, metadata: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        raw_response: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.raw_response = raw_response
-        self.metadata = metadata
+        # The pipeline always supplies the request metadata, but the field is optional
+        # so other callers (and tests) need not fabricate it.
+        self.metadata = dict(metadata or {})
 
 
 class UsConstruct(BaseModel):

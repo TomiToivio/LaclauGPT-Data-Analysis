@@ -198,7 +198,7 @@ def test_rag_and_periodic_context_can_be_excluded_without_removing_source() -> N
                         "include_rag": False,
                         "include_periodic_context": False,
                     }
-                }
+                },
             },
         ),
         project_profile="ai26",
