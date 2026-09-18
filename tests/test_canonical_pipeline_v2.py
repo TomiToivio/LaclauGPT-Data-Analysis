@@ -163,6 +163,57 @@ def test_graph_is_projection_not_second_ontology():
     assert any(edge["type"] == "CANDIDATE_IN" for edge in graph["edges"])
 
 
+def test_discourse_graph_has_no_dangling_edge_endpoints():
+    record = synthetic_record()
+    record.analysis.signifiers = [
+        DiscourseObject(
+            object_id="signifier:source",
+            label="AI",
+            kind="signifier",
+            review_status="PROVISIONAL",
+        ),
+        DiscourseObject(
+            object_id="signifier:target",
+            label="democracy",
+            kind="signifier",
+            review_status="PROVISIONAL",
+        ),
+    ]
+    record.evidence.append(
+        {
+            "evidence_id": "evidence:1",
+            "kind": "text_span",
+            "source_url": record.source_url,
+            "quote": "AI should serve democratic society.",
+        }
+    )
+    record.analysis.relations.append(
+        {
+            "relation_id": "relation:articulation",
+            "relation_type": "articulation",
+            "source_ref": "signifier:source",
+            "target_ref": "signifier:target",
+            "evidence_ids": ["evidence:1"],
+            "review_status": "PROVISIONAL",
+        }
+    )
+
+    graph = build_discourse_graph(record)
+    node_ids = {str(node["id"]) for node in graph["nodes"]}
+
+    assert all(
+        str(edge["source"]) in node_ids and str(edge["target"]) in node_ids
+        for edge in graph["edges"]
+    )
+    relation_edge = next(
+        edge for edge in graph["edges"] if edge["id"] == "relation:articulation"
+    )
+    assert relation_edge["evidence_ids"] == ["evidence:1"]
+    assert not any(
+        edge["type"] == "EVIDENCE_FOR_RELATION" for edge in graph["edges"]
+    )
+
+
 def test_daily_reports_can_filter_by_signifier_and_feed_context():
     record = synthetic_record()
     record.analysis.signifiers = [
