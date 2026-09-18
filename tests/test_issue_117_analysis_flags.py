@@ -57,8 +57,14 @@ def test_disabled_summary_capability_stays_empty() -> None:
     assert record.analysis.topics == []
 
 
-def test_phase2_capability_can_be_explicitly_selected_without_entering_default_stage_set() -> None:
-    ctx = PipelineContext(project_config={"analysis": {"sna": True}})
+def test_phase2_capability_is_blocked_until_phase2_even_when_individually_enabled() -> None:
+    ctx = PipelineContext(project_config={"analysis_phase": 1, "analysis": {"sna": {"enabled": True}}})
+    _validate_project_analysis_config(ctx)
+    assert "sna" not in _effective_stage_set(ctx)
+
+
+def test_phase2_capability_requires_phase2_and_individual_opt_in() -> None:
+    ctx = PipelineContext(project_config={"analysis_phase": 2, "analysis": {"sna": {"enabled": True}}})
     _validate_project_analysis_config(ctx)
     assert "sna" in _effective_stage_set(ctx)
 
