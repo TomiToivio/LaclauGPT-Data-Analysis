@@ -1,5 +1,5 @@
 codebook_id: ai26-public-v2
-version: "2026-09-16"
+version: "2026-09-18"
 title: AI26 public codebook — ideological contestation over AI
 description: >-
   Publication-safe, machine-readable AI26 codebook derived from the public paper.
@@ -11,8 +11,8 @@ optional_sections: [current_watch_relations]
 
 entries:
   - kind: formation
-    label: accelerationism
-    aliases: [techno-optimism, e/acc]
+    label: accelerationist
+    aliases: [accelerationism, techno-optimism, e/acc]
     definition: >-
       Provisional sampling/aggregation anchor for discourses linking accelerated AI or
       technological development to desirable transformation, growth, abundance or progress.
@@ -21,8 +21,8 @@ entries:
     metadata: {state: PROVISIONAL, human_validation_required: true}
 
   - kind: formation
-    label: doomerism
-    aliases: [AI doomerism]
+    label: existential_risk
+    aliases: [doomerism, AI doomerism, existential risk, x-risk]
     definition: >-
       Provisional aggregation label for discourse centred on catastrophic or existential AI risk.
       The term doomer is situated and contested; neutral retrieval should prefer x-risk/catastrophic-risk language.
@@ -30,8 +30,8 @@ entries:
     metadata: {state: PROVISIONAL, human_validation_required: true}
 
   - kind: formation
-    label: left-wing accelerationism
-    aliases: [left techno-optimism, post-work techno-optimism]
+    label: left_accelerationist
+    aliases: [left-wing accelerationism, left techno-optimism, post-work techno-optimism]
     definition: >-
       Provisional anchor for technology-positive projects articulating automation with egalitarian,
       redistributive, post-work, public-interest or postcapitalist futures.
@@ -39,8 +39,8 @@ entries:
     metadata: {state: PROVISIONAL, human_validation_required: true}
 
   - kind: formation
-    label: ai safety
-    aliases: [AI safety discourse, alignment discourse]
+    label: ai_safety
+    aliases: [AI safety, AI safety discourse, alignment discourse]
     definition: >-
       Provisional anchor for discourse about alignment, evaluation, standards, incidents, pacing,
       robustness, loss of control and governance of advanced AI. It is broader than existential-risk discourse.
@@ -48,8 +48,8 @@ entries:
     metadata: {state: PROVISIONAL, human_validation_required: true}
 
   - kind: formation
-    label: ai critical
-    aliases: [Critical AI, Critical AI Studies]
+    label: critical_ai
+    aliases: [ai critical, Critical AI, Critical AI Studies]
     definition: >-
       Provisional anchor for discourse foregrounding power, labour, inequality, discrimination,
       surveillance, extraction, ownership, concentration, accountability and social justice.
@@ -57,8 +57,8 @@ entries:
     metadata: {state: PROVISIONAL, human_validation_required: true}
 
   - kind: formation
-    label: anti-ai
-    aliases: [AI opposition]
+    label: anti_ai
+    aliases: [anti-ai, AI opposition, anti_ai_protest, pause_ai]
     definition: >-
       Provisional anchor for broader opposition to AI or mobilisations against particular deployments.
       Opposition to one deployment must not be generalized into opposition to AI as such.
