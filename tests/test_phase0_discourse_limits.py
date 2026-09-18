@@ -1,9 +1,8 @@
 import json
 
-import pytest
-
 import laclaugpt_discourse
 import laclaugpt_process
+import pytest
 
 
 class FakeOllama:
@@ -54,12 +53,13 @@ def test_discourse_bounds_long_input_and_sets_context_options(monkeypatch):
     assert call["options"]["num_ctx"] == 4096
     assert call["options"]["num_predict"] == 512
     assert "x" * 101 not in call["messages"][1]["content"]
-    assert parsed["input_metadata"] == {
-        "original_chars": 1000,
-        "sent_chars": 100,
-        "truncated": True,
-        "max_chars": 100,
-    }
+    # input_metadata carries the full request record (the discourse stage stores it
+    # verbatim as provenance), so assert the meaningful fields rather than exact equality.
+    assert parsed["input_metadata"]["original_chars"] == 1000
+    assert parsed["input_metadata"]["sent_chars"] == 100
+    assert parsed["input_metadata"]["truncated"] is True
+    assert parsed["input_metadata"]["max_chars"] == 100
+    assert parsed["input_metadata"]["document_id"] == "doc-long"
 
 
 def test_discourse_parse_error_keeps_raw_and_names_document(monkeypatch):
@@ -88,10 +88,14 @@ def test_process_persists_raw_response_on_discourse_parse_failure(monkeypatch):
         )
 
     monkeypatch.setattr(laclaugpt_process, "analyze_discourse", fail_discourse)
+    # The stage records failures through record_stage_failure (which also maintains the
+    # attempt counters), not through a bare update_document call.
     monkeypatch.setattr(
         laclaugpt_process,
-        "update_document",
-        lambda source, update, project_id=None: writes.append(update),
+        "record_stage_failure",
+        lambda source, stage, error, extra_fields=None, project_id=None: writes.append(
+            {"stage": stage, "error": error, "extra_fields": extra_fields or {}}
+        ),
     )
 
     laclaugpt_process.run_document(
@@ -104,6 +108,6 @@ def test_process_persists_raw_response_on_discourse_parse_failure(monkeypatch):
         project_id="ai26",
     )
 
-    assert writes[-1]["phase0_discourse_raw"] == "<bad-json>"
-    assert writes[-1]["phase0.discourse"]["status"] == "error"
-    assert "doc-1" in writes[-1]["phase0.discourse"]["error"]
+    assert writes[-1]["stage"] == "discourse"
+    assert writes[-1]["extra_fields"]["phase0_discourse_raw"] == "<bad-json>"
+    assert "doc-1" in writes[-1]["error"]

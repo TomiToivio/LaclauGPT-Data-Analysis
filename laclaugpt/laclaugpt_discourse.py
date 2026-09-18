@@ -31,10 +31,18 @@ DISCOURSE_NUM_PREDICT = int(os.getenv("LACLAUGPT_DISCOURSE_NUM_PREDICT", "2048")
 class DiscourseParseError(ValueError):
     """Raised when Ollama returned text that is not valid discourse JSON."""
 
-    def __init__(self, message: str, *, raw_response: str, metadata: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        raw_response: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.raw_response = raw_response
-        self.metadata = metadata
+        # The pipeline always supplies the request metadata, but the field is optional
+        # so other callers (and tests) need not fabricate it.
+        self.metadata = dict(metadata or {})
 
 
 class UsConstruct(BaseModel):
@@ -245,10 +253,25 @@ def _document_label(record: dict[str, Any]) -> str:
     )
 
 
-def _bounded_text(text: str) -> tuple[str, bool]:
-    if len(text) <= DISCOURSE_MAX_CHARS:
+def _discourse_limits() -> tuple[int, int, int]:
+    """Resolve the discourse input/context budget at call time.
+
+    These are read per call (like ``OLLAMA_MODEL``) so an operator can tune a running
+    process, and so a test that sets the environment after import is honoured. Module
+    constants below remain as the declared defaults.
+    """
+    return (
+        int(os.getenv("LACLAUGPT_DISCOURSE_MAX_CHARS", str(DISCOURSE_MAX_CHARS))),
+        int(os.getenv("LACLAUGPT_DISCOURSE_NUM_CTX", str(DISCOURSE_NUM_CTX))),
+        int(os.getenv("LACLAUGPT_DISCOURSE_NUM_PREDICT", str(DISCOURSE_NUM_PREDICT))),
+    )
+
+
+def _bounded_text(text: str, limit: int | None = None) -> tuple[str, bool]:
+    cap = _discourse_limits()[0] if limit is None else limit
+    if len(text) <= cap:
         return text, False
-    return text[:DISCOURSE_MAX_CHARS], True
+    return text[:cap], True
 
 
 def analyze_discourse(
@@ -257,15 +280,16 @@ def analyze_discourse(
     summary: dict[str, Any],
 ) -> tuple[str, dict[str, Any]]:
     model = os.getenv("OLLAMA_MODEL", "gemma4:12b")
-    bounded_text, truncated = _bounded_text(normalized_text)
+    max_chars, num_ctx, num_predict = _discourse_limits()
+    bounded_text, truncated = _bounded_text(normalized_text, limit=max_chars)
     request_metadata = {
         "document_id": _document_label(record),
-        "input_chars": len(normalized_text),
+        "original_chars": len(normalized_text),
         "sent_chars": len(bounded_text),
         "truncated": truncated,
-        "max_chars": DISCOURSE_MAX_CHARS,
-        "num_ctx": DISCOURSE_NUM_CTX,
-        "num_predict": DISCOURSE_NUM_PREDICT,
+        "max_chars": max_chars,
+        "num_ctx": num_ctx,
+        "num_predict": num_predict,
     }
     truncation_note = (
         "\n\n### Input handling\n"
@@ -290,8 +314,8 @@ def analyze_discourse(
         format="json",
         options={
             "temperature": 0.0,
-            "num_ctx": DISCOURSE_NUM_CTX,
-            "num_predict": DISCOURSE_NUM_PREDICT,
+            "num_ctx": num_ctx,
+            "num_predict": num_predict,
         },
     )
     raw = response["message"]["content"]
