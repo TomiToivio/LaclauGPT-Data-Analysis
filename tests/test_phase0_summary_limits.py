@@ -57,7 +57,8 @@ def test_summary_bounds_long_input_and_sets_context_options(monkeypatch):
         "truncated": True,
         "max_chars": 100,
         "attempt_count": 1,
-        "empty_response_count": 0,\n        "empty_retry_count": 0,
+        "empty_response_count": 0,
+        "empty_retry_count": 0,
     }
 
 
@@ -74,7 +75,8 @@ def test_summary_retries_empty_response_then_succeeds(monkeypatch):
     assert raw
     assert len(fake.calls) == 3
     assert parsed["input_metadata"]["attempt_count"] == 3
-    assert parsed["input_metadata"]["empty_response_count"] == 2\n    assert parsed["input_metadata"]["empty_retry_count"] == 1
+    assert parsed["input_metadata"]["empty_response_count"] == 2
+    assert parsed["input_metadata"]["empty_retry_count"] == 1
 
 
 def test_summary_does_not_retry_nonempty_invalid_json(monkeypatch):
@@ -91,7 +93,8 @@ def test_summary_does_not_retry_nonempty_invalid_json(monkeypatch):
     assert len(fake.calls) == 1
     assert caught.value.raw_response == "<bad-json>"
     assert caught.value.metadata["attempt_count"] == 1
-    assert caught.value.metadata["empty_response_count"] == 0\n    assert caught.value.metadata["empty_retry_count"] == 0
+    assert caught.value.metadata["empty_response_count"] == 0
+    assert caught.value.metadata["empty_retry_count"] == 0
 
 
 def test_summary_parse_error_keeps_raw_and_names_document(monkeypatch):
@@ -109,7 +112,8 @@ def test_summary_parse_error_keeps_raw_and_names_document(monkeypatch):
     assert caught.value.raw_response == ""
     assert caught.value.metadata["document_id"] == "doc-empty"
     assert caught.value.metadata["attempt_count"] == 3
-    assert caught.value.metadata["empty_response_count"] == 3\n    assert caught.value.metadata["empty_retry_count"] == 2
+    assert caught.value.metadata["empty_response_count"] == 3
+    assert caught.value.metadata["empty_retry_count"] == 2
     assert "doc-empty" in str(caught.value)
     assert "4 chars" in str(caught.value)
     assert "attempts=3" in str(caught.value)
@@ -129,7 +133,8 @@ def test_process_persists_raw_response_on_summary_parse_failure(monkeypatch):
                 "truncated": False,
                 "max_chars": 24000,
                 "attempt_count": 3,
-                "empty_response_count": 3,\n                "empty_retry_count": 2,
+                "empty_response_count": 3,
+                "empty_retry_count": 2,
             },
         )
 
