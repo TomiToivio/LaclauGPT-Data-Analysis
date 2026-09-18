@@ -43,8 +43,15 @@ def _normalise_list_fields(summary: dict[str, Any]) -> tuple[dict[str, Any], lis
     coerced_fields: list[str] = []
 
     for field_name in _LIST_FIELDS:
-        value = normalised.get(field_name)
-        if value is None or isinstance(value, list):
+        if field_name not in normalised:
+            continue
+
+        value = normalised[field_name]
+        if isinstance(value, list):
+            continue
+        if value is None:
+            normalised[field_name] = []
+            coerced_fields.append(field_name)
             continue
         if isinstance(value, str):
             text = value.strip()
