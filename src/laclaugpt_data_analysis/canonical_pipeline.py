@@ -256,15 +256,6 @@ def _validate_project_analysis_config(context: PipelineContext) -> None:
     unknown = sorted(set(flags) - set(_AI26_CAPABILITIES) - {"dna_statement_coding", "critical_ai"})
     if unknown:
         raise ValueError(f"unknown analysis capability flag(s): {', '.join(unknown)}")
-    phase2_enabled = sorted(
-        key for key in ("sna", "ant", "valueflows", "dna_statement_coding", "critical_ai")
-        if _enabled(context, key, default=False)
-    )
-    if phase2_enabled:
-        raise ValueError(
-            "Phase 2 / experimental analysis is off by default in the Phase 1 canonical pipeline: "
-            + ", ".join(phase2_enabled)
-        )
 
 
 def _append_stage(record: CanonicalRecord, name: str, payload: dict[str, Any]) -> None:
@@ -565,6 +556,28 @@ def run_canonical_pipeline(record: CanonicalRecord, *, provider, context: Pipeli
     summary = summarize_record(record, provider=provider, context=ctx, codebook_entries=entries, model=model, prompt_version=f"{prompt_version}:summary", project_profile=project_profile, allow_cloud_fallback=allow_cloud_fallback)
     discourse = discourse_analysis(record, provider=provider, context=ctx, codebook_entries=entries, model=model, prompt_version=f"{prompt_version}:discourse", project_profile=project_profile, allow_cloud_fallback=allow_cloud_fallback) if _enabled(ctx, "laclau") or project_profile.casefold() != "ai26" else DiscourseProposal()
     postprocess_record(record, summary, discourse, ctx)
+    # Phase 2 / experimental methods remain explicit opt-ins and never enter the
+    # Phase 1 default path. They run only after the five canonical Phase 1 stages.
+    if _enabled(ctx, "critical_ai", default=False):
+        from .critical_ai import run_optional_critical_ai
+        run_optional_critical_ai(
+            record,
+            provider=provider,
+            context=ctx,
+            codebook_entries=entries,
+            model=model,
+            allow_cloud_fallback=allow_cloud_fallback,
+        )
+    if _enabled(ctx, "dna_statement_coding", default=False):
+        from .dna_statement_coding import run_optional_dna_statement_coding
+        run_optional_dna_statement_coding(
+            record,
+            provider=provider,
+            context=ctx,
+            codebook_entries=entries,
+            model=model,
+            allow_cloud_fallback=allow_cloud_fallback,
+        )
     graph = build_discourse_graph(record)
     _append_stage(record, "discourse_graph", graph)
     if graph_sink:
