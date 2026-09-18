@@ -1,6 +1,6 @@
 # AI26 multi-method discourse analysis
 
-Issue #42 adds an experimental, less Laclau-centred analysis stack for AI26. It does **not** modify `paper/PAPER.md` and it does not treat any provisional ideological formation as ground truth.
+Issue #42 adds an experimental, less Laclau-centred analysis stack for AI26. It does **not** modify `paper/PHASE_1_PAPER.md` and it does not treat any provisional ideological formation as ground truth.
 
 ## Shared statement / claim layer
 
