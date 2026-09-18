@@ -10,9 +10,6 @@ from datetime import UTC, datetime
 
 import pytest
 
-rdflib = pytest.importorskip("rdflib")
-pytest.importorskip("networkx")
-
 from laclaugpt_data_analysis.canonical import (
     CanonicalRecord,
     DiscourseObject,
@@ -33,6 +30,8 @@ from laclaugpt_data_analysis.portable_exchange import (
 )
 from laclaugpt_data_analysis.rdf import materialize_record, serialize_dataset, validate_dataset
 
+rdflib = pytest.importorskip("rdflib")
+pytest.importorskip("networkx")
 
 PROJECT = "AI26"
 SOURCE = "https://example.invalid/ai26/golden/1"
