@@ -650,7 +650,7 @@ def build_discourse_graph(record: CanonicalRecord) -> dict[str, Any]:
 
     for chain in record.analysis.equivalence_chains + record.analysis.difference_chains:
         relation_type = "EQUIVALENT_TO" if chain.chain_type == "equivalence" else "DIFFERENTIATED_FROM"
-        for left, right in zip(chain.member_refs, chain.member_refs[1:]):
+        for left, right in zip(chain.member_refs, chain.member_refs[1:], strict=False):
             edges.append(
                 {
                     "id": f"{chain.chain_id}:{left}:{right}",
