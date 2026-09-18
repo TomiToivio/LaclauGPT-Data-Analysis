@@ -89,9 +89,11 @@ def run_document(source: dict[str, Any], stage: str = "all", dry_run: bool = Fal
                 summary_data = source.get("phase0_summary") or {}
             raw, discourse = analyze_discourse(working, working["normalized_text"], summary_data)
             if not dry_run:
+                ontology = export_discourse(working, discourse)
                 update_document(source, {
                     "phase0_discourse_raw": raw,
                     "phase0_discourse": discourse,
+                    "phase0_ontology": ontology,
                     "phase0.discourse": _status("ok"),
                 }, project_id=project_id)
         except Exception as exc:
