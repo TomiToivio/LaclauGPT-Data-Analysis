@@ -118,9 +118,8 @@ def test_worker_publishes_frozen_private_config_to_pipeline_context(
 
     context = captured["context"]
     assert context.project_config == config
-    assert context.config_revision == binding.manifest.config_sha256
-    assert context.project_config_revision == binding.manifest.config_sha256
-    assert context.codebook_revision == binding.manifest.codebook_sha256
+    # Manifest revisions are carried in declared provenance fields. PipelineContext
+    # does not declare config_revision/project_config_revision/codebook_revision.
     assert context.provenance["private_config_sha256"] == [binding.manifest.config_sha256]
     assert context.provenance["codebook_sha256"] == [binding.manifest.codebook_sha256]
     assert captured["provider_args"] == {
@@ -170,5 +169,11 @@ def test_ai26_handler_uses_real_runtime_signatures(tmp_path: Path, monkeypatch) 
     handler = AI26Handler(binding, Settings(project_id="ai26"), _Handoff())
 
     assert handler.provider.__class__.__name__ == "OllamaProvider"
-    assert not hasattr(handler, "context")
+    assert handler.context.project_config == {}
+    assert handler.context.provenance["private_config_sha256"] == [
+        binding.manifest.config_sha256
+    ]
+    assert handler.context.provenance["codebook_sha256"] == [
+        binding.manifest.codebook_sha256
+    ]
     assert handler.stager is None
