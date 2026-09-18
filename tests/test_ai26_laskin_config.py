@@ -71,11 +71,11 @@ def test_machine_layer_disables_browser_capture() -> None:
     assert values["capabilities"]["browser_capture"] is False
 
 
-def test_all_ai26_stages_enabled_by_operator_decision() -> None:
+def test_phase1_default_keeps_phase2_stages_disabled() -> None:
     analysis = _compose().as_dict()["analysis"]
     assert analysis["laclau"] is True
-    assert analysis["dna_statement_coding"]["enabled"] is True
-    assert analysis["critical_ai"]["enabled"] is True
+    assert analysis["dna_statement_coding"]["enabled"] is False
+    assert analysis["critical_ai"]["enabled"] is False
 
 
 def test_optional_stages_remain_individually_switchable() -> None:

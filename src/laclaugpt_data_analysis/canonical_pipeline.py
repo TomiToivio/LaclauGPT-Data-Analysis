@@ -24,7 +24,6 @@ from .canonical import (
 )
 from .codebooks import CodebookEntry
 from .context_envelope import PromptEnvelope, build_prompt_envelope
-from .critical_ai import run_optional_critical_ai
 from .llm.structured_output import chat_structured
 from .models import Topic
 from .prompt_library import load_prompt, prompt_provenance
@@ -224,9 +223,9 @@ _AI26_CAPABILITIES = {
     "context_memory": "context",
     "temporal": "summary",
     "multimodal": "frame_summary",
-    "sna": None,
-    "ant": None,
-    "valueflows": None,
+    "sna": "phase2_optional",
+    "ant": "phase2_optional",
+    "valueflows": "phase2_optional",
 }
 
 
@@ -247,9 +246,6 @@ def _effective_stage_set(context: PipelineContext) -> list[str]:
     for key, implementation in _AI26_CAPABILITIES.items():
         if _enabled(context, key, default=False) and implementation:
             stages.append(key)
-    for key in ("dna_statement_coding", "critical_ai"):
-        if _enabled(context, key, default=False):
-            stages.append(key)
     return sorted(stages)
 
 
@@ -260,14 +256,6 @@ def _validate_project_analysis_config(context: PipelineContext) -> None:
     unknown = sorted(set(flags) - set(_AI26_CAPABILITIES) - {"dna_statement_coding", "critical_ai"})
     if unknown:
         raise ValueError(f"unknown analysis capability flag(s): {', '.join(unknown)}")
-    unavailable = sorted(
-        key for key, implementation in _AI26_CAPABILITIES.items()
-        if flags.get(key) is True and implementation is None
-    )
-    if unavailable:
-        raise ValueError(
-            "project enables unavailable analysis capability/capabilities: " + ", ".join(unavailable)
-        )
 
 
 def _append_stage(record: CanonicalRecord, name: str, payload: dict[str, Any]) -> None:
@@ -303,6 +291,14 @@ def _model_run_metadata(context: PipelineContext, response, prompt_meta: dict[st
 
 def prompt_ids_for_stage(project_profile: str, stage: str) -> tuple[str, str]:
     profile = project_profile.casefold()
+    if profile == "ep24":
+        ep24_tasks = {
+            "frame": ("laclau.system", "ep24.frame_analysis"),
+            "summary": ("laclau.system", "ep24.summary_analysis"),
+            "discourse": ("laclau.system", "ep24.laclau_analysis"),
+        }
+        if stage in ep24_tasks:
+            return ep24_tasks[stage]
     if stage == "frame":
         return ("multimodal.system", "multimodal.frame_analysis") if profile == "ai26" else ("laclau.system", "laclau.frame_analysis")
     if stage == "summary":
@@ -335,11 +331,21 @@ def preprocess_record(record: CanonicalRecord, *, preprocessor: Preprocessor | N
 
 
 def analyze_frames(record: CanonicalRecord, *, provider, context: PipelineContext, codebook_entries: list[CodebookEntry], model: str, prompt_version: str, project_profile: str, allow_cloud_fallback: bool | None) -> CanonicalRecord:
-    if not record.content.frames or (project_profile.casefold() == "ai26" and not _enabled(context, "multimodal")):
+    if not record.content.frames:
+        _append_stage(record, "frame_analysis_skipped", {
+            "created_at": datetime.now(UTC).isoformat(),
+            "reason": "text_only_or_no_extracted_frames",
+        })
+        return record
+    if project_profile.casefold() == "ai26" and not _enabled(context, "multimodal"):
+        _append_stage(record, "frame_analysis_skipped", {
+            "created_at": datetime.now(UTC).isoformat(),
+            "reason": "multimodal_disabled",
+        })
         return record
     system_id, task_id = prompt_ids_for_stage(project_profile, "frame")
     system_resource = load_prompt(system_id, version="v1")
-    task_resource = load_prompt(task_id, version="v1")
+    task_resource = load_prompt(task_id, version="v2" if project_profile.casefold() == "ep24" else "v1")
     ai26_multimodal = project_profile.casefold() == "ai26"
     for frame in record.content.frames:
         rendered_task = task_resource.render(frame_id=frame.id, timestamp_seconds=frame.timestamp_seconds, project_note="AI26 relevance guide only" if ai26_multimodal else "Generic descriptive frame analysis.")
@@ -357,7 +363,7 @@ def summarize_record(record: CanonicalRecord, *, provider, context: PipelineCont
     ai26_multimodal = project_profile.casefold() == "ai26"
     system_id, task_id = prompt_ids_for_stage(project_profile, "summary")
     system_resource = load_prompt(system_id, version="v1")
-    task_resource = load_prompt(task_id, version="v1")
+    task_resource = load_prompt(task_id, version="v2" if project_profile.casefold() == "ep24" else "v1")
     rendered_task = task_resource.render(project_note="AI26 multimodal/light sociology summary." if ai26_multimodal else "(none)")
     envelope = _envelope(record, context, task=rendered_task.text, codebook_entries=codebook_entries, prompt_version=prompt_version)
     proposal_model = MultimodalSummaryProposal if ai26_multimodal else SummaryProposal
@@ -378,7 +384,7 @@ def summarize_record(record: CanonicalRecord, *, provider, context: PipelineCont
 def discourse_analysis(record: CanonicalRecord, *, provider, context: PipelineContext, codebook_entries: list[CodebookEntry], model: str, prompt_version: str, project_profile: str, allow_cloud_fallback: bool | None) -> DiscourseProposal:
     system_id, task_id = prompt_ids_for_stage(project_profile, "discourse")
     system_resource = load_prompt(system_id, version="v1")
-    task_resource = load_prompt(task_id, version="v1")
+    task_resource = load_prompt(task_id, version="v2" if project_profile.casefold() == "ep24" else "v1")
     rendered_task = task_resource.render(project_note="AI26 discourse analysis." if project_profile.casefold() == "ai26" else "(none)")
     envelope = _envelope(record, context, task=rendered_task.text, codebook_entries=codebook_entries, prompt_version=prompt_version)
     proposal, response = chat_structured(provider, DiscourseProposal, model=model, system_prompt=system_resource.text, user_prompt=envelope.render(), allow_cloud_fallback=allow_cloud_fallback)
@@ -515,6 +521,16 @@ def postprocess_record(record: CanonicalRecord, summary: SummaryResult, discours
     record.analysis.antagonisms = [Relation(relation_id=f"antagonism:{i}", relation_type=item.relation_type, source_ref=item.source, target_ref=item.target, evidence_ids=_evidence_ids(record, item.evidence, f"antagonism:{i}"), review_status="PROVISIONAL") for i, item in enumerate(discourse.antagonisms, start=1)]
     relations = discourse.articulations + discourse.equivalences + discourse.differences + discourse.antagonisms
     record.analysis.relations = [Relation(relation_id=f"relation:{i}", relation_type=item.relation_type, source_ref=item.source, target_ref=item.target, evidence_ids=_evidence_ids(record, item.evidence, f"relation:{i}"), review_status="PROVISIONAL") for i, item in enumerate(relations, start=1)]
+    _append_stage(record, "postprocess", {
+        "created_at": datetime.now(UTC).isoformat(),
+        "schema": "canonical-analysis-v1",
+        "validated": True,
+        "source_stages": ["summary", "discourse"],
+        "topics": [item.canonical_label for item in record.analysis.topics],
+        "entities": [item.label for item in record.analysis.entities],
+        "sentiments": [item.label for item in record.analysis.sentiments],
+        "uncertainty": record.analysis.uncertainty,
+    })
     _append_stage(record, "effective_analysis_stages", {"stages": _effective_stage_set(ctx), "project_config_revision": ctx.project_config_revision, "project_config_sha256": _project_config_sha256(ctx)})
     record.analysis.completed_at = datetime.now(UTC)
     return ensure_research_layers(record)
@@ -539,8 +555,29 @@ def run_canonical_pipeline(record: CanonicalRecord, *, provider, context: Pipeli
     analyze_frames(record, provider=provider, context=ctx, codebook_entries=entries, model=model, prompt_version=f"{prompt_version}:frame", project_profile=project_profile, allow_cloud_fallback=allow_cloud_fallback)
     summary = summarize_record(record, provider=provider, context=ctx, codebook_entries=entries, model=model, prompt_version=f"{prompt_version}:summary", project_profile=project_profile, allow_cloud_fallback=allow_cloud_fallback)
     discourse = discourse_analysis(record, provider=provider, context=ctx, codebook_entries=entries, model=model, prompt_version=f"{prompt_version}:discourse", project_profile=project_profile, allow_cloud_fallback=allow_cloud_fallback) if _enabled(ctx, "laclau") or project_profile.casefold() != "ai26" else DiscourseProposal()
-    run_optional_critical_ai(record, provider=provider, context=ctx, codebook_entries=entries, model=model, allow_cloud_fallback=allow_cloud_fallback)
     postprocess_record(record, summary, discourse, ctx)
+    # Phase 2 / experimental methods remain explicit opt-ins and never enter the
+    # Phase 1 default path. They run only after the five canonical Phase 1 stages.
+    if _enabled(ctx, "critical_ai", default=False):
+        from .critical_ai import run_optional_critical_ai
+        run_optional_critical_ai(
+            record,
+            provider=provider,
+            context=ctx,
+            codebook_entries=entries,
+            model=model,
+            allow_cloud_fallback=allow_cloud_fallback,
+        )
+    elif _enabled(ctx, "dna_statement_coding", default=False):
+        from .dna_statement_coding import run_optional_dna_statement_coding
+        run_optional_dna_statement_coding(
+            record,
+            provider=provider,
+            context=ctx,
+            codebook_entries=entries,
+            model=model,
+            allow_cloud_fallback=allow_cloud_fallback,
+        )
     graph = build_discourse_graph(record)
     _append_stage(record, "discourse_graph", graph)
     if graph_sink:
