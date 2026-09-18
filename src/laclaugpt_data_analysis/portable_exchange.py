@@ -90,11 +90,13 @@ def _networkx_exchange_graph(
         payload = dict(edge)
         source = str(payload.pop("source"))
         target = str(payload.pop("target"))
-        graph.add_edge(
-            source,
-            target,
-            **{key: _graph_scalar(value) for key, value in payload.items()},
-        )
+        edge_id = payload.pop("id", None)
+        attrs = {key: _graph_scalar(value) for key, value in payload.items()}
+        if edge_id is not None:
+            attrs["laclaugpt_edge_id"] = str(edge_id)
+            graph.add_edge(source, target, key=str(edge_id), id=str(edge_id), **attrs)
+        else:
+            graph.add_edge(source, target, **attrs)
     return graph
 
 
@@ -103,11 +105,30 @@ def _read_networkx_exchange_graph(graph, format_name: str):
     if not raw_projection:
         raise ValueError(f"{format_name} lacks laclaugpt_projection construction semantics")
     projection = GraphProjection.model_validate(json.loads(raw_projection))
-    nodes = [{"id": str(node_id), **dict(attrs)} for node_id, attrs in graph.nodes(data=True)]
-    edges = [
-        {"source": str(source), "target": str(target), **dict(attrs)}
-        for source, target, attrs in graph.edges(data=True)
+    relation_edge_ids = {
+        str(attrs.get("laclaugpt_edge_id"))
+        for _, _, attrs in graph.edges(data=True)
+        if attrs.get("laclaugpt_edge_id")
+    }
+    relation_edge_ids.update(
+        str(node_id)
+        for node_id, attrs in graph.nodes(data=True)
+        if str(node_id).startswith(("rel-", "relation:")) and not attrs
+    )
+    nodes = [
+        {"id": str(node_id), **dict(attrs)}
+        for node_id, attrs in graph.nodes(data=True)
+        if str(node_id) not in relation_edge_ids
     ]
+    edges = []
+    for source, target, attrs in graph.edges(data=True):
+        payload = dict(attrs)
+        canonical_id = payload.get("laclaugpt_edge_id") or payload.get("id")
+        if canonical_id is not None:
+            payload["id"] = str(canonical_id)
+        if "type" not in payload:
+            payload["type"] = payload.get("label") or payload.get("kind") or "UNSPECIFIED"
+        edges.append({"source": str(source), "target": str(target), **payload})
     return nodes, edges, projection
 
 
