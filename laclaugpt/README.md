@@ -731,3 +731,60 @@ analysis
 Complexity should only be introduced when a concrete research requirement demands it.
 
 The code should remain something the researcher can follow line by line.
+
+
+---
+
+# Phase 0 minimum runnable core
+
+The Phase 0 baseline is intentionally narrow:
+
+- RSS/Atom text only
+- MongoDB only
+- plain Python command-line scripts
+- cron-compatible
+- implementation under `laclaugpt/`
+- no Redis, Allas, Telegram, queues, agents or multimodal processing
+
+Required environment:
+
+```bash
+export MONGO_URI='mongodb://...'
+export MONGO_DB_NAME='...'
+export LACLAUGPT_PROJECT_ID='ai26'
+export OLLAMA_MODEL='gemma4:12b'
+export LACLAUGPT_RSS_FEEDS='https://example.org/feed.xml,https://example.net/rss'
+```
+
+Collect RSS:
+
+```bash
+cd laclaugpt
+python laclaugpt_collect_rss.py --project ai26
+```
+
+Run the whole minimum analysis flow:
+
+```bash
+python laclaugpt_process.py --project ai26 --limit 100 --stage all
+```
+
+Each stage can also be run separately:
+
+```bash
+python laclaugpt_process.py --project ai26 --stage preprocess
+python laclaugpt_process.py --project ai26 --stage summary
+python laclaugpt_process.py --project ai26 --stage postprocess
+python laclaugpt_process.py --project ai26 --stage discourse
+```
+
+Example cron configuration:
+
+```cron
+*/10 * * * * cd /path/to/LaclauGPT-Data-Analysis/laclaugpt && /usr/bin/python3 laclaugpt_collect_rss.py --project ai26 >> /tmp/laclaugpt-rss.log 2>&1
+*/10 * * * * cd /path/to/LaclauGPT-Data-Analysis/laclaugpt && /usr/bin/python3 laclaugpt_process.py --project ai26 --limit 100 --stage all >> /tmp/laclaugpt-process.log 2>&1
+```
+
+RSS collection uses an upsert keyed by `source_url`, and the processor tracks stage status under `phase0.*`, so repeated cron execution does not blindly create duplicate records.
+
+Phase 1 features should be restored around this working core one feature at a time.
