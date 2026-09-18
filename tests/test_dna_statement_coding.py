@@ -135,6 +135,7 @@ def test_enabled_pipeline_stage_projects_person_concept_agreement_and_exact_offs
         context=PipelineContext(
             codebook_revision="ai26-codebook-v2",
             project_config={
+                "analysis_phase": 2,
                 "analysis": {
                     "dna_statement_coding": {
                         "enabled": True,
@@ -174,7 +175,7 @@ def test_ambiguous_stance_abstains_instead_of_forcing_binary_agreement() -> None
         record(text),
         provider=provider,
         context=PipelineContext(
-            project_config={"analysis": {"dna_statement_coding": {"enabled": True}}}
+            project_config={"analysis_phase": 2, "analysis": {"dna_statement_coding": {"enabled": True}}}
         ),
         project_profile="ai26",
     )
@@ -194,7 +195,7 @@ def test_organization_can_speak_without_named_person() -> None:
         record(text),
         provider=provider,
         context=PipelineContext(
-            project_config={"analysis": {"dna_statement_coding": {"enabled": True}}}
+            project_config={"analysis_phase": 2, "analysis": {"dna_statement_coding": {"enabled": True}}}
         ),
         project_profile="ai26",
     )
@@ -239,7 +240,7 @@ def test_multilingual_unicode_offsets_are_repaired_from_exact_evidence(text: str
         record(text),
         provider=provider,
         context=PipelineContext(
-            project_config={"analysis": {"dna_statement_coding": {"enabled": True}}}
+            project_config={"analysis_phase": 2, "analysis": {"dna_statement_coding": {"enabled": True}}}
         ),
         project_profile="ai26",
     )
@@ -256,7 +257,7 @@ def test_unlocatable_evidence_is_kept_for_review_not_claimed_exact() -> None:
         record(text),
         provider=provider,
         context=PipelineContext(
-            project_config={"analysis": {"dna_statement_coding": {"enabled": True}}}
+            project_config={"analysis_phase": 2, "analysis": {"dna_statement_coding": {"enabled": True}}}
         ),
         project_profile="ai26",
     )
