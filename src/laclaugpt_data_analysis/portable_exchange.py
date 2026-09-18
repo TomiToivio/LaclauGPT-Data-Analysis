@@ -76,9 +76,11 @@ def _networkx_exchange_graph(
         raise RuntimeError("Graph exchange requires the 'analysis' optional dependencies") from exc
 
     graph = nx.MultiDiGraph()
-    graph.graph["laclaugpt_projection"] = json.dumps(
+    projection_json = json.dumps(
         projection.model_dump(mode="json"), ensure_ascii=False, sort_keys=True
     )
+    graph.graph["laclaugpt_projection"] = projection_json
+    graph.graph["name"] = projection_json
     for node in nodes:
         payload = dict(node)
         node_id = str(payload.pop("id"))
@@ -146,7 +148,7 @@ def read_gexf(path: str | Path) -> tuple[list[dict[str, Any]], list[dict[str, An
 
 
 def _read_networkx_exchange_graph(graph, format_name: str):
-    raw_projection = graph.graph.get("laclaugpt_projection")
+    raw_projection = graph.graph.get("laclaugpt_projection") or graph.graph.get("name")
     if not raw_projection:
         raise ValueError(f"{format_name} lacks laclaugpt_projection construction semantics")
     projection = GraphProjection.model_validate(json.loads(raw_projection))
