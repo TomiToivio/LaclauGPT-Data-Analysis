@@ -135,3 +135,60 @@ def test_xautoclaim_path_also_decodes_byte_payloads() -> None:
     assert claimed is not None
     assert claimed.message_id == "9-0"
     assert claimed.task.record_ref.endswith("source-1")
+
+
+def test_reclaim_falls_back_when_redis_raises_responserror() -> None:
+    """Issue #159: real Redis reports XAUTOCLAIM as a ``ResponseError``.
+
+    ``Redis60Client`` above raises ``RuntimeError``, which the original
+    ``except RuntimeError`` clause caught — so the compatibility path was tested
+    with an exception class the server never actually raises. Real Redis 6.0
+    raises ``redis.exceptions.ResponseError``, which derives only from
+    ``RedisError`` and is **not** a ``RuntimeError``/``TypeError``/
+    ``AttributeError``. The fallback therefore never ran in production.
+    """
+    pytest.importorskip("redis")  # optional dependency; CI installs only .[dev]
+    from redis.exceptions import ResponseError
+
+    class RealRedis60Client(Redis60Client):
+        def xautoclaim(self, *args, **kwargs):
+            raise ResponseError(
+                "unknown command `XAUTOCLAIM`, with args beginning with: stream"
+            )
+
+    pending = [
+        {"message_id": "1-100", "consumer": "old", "time_since_delivered": 6000, "times_delivered": 1}
+    ]
+    client = RealRedis60Client(pending)
+    queue = _queue(client)
+
+    claimed = queue.reclaim(min_idle_ms=5000)
+
+    assert claimed is not None, "the Redis 6 fallback must run for ResponseError"
+    assert claimed.message_id == "1-100"
+    assert client.claim_calls, "XCLAIM must have been used as the fallback"
+
+
+def test_responserror_is_not_a_runtimeerror() -> None:
+    """Documents why the class-based guard was wrong."""
+    pytest.importorskip("redis")  # optional dependency; CI installs only .[dev]
+    from redis.exceptions import RedisError, ResponseError
+
+    assert issubclass(ResponseError, RedisError)
+    assert not issubclass(ResponseError, RuntimeError)
+    assert not issubclass(ResponseError, TypeError)
+    assert not issubclass(ResponseError, AttributeError)
+
+
+def test_non_compatibility_responserror_still_propagates() -> None:
+    """A genuine Redis error must not be swallowed by the fallback."""
+    pytest.importorskip("redis")  # optional dependency; CI installs only .[dev]
+    from redis.exceptions import ResponseError
+
+    class BrokenClient:
+        def xautoclaim(self, *args, **kwargs):
+            raise ResponseError("WRONGTYPE Operation against a key holding the wrong kind of value")
+
+    queue = _queue(BrokenClient())
+    with pytest.raises(ResponseError):
+        queue.reclaim(min_idle_ms=5000)

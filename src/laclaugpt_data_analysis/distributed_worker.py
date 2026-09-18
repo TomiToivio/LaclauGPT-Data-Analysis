@@ -370,32 +370,118 @@ class MongoCollectionHandoff:
         return [dict(row.get("handoff") or {}) for row in cursor]
 
 
+def _flatten_provenance(payload: Any) -> dict[str, list[str]]:
+    """Flatten a rich provenance mapping into ``dict[str, list[str]]``.
+
+    ``PipelineContext.provenance`` accepts only lists of strings, while the staging
+    report nests structures. Each top-level key becomes a list of rendered values, so
+    no information is dropped and the value stays inside the declared contract.
+    """
+
+    def render(value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        if isinstance(value, bool | int | float) or value is None:
+            return str(value)
+        return json.dumps(value, sort_keys=True, ensure_ascii=False, default=str)
+
+    flattened: dict[str, list[str]] = {}
+    for key, value in dict(payload or {}).items():
+        if isinstance(value, list | tuple):
+            flattened[str(key)] = [render(item) for item in value]
+        else:
+            flattened[str(key)] = [render(value)]
+    return flattened
+
+
+def _publish_local_media_refs(record: Any, report: Any) -> None:
+    """Point frames/media at staged local files so the multimodal adapter can attach them.
+
+    A staged path is local runtime state: it is written to the transient frame or media
+    reference only, never into canonical source identity.
+    """
+    by_ref = {item.ref: item for item in report.staged if item.local_available}
+    if not by_ref:
+        return
+    for frame in getattr(record.content, "frames", []) or []:
+        ref = getattr(frame, "media_ref", None)
+        if ref and ref in by_ref:
+            frame.media_ref = str(by_ref[ref].path)
+    for media in getattr(record.content, "media_references", []) or []:
+        ref = getattr(media, "object_ref", None)
+        if ref and ref in by_ref:
+            media.local_ref = str(by_ref[ref].path)
+
+
 class AI26Handler:
-    def __init__(self, binding: WorkerBinding, settings: Settings, handoff: MongoCollectionHandoff):
+    def __init__(
+        self,
+        binding: WorkerBinding,
+        settings: Settings,
+        handoff: MongoCollectionHandoff,
+        *,
+        stager: MediaStager | None = None,
+    ):
         self.binding = binding
         self.settings = settings
         self.handoff = handoff
-        project_config = _load_project_config(binding.private_config)
+        self.project_config = _load_project_config(binding.private_config)
         self.codebook = load_codebook(binding.codebook)
+        # The model is chosen per request by run_canonical_pipeline, so the provider
+        # takes the host only. Passing `model=` here is a TypeError.
+        self.provider = OllamaProvider(host=resolve_llm_host() or None)
+        # Staging is performed explicitly in __call__: the report feeds both provenance
+        # and the local media references, and a retriable failure must abort the task.
+        # It cannot be handed to PipelineContext — that model declares no stager field
+        # and silently drops unknown keys, which would make staging a silent no-op.
+        self.stager = stager if stager is not None else build_media_stager(settings)
+        # Only declared PipelineContext fields belong here. An undeclared kwarg is
+        # discarded without warning, so the manifest revisions are carried in
+        # `provenance`, which the context actually keeps (matching the proven working
+        # implementation). `config_revision`/`codebook_revision` are left for the
+        # analysis stages to fill from the run manifest.
         self.context = PipelineContext(
-            project_id=settings.project_id,
-            run_id=binding.manifest.run_id,
-            project_config=project_config,
-            codebook=self.codebook,
-            llm=OllamaProvider(
-                host=resolve_llm_host(),
-                model=AI26_MODEL,
-            ),
-            media_stager=build_media_stager(settings),
+            project_context="AI26 distributed bounded test",
+            project_config=self.project_config,
+            provenance={
+                "private_config_sha256": [binding.manifest.config_sha256],
+                "codebook_sha256": [binding.manifest.codebook_sha256],
+            },
         )
 
     def __call__(self, task: TaskEnvelope) -> dict[str, Any]:
-        self.binding.validate_task(task)
         record = self.handoff.resolve(task.record_ref)
-        try:
-            return run_canonical_pipeline(record, self.context)
-        except ObjectUnavailableError:
-            raise
+        context = self.context
+        if self.stager is not None:
+            # Materialise referenced objects before any multimodal model call. A
+            # retriable failure aborts so the task retries instead of silently
+            # producing a degraded scientific result.
+            report = self.stager.stage_record(record)
+            retriable = [item for item in report.staged if item.retriable]
+            if retriable:
+                raise ObjectUnavailableError(
+                    "media staging failed (retriable): "
+                    + ", ".join(f"{item.cache_key}:{item.reason}" for item in retriable)
+                )
+            _publish_local_media_refs(record, report)
+            context = context.model_copy(
+                update={
+                    "provenance": {
+                        **context.provenance,
+                        **_flatten_provenance(report.provenance()),
+                    }
+                }
+            )
+        analyzed = run_canonical_pipeline(
+            record,
+            provider=self.provider,
+            context=context,
+            codebook_entries=self.codebook.entries,
+            model=AI26_MODEL,
+            project_profile="ai26",
+            allow_cloud_fallback=False,
+        )
+        return analyzed.model_dump(mode="json")
 
 
 class AI26TaskWorker(TaskWorker):
