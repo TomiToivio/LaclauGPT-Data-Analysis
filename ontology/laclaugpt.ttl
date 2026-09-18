@@ -1,0 +1,37 @@
+@prefix lg: <https://laclaugpt.org/ontology/> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n@prefix prov: <http://www.w3.org/ns/prov#> .
+
+lg:Document a rdfs:Class .
+lg:Actor a rdfs:Class .
+lg:Concept a rdfs:Class .
+lg:Signifier a rdfs:Class .
+lg:EmptySignifier a rdfs:Class ; rdfs:subClassOf lg:Signifier .
+lg:FloatingSignifier a rdfs:Class ; rdfs:subClassOf lg:Signifier .
+lg:NodalPoint a rdfs:Class ; rdfs:subClassOf lg:Signifier .
+lg:Articulation a rdfs:Class .
+lg:Equivalence a rdfs:Class .
+lg:Difference a rdfs:Class .
+lg:Antagonism a rdfs:Class .
+lg:Frontier a rdfs:Class .
+lg:Affect a rdfs:Class .
+lg:AnalysisAssertion a rdfs:Class .
+lg:AnalysisRun a rdfs:Class ; rdfs:subClassOf prov:Activity .
+
+lg:sourceDocument a rdf:Property .
+lg:subject a rdf:Property .
+lg:object a rdf:Property .
+lg:relation a rdf:Property .
+lg:articulates a rdf:Property .
+lg:equivalentTo a rdf:Property .
+lg:differentFrom a rdf:Property .
+lg:antagonisticTo a rdf:Property .
+lg:constructsFrontier a rdf:Property .
+lg:expressesAffect a rdf:Property .
+lg:surfaceForm a rdf:Property .
+lg:confidence a rdf:Property .
+lg:analysisMethod a rdf:Property .
+lg:model a rdf:Property .
+lg:modelVersion a rdf:Property .
+lg:promptVersion a rdf:Property .
+lg:validated a rdf:Property .
