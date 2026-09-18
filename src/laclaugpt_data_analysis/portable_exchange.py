@@ -105,20 +105,19 @@ def _read_networkx_exchange_graph(graph, format_name: str):
     if not raw_projection:
         raise ValueError(f"{format_name} lacks laclaugpt_projection construction semantics")
     projection = GraphProjection.model_validate(json.loads(raw_projection))
-    relation_edge_ids = {
-        str(attrs.get("laclaugpt_edge_id"))
-        for _, _, attrs in graph.edges(data=True)
-        if attrs.get("laclaugpt_edge_id")
-    }
-    relation_edge_ids.update(
+    # Older broken exports could contain phantom relation nodes created solely
+    # because an edge incorrectly targeted a relation edge ID. Filter only those
+    # empty phantom nodes. Stable edge IDs themselves are not node IDs and must
+    # not cause ordinary source/target nodes to be removed from the round-trip.
+    phantom_relation_nodes = {
         str(node_id)
         for node_id, attrs in graph.nodes(data=True)
         if str(node_id).startswith(("rel-", "relation:")) and not attrs
-    )
+    }
     nodes = [
         {"id": str(node_id), **dict(attrs)}
         for node_id, attrs in graph.nodes(data=True)
-        if str(node_id) not in relation_edge_ids
+        if str(node_id) not in phantom_relation_nodes
     ]
     edges = []
     for source, target, attrs in graph.edges(data=True):
