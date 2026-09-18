@@ -5,7 +5,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
-LIST_FIELDS = (
+_LIST_FIELDS = (
     "claims",
     "actors",
     "entities",
@@ -41,28 +41,33 @@ class DocumentSummary(BaseModel):
 def _normalise_list_fields(summary: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
     normalised = dict(summary)
     coerced_fields: list[str] = []
-    for field in LIST_FIELDS:
-        value = normalised.get(field)
-        if value is not None and not isinstance(value, list):
-            normalised[field] = [value]
-            coerced_fields.append(field)
+
+    for field_name in _LIST_FIELDS:
+        value = normalised.get(field_name)
+        if value is None or isinstance(value, list):
+            continue
+        if isinstance(value, str):
+            text = value.strip()
+            normalised[field_name] = [text] if text else []
+            coerced_fields.append(field_name)
+
     return normalised, coerced_fields
 
 
 def validate_summary(record: dict[str, Any], summary: dict[str, Any]) -> DocumentSummary:
     metadata = record.get("metadata") or {}
-    normalised_summary, coerced_fields = _normalise_list_fields(summary)
+    normalised, coerced_fields = _normalise_list_fields(summary)
+
     if coerced_fields:
-        notes = list(normalised_summary.get("uncertainty_notes") or [])
+        notes = list(normalised.get("uncertainty_notes") or [])
+        fields = ", ".join(coerced_fields)
         notes.append(
-            "Phase 0 postprocess normalised scalar values to one-element lists for: "
-            + ", ".join(coerced_fields)
-            + "."
+            f"Phase 0 postprocess normalized scalar list field(s) to one-element lists: {fields}."
         )
-        normalised_summary["uncertainty_notes"] = notes
+        normalised["uncertainty_notes"] = notes
 
     payload = {
-        **normalised_summary,
+        **normalised,
         "document_id": record["document_id"],
         "source_url": metadata.get("source_url") or record.get("source_url") or "",
         "source_date": metadata.get("source_date"),
