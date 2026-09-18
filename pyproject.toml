@@ -13,6 +13,8 @@ authors = [{name = "Tomi Toivio"}]
 dependencies = [
   "pydantic>=2.7,<3",
   "PyYAML>=6.0",
+  "feedparser>=6.0",
+  "requests>=2.32",
 ]
 
 [project.scripts]

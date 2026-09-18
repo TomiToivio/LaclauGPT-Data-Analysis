@@ -12,21 +12,32 @@ role or ideological formation.
 ## Canonical formations (kind=formation)
 
 The current computational vocabulary is deliberately small so aggregation and
-visualization remain stable:
+visualization remain stable. Storage and filtering use normalized snake_case IDs; older
+paper/codebook wording remains retrieval vocabulary rather than canonical storage labels:
 
-- `accelerationism`
-- `doomerism`
-- `left-wing accelerationism`
-- `ai safety`
-- `ai critical`
-- `anti-ai`
+- `existential_risk`
+- `accelerationist`
+- `left_accelerationist`
+- `ai_safety`
+- `critical_ai`
+- `anti_ai`
+- `other`
+- `unknown`
 
 Definition attached to each seed:
 
 > Canonical AI26 computational formation label used as a PROVISIONAL sensitising
 > category. Membership must be supported by source evidence; multi-label overlap,
-> uncertainty and abstention are valid. The six labels are reproducibility anchors,
+> uncertainty and abstention are valid. These labels are reproducibility anchors,
 > not a closed ontology and not permanent properties of actors.
+
+Normalization aliases:
+- `doomerism`, `AI doomerism`, `x-risk` -> `existential_risk`
+- `accelerationism`, `e/acc`, `techno-optimism` -> `accelerationist`
+- `left-wing accelerationism`, `left techno-optimism` -> `left_accelerationist`
+- `AI safety`, `alignment discourse` -> `ai_safety`
+- `AI Critical`, `Critical AI` -> `critical_ai`
+- `anti-ai`, `pause_ai`, `anti_ai_protest` -> `anti_ai`
 
 The paper's research vocabulary is richer than these six aggregation labels.
 Techno-optimism, e/acc, singularitarianism, transhumanism, existential-risk
@@ -236,6 +247,7 @@ not ideological labels.
 
 People:
 
+- Nick Srnicek
 - Marc Andreessen
 - Dario Amodei
 - Sam Altman
@@ -318,10 +330,62 @@ Source family is contextual/provenance information, not a credibility or ideolog
 
 Seeds enter memory as PROVISIONAL. Promotion or normalization requires the
 resolution loop and human validation. New current-event vocabulary should
-normally enter as signifiers/tags/motifs rather than expanding the six top-level
-formation labels.
+normally enter as signifiers/tags/motifs rather than expanding the top-level
+formation labels. `other` and `unknown` are explicit fallback values for collection
+metadata and should not be interpreted as empirical formations.
 
 Public codebooks may be updated from the public paper, public situation reports
 and documented public discourse. Never seed private corpus-derived surface forms,
 private source lists, unpublished annotations, credentials or operational
 infrastructure into this file.
+
+
+## Wikipedia / Wikidata grounding
+
+Phase 0 may seed the background graph from English Wikipedia and Wikidata, but the
+knowledge-graph layer is strictly contextual. Prefer a project-local stable ID as
+the database/graph identifier, attach a Wikidata QID as persistent external identity
+when a clean mapping exists, and use the English Wikipedia title as the canonical
+display label. Never invent a QID when resolution is ambiguous or missing.
+
+The seed relation is explicitly different from analytical evidence:
+
+- `actor -> seedFormation -> formation` means researcher/codebook context only;
+- corpus-derived relations retain source/document provenance and review state;
+- a later validated formation relation must be supported by corpus evidence.
+
+Every graph edge should preserve provenance class, extraction method, timestamp or
+observation period when relevant, and validation state. The four provenance classes
+used by Phase 0 are `background_knowledge`, `researcher_seed`, `corpus_evidence`
+and `llm_inference`.
+
+The Phase 0 CLI seeder lives at `laclaugpt/laclaugpt_seed_graph.py`. It writes
+MongoDB graph nodes, graph edges and query-driven RAG chunks. The RAG chunks are
+explicitly marked as context rather than evidence so retrieved actor hints cannot
+silently become model ground truth.
+
+## RDF / SKOS bridge
+
+Formation concepts are first-class `skos:Concept` +
+`laclaugpt:Formation` resources. People and organizations use schema.org / PROV
+types where possible. Wikipedia URLs are not primary keys. The public YAML contains
+the current RDF mapping and seed-entity metadata so MongoDB can stay simple while
+RDF/property-graph exports use stable semantic identifiers.
+
+## RAG chunking policy
+
+Do not paste the entire public codebook into each prompt. Retrieval units should be
+small and typed: one formation, signifier/concept, entity card, research reference,
+watch relation or methodological safeguard per chunk. The supplied chunks must be
+logged with analysis provenance. Source text always has epistemic priority over seed
+context for document-level claims.
+
+## Context bibliography
+
+The public RAG bibliography includes the foundational and recent context requested
+for issue #174: Jasanoff on sociotechnical imaginaries; Srnicek & Williams and
+Bastani for left-wing automation/post-work imaginaries; Gebru & Torres as a cited
+Critical AI/TESCREAL framework rather than a universal classifier; Richter,
+Katzenbach & Schäfer on AI imaginaries; Oldenburg & Papyshev on AI risk imaginaries;
+and De, Lima & Zou on the politics of generative-AI safety. These references are
+context material, not actor-level graph claims.
