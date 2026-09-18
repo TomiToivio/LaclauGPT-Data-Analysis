@@ -58,8 +58,9 @@ analysis:
   ant: false
   valueflows: false
 
+  # Phase 2 / experimental / optional. Off by default during Phase 1.
   dna_statement_coding:
-    enabled: true
+    enabled: false
     prompt_version: v1
     concept_mode: codebook_or_provisional
     require_binary_agreement: false
@@ -68,8 +69,9 @@ analysis:
     include_rag: true
     include_periodic_context: false
 
+  # Phase 2 / experimental / optional. Off by default during Phase 1.
   critical_ai:
-    enabled: true
+    enabled: false
     prompt_version: v1
     include_prior_laclau: true
     include_prior_dna: true
@@ -126,4 +128,4 @@ storage:
   raw_media: configured_runtime_object_store
   redis_required: false
 
-pipeline_version: ai26-canonical-v2
+pipeline_version: ai26-phase1-legacy-order-v1
