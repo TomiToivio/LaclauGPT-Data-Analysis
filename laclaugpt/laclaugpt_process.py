@@ -7,6 +7,7 @@ from typing import Any
 
 from laclaugpt_discourse import analyze_discourse
 from laclaugpt_mongo import find_documents, update_document
+from laclaugpt_ontology import export_discourse
 from laclaugpt_postprocess import validate_summary
 from laclaugpt_preprocess import preprocess_record
 from laclaugpt_summary import summarize_record
