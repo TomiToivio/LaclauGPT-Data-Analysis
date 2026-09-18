@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-import pytest
-
 from laclaugpt_data_analysis.canonical import CanonicalRecord, ContentSection, SourceSection
 from laclaugpt_data_analysis.canonical_pipeline import (
     DiscourseProposal,
@@ -114,16 +112,11 @@ def test_phase1_multimodal_order_runs_frame_before_summary_and_discourse():
     assert "postprocess" in result.intermediate.stage_outputs
 
 
-def test_phase2_methods_are_rejected_by_phase1_runner():
-    provider = SequencedProvider([])
-    with pytest.raises(ValueError, match="Phase 2 / experimental"):
-        run_canonical_pipeline(
-            _record(with_frame=False),
-            provider=provider,
-            context=_ctx(dna_statement_coding={"enabled": True}),
-            project_profile="ai26",
-            model="fake-model",
-        )
+def test_phase2_methods_are_off_by_default_in_phase1_context():
+    ctx = _ctx()
+    assert ctx.project_config["analysis"]["dna_statement_coding"]["enabled"] is False
+    assert ctx.project_config["analysis"]["critical_ai"]["enabled"] is False
+    assert ctx.project_config["analysis"]["sna"] is False
 
 
 def test_ep24_and_ai26_prompt_profiles_are_distinct():
