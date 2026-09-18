@@ -80,6 +80,7 @@ def _networkx_exchange_graph(
         projection.model_dump(mode="json"), ensure_ascii=False, sort_keys=True
     )
     graph.graph["laclaugpt_projection"] = projection_json
+    # NetworkX GEXF only preserves a limited set of graph metadata fields.
     graph.graph["name"] = projection_json
     for node in nodes:
         payload = dict(node)
@@ -95,6 +96,19 @@ def _networkx_exchange_graph(
             **{key: _graph_scalar(value) for key, value in payload.items()},
         )
     return graph
+
+
+def _read_networkx_exchange_graph(graph, format_name: str):
+    raw_projection = graph.graph.get("laclaugpt_projection") or graph.graph.get("name")
+    if not raw_projection:
+        raise ValueError(f"{format_name} lacks laclaugpt_projection construction semantics")
+    projection = GraphProjection.model_validate(json.loads(raw_projection))
+    nodes = [{"id": str(node_id), **dict(attrs)} for node_id, attrs in graph.nodes(data=True)]
+    edges = [
+        {"source": str(source), "target": str(target), **dict(attrs)}
+        for source, target, attrs in graph.edges(data=True)
+    ]
+    return nodes, edges, projection
 
 
 def write_graphml(
@@ -129,7 +143,7 @@ def write_gexf(
     edges: Iterable[Mapping[str, Any]],
     projection: GraphProjection,
 ) -> None:
-    """Write GEXF with the same stable IDs and embedded projection semantics as GraphML."""
+    """Write GEXF with stable node IDs and explicit projection semantics."""
     graph = _networkx_exchange_graph(nodes=nodes, edges=edges, projection=projection)
     import networkx as nx
 
@@ -146,90 +160,6 @@ def read_gexf(path: str | Path) -> tuple[list[dict[str, Any]], list[dict[str, An
     graph = nx.read_gexf(Path(path))
     return _read_networkx_exchange_graph(graph, "GEXF")
 
-
-def _read_networkx_exchange_graph(graph, format_name: str):
-    raw_projection = graph.graph.get("laclaugpt_projection") or graph.graph.get("name")
-    if not raw_projection:
-        raise ValueError(f"{format_name} lacks laclaugpt_projection construction semantics")
-    projection = GraphProjection.model_validate(json.loads(raw_projection))
-    nodes = [{"id": str(node_id), **dict(attrs)} for node_id, attrs in graph.nodes(data=True)]
-    edges = [
-        {"source": str(source), "target": str(target), **dict(attrs)}
-        for source, target, attrs in graph.edges(data=True)
-    ]
-    return nodes, edges, projection
-
-
-
-def _graph_from_records(
-    *,
-    nodes: Iterable[Mapping[str, Any]],
-    edges: Iterable[Mapping[str, Any]],
-    projection: GraphProjection,
-):
-    try:
-        import networkx as nx
-    except ImportError as exc:  # pragma: no cover - optional dependency
-        raise RuntimeError("Graph exchange requires the 'analysis' optional dependencies") from exc
-
-    graph = nx.MultiDiGraph()
-    graph.graph["laclaugpt_projection"] = json.dumps(
-        projection.model_dump(mode="json"), ensure_ascii=False, sort_keys=True
-    )
-    for node in nodes:
-        payload = dict(node)
-        node_id = str(payload.pop("id"))
-        graph.add_node(node_id, **{key: _graphml_scalar(value) for key, value in payload.items()})
-    for edge in edges:
-        payload = dict(edge)
-        source = str(payload.pop("source"))
-        target = str(payload.pop("target"))
-        edge_id = payload.pop("id", None)
-        attrs = {key: _graphml_scalar(value) for key, value in payload.items()}
-        if edge_id is not None:
-            attrs["laclaugpt_edge_id"] = str(edge_id)
-        graph.add_edge(source, target, **attrs)
-    return graph
-
-
-def write_gexf(
-    path: str | Path,
-    *,
-    nodes: Iterable[Mapping[str, Any]],
-    edges: Iterable[Mapping[str, Any]],
-    projection: GraphProjection,
-) -> None:
-    """Write GEXF with stable node IDs and explicit projection metadata."""
-    graph = _graph_from_records(nodes=nodes, edges=edges, projection=projection)
-    import networkx as nx
-
-    nx.write_gexf(graph, Path(path))
-
-
-def read_gexf(
-    path: str | Path,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], GraphProjection]:
-    """Read GEXF and require LaclauGPT construction semantics to be present."""
-    try:
-        import networkx as nx
-    except ImportError as exc:  # pragma: no cover - optional dependency
-        raise RuntimeError("GEXF exchange requires the 'analysis' optional dependencies") from exc
-
-    graph = nx.read_gexf(Path(path))
-    raw_projection = graph.graph.get("laclaugpt_projection")
-    if not raw_projection:
-        raise ValueError("GEXF lacks laclaugpt_projection construction semantics")
-    projection = GraphProjection.model_validate(json.loads(raw_projection))
-    nodes = [{"id": str(node_id), **dict(attrs)} for node_id, attrs in graph.nodes(data=True)]
-    edges = []
-    for source, target, attrs in graph.edges(data=True):
-        payload = dict(attrs)
-        edge_id = payload.pop("laclaugpt_edge_id", None)
-        edge = {"source": str(source), "target": str(target), **payload}
-        if edge_id is not None:
-            edge["id"] = str(edge_id)
-        edges.append(edge)
-    return nodes, edges, projection
 
 def write_parquet_rows(
     path: str | Path,
