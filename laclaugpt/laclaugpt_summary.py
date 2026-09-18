@@ -18,6 +18,7 @@ PROMPT_VERSION = "ai26-phase0-summary-v1"
 DEFAULT_SUMMARY_MAX_CHARS = 24000
 DEFAULT_SUMMARY_NUM_CTX = 8192
 DEFAULT_SUMMARY_NUM_PREDICT = 2048
+DEFAULT_SUMMARY_EMPTY_RETRIES = 2
 
 
 class SummaryParseError(ValueError):
@@ -80,6 +81,12 @@ def summarize_record(record: dict[str, Any], normalized_text: str) -> tuple[str,
     max_chars = _runtime_int("LACLAUGPT_SUMMARY_MAX_CHARS", DEFAULT_SUMMARY_MAX_CHARS)
     num_ctx = _runtime_int("LACLAUGPT_SUMMARY_NUM_CTX", DEFAULT_SUMMARY_NUM_CTX)
     num_predict = _runtime_int("LACLAUGPT_SUMMARY_NUM_PREDICT", DEFAULT_SUMMARY_NUM_PREDICT)
+    empty_retries = _runtime_int(
+        "LACLAUGPT_SUMMARY_EMPTY_RETRIES", DEFAULT_SUMMARY_EMPTY_RETRIES
+    )
+    if empty_retries < 0:
+        raise ValueError("LACLAUGPT_SUMMARY_EMPTY_RETRIES must be >= 0")
+
     bounded_text, truncated = _bounded_text(normalized_text, max_chars)
     request_metadata = {
         "document_id": _document_label(record),
@@ -103,20 +110,31 @@ def summarize_record(record: dict[str, Any], normalized_text: str) -> tuple[str,
         + bounded_text
         + truncation_note
     )
-    response = ollama.chat(
-        model=model,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt},
-        ],
-        format="json",
-        options={
-            "temperature": 0.0,
-            "num_ctx": num_ctx,
-            "num_predict": num_predict,
-        },
-    )
-    raw = response["message"]["content"]
+
+    raw = ""
+    attempts = 0
+    max_attempts = empty_retries + 1
+    while attempts < max_attempts:
+        attempts += 1
+        response = ollama.chat(
+            model=model,
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            format="json",
+            options={
+                "temperature": 0.0,
+                "num_ctx": num_ctx,
+                "num_predict": num_predict,
+            },
+        )
+        raw = response["message"]["content"]
+        if raw.strip():
+            break
+
+    request_metadata["attempt_count"] = attempts
+    request_metadata["empty_retry_count"] = attempts - 1 if not raw.strip() else max(0, attempts - 1)
 
     try:
         parsed = json.loads(raw)
@@ -125,7 +143,7 @@ def summarize_record(record: dict[str, Any], normalized_text: str) -> tuple[str,
         raise SummaryParseError(
             "Summary JSON parse failed for "
             f"{label} ({len(normalized_text)} chars; sent {len(bounded_text)} chars; "
-            f"truncated={truncated}): {exc}",
+            f"truncated={truncated}; attempts={attempts}): {exc}",
             raw_response=raw,
             metadata=request_metadata,
         ) from exc
