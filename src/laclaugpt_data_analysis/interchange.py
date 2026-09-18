@@ -13,8 +13,6 @@ from .canonical import (
     CanonicalRecord,
     ContentSection,
     FrameReference,
-    HumanReadableSection,
-    IntermediateSection,
     MediaReference,
     OcrObservation,
     RawCaptureSection,
@@ -199,35 +197,64 @@ def _collection_provenance(values: Any) -> list[Provenance]:
     return result
 
 
+def _collection_native_ids(record: Mapping[str, Any]) -> dict[str, str]:
+    """Collection 1.0 names this ``native_ids``; 1.1+ uses ``source_native_ids``.
+
+    Accept either so source-native identifiers survive the boundary — losing them
+    would detach a record from its platform identity (issue #75).
+    """
+    values = record.get("source_native_ids") or record.get("native_ids") or {}
+    return {str(key): str(value) for key, value in dict(values).items()}
+
+
+def _collection_provenance_values(record: Mapping[str, Any]) -> list[Any]:
+    """Collection 1.0 emits a provenance *mapping*; 1.1+ emits a list of mappings."""
+    values = record.get("provenance")
+    if isinstance(values, Mapping):
+        return [dict(values)]
+    if isinstance(values, list):
+        return list(values)
+    # A flat record may carry the collector fields at the top level instead.
+    inline = {
+        key: record[key]
+        for key in ("collector", "collector_version", "collection_method", "run_id", "captured_at")
+        if record.get(key)
+    }
+    return [inline] if inline else []
+
+
 def from_collection_record(record: Mapping[str, Any]) -> CanonicalRecord:
-    """Adapt Collection 1.0/1.1 dictionaries without dropping raw or researcher layers."""
+    """Adapt Collection 1.0/1.1 dictionaries without dropping raw or researcher layers.
+
+    Normalisation of the shared cross-module shapes (media ``media_type``/``ref``,
+    frame ``frame_timestamp_seconds``, transcript/OCR ids) is delegated to
+    ``normalize_schema_version`` — the single implementation of that contract.
+    Re-validating the layers here is what let the two repositories disagree about
+    the same bytes (issue #75).
+    """
     if isinstance(record.get("source"), Mapping):
-        source_data = dict(record.get("source") or {})
-        content_data = dict(record.get("content") or {})
-        media = [MediaReference.model_validate(item) for item in content_data.get("media_references", [])]
-        content_data["media_references"] = media
-        canonical = CanonicalRecord(
-            schema_version=SCHEMA_VERSION,
-            source_url=_scalar(record.get("source_url")),
-            source_native_ids={str(k): str(v) for k, v in dict(record.get("source_native_ids") or {}).items()},
-            raw_capture=RawCaptureSection.model_validate(
+        prepared = dict(record)
+        # `handoff` is a delivery envelope produced by Collection's build_handoff,
+        # not part of the canonical record; carry it as legacy metadata so nothing
+        # is silently discarded (issue #75).
+        envelope = prepared.pop("handoff", None)
+        prepared["source_native_ids"] = _collection_native_ids(record)
+        prepared["provenance"] = _collection_provenance_values(record)
+        if envelope:
+            prepared.setdefault("legacy", {})
+            if isinstance(prepared["legacy"], Mapping):
+                prepared["legacy"] = {**dict(prepared["legacy"]), "collection_handoff": dict(envelope)}
+        canonical = normalize_schema_version(prepared)
+        if not (canonical.raw_capture and canonical.raw_capture.ref):
+            source_data = dict(record.get("source") or {})
+            canonical.raw_capture = RawCaptureSection.model_validate(
                 record.get("raw_capture")
                 or {
                     "ref": source_data.get("raw_ref"),
                     "payload": None,
                     "metadata": {"preservation": "collection-legacy-reference-only"},
                 }
-            ),
-            source=SourceSection.model_validate(source_data),
-            content=ContentSection.model_validate(content_data),
-            intermediate=IntermediateSection.model_validate(record.get("intermediate") or {}),
-            evidence=list(record.get("evidence") or []),
-            analysis=dict(record.get("analysis") or {}),
-            human_readable=HumanReadableSection.model_validate(record.get("human_readable") or {}),
-            provenance=_collection_provenance(record.get("provenance")),
-            review=dict(record.get("review") or {}),
-            legacy=dict(record.get("legacy") or {}),
-        )
+            )
         return ensure_research_layers(canonical)
 
     source_url = _scalar(record.get("source_url"))

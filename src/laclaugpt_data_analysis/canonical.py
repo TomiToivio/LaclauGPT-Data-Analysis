@@ -64,7 +64,10 @@ class HumanReadableSection(Model):
 
 class MediaReference(Model):
     kind: str = ""
+    media_type: str = ""
+    ref: str = ""
     url: str = ""
+    media_index: int = 0
     local_ref: str | None = None
     object_ref: str | None = None
     checksum: str | None = None
