@@ -1,9 +1,8 @@
 import json
 
-import pytest
-
 import laclaugpt_discourse
 import laclaugpt_process
+import pytest
 
 
 class FakeOllama:
@@ -55,6 +54,7 @@ def test_discourse_bounds_long_input_and_sets_context_options(monkeypatch):
     assert call["options"]["num_predict"] == 512
     assert "x" * 101 not in call["messages"][1]["content"]
     assert parsed["input_metadata"] == {
+        "document_id": "doc-long",
         "original_chars": 1000,
         "sent_chars": 100,
         "truncated": True,
@@ -90,12 +90,18 @@ def test_process_persists_raw_response_on_discourse_parse_failure(monkeypatch):
     monkeypatch.setattr(laclaugpt_process, "analyze_discourse", fail_discourse)
     monkeypatch.setattr(
         laclaugpt_process,
-        "update_document",
-        lambda source, update, project_id=None: writes.append(update),
+        "record_stage_failure",
+        lambda source, stage, error, extra_fields=None, project_id=None: writes.append(
+            {
+                **(extra_fields or {}),
+                f"phase0.{stage}": {"status": "error", "error": error},
+            }
+        ),
     )
 
     laclaugpt_process.run_document(
         {
+            "source_url": "https://example.invalid/doc-1",
             "document_id": "doc-1",
             "normalized_text": "already here",
             "phase0_summary": {"summary": "existing"},
@@ -104,6 +110,6 @@ def test_process_persists_raw_response_on_discourse_parse_failure(monkeypatch):
         project_id="ai26",
     )
 
-    assert writes[-1]["phase0_discourse_raw"] == "<bad-json>"
+    assert writes[-1]["phase0.discourse"]["raw_response"] == "<bad-json>"
     assert writes[-1]["phase0.discourse"]["status"] == "error"
     assert "doc-1" in writes[-1]["phase0.discourse"]["error"]

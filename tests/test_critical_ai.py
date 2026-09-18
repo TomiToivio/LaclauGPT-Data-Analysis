@@ -139,6 +139,7 @@ def test_enabled_stage_uses_project_selected_model_and_links_source_evidence() -
             codebook_revision="cb-r2",
             project_config={
                 "project": "ai26",
+                "analysis_phase": 2,
                 "analysis": {
                     "critical_ai": {
                         "enabled": True,
@@ -190,6 +191,7 @@ def test_rag_and_periodic_context_can_be_excluded_without_removing_source() -> N
             rag_context="RAG SHOULD NOT APPEAR",
             situational_context="PERIODIC SHOULD NOT APPEAR",
             project_config={
+                "analysis_phase": 2,
                 "analysis": {
                     "critical_ai": {
                         "enabled": True,
@@ -222,7 +224,7 @@ def test_multilingual_source_material_is_preserved_in_critical_ai_prompt(text: s
         record(text),
         provider=provider,
         context=PipelineContext(
-            project_config={"analysis": {"critical_ai": {"enabled": True}}}
+            project_config={"analysis_phase": 2, "analysis": {"critical_ai": {"enabled": True}}}
         ),
         project_profile="ai26",
         model="gemma4:test",
