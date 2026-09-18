@@ -90,11 +90,13 @@ def _networkx_exchange_graph(
         payload = dict(edge)
         source = str(payload.pop("source"))
         target = str(payload.pop("target"))
-        graph.add_edge(
-            source,
-            target,
-            **{key: _graph_scalar(value) for key, value in payload.items()},
-        )
+        edge_id = payload.pop("id", None)
+        attrs = {key: _graph_scalar(value) for key, value in payload.items()}
+        if edge_id is not None:
+            attrs["laclaugpt_edge_id"] = str(edge_id)
+            graph.add_edge(source, target, key=str(edge_id), id=str(edge_id), **attrs)
+        else:
+            graph.add_edge(source, target, **attrs)
     return graph
 
 
