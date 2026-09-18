@@ -21,7 +21,7 @@ def _status(status: str, error: str | None = None) -> dict[str, Any]:
     return value
 
 
-def run_document(source: dict[str, Any], stage: str = "all", dry_run: bool = False) -> None:
+def run_document(source: dict[str, Any], stage: str = "all", dry_run: bool = False, project_id: str | None = None) -> None:
     working = dict(source)
 
     if stage in ("all", "preprocess"):
@@ -35,10 +35,10 @@ def run_document(source: dict[str, Any], stage: str = "all", dry_run: bool = Fal
                     "content_hash": processed["content_hash"],
                     "metadata": processed["metadata"],
                     "phase0.preprocess": processed["phase0"]["preprocess"],
-                })
+                }, project_id=project_id)
         except Exception as exc:
             if not dry_run:
-                update_document(source, {"phase0.preprocess": _status("error", str(exc))})
+                update_document(source, {"phase0.preprocess": _status("error", str(exc))}, project_id=project_id)
             return
 
     if not working.get("normalized_text"):
@@ -59,10 +59,10 @@ def run_document(source: dict[str, Any], stage: str = "all", dry_run: bool = Fal
                     "phase0_summary_raw": raw,
                     "phase0_summary": summary_data,
                     "phase0.summary": _status("ok"),
-                })
+                }, project_id=project_id)
         except Exception as exc:
             if not dry_run:
-                update_document(source, {"phase0.summary": _status("error", str(exc))})
+                update_document(source, {"phase0.summary": _status("error", str(exc))}, project_id=project_id)
             return
 
     if stage in ("all", "postprocess"):
@@ -74,13 +74,13 @@ def run_document(source: dict[str, Any], stage: str = "all", dry_run: bool = Fal
                 update_document(source, {
                     "phase0_summary_validated": validated,
                     "phase0.postprocess": _status("ok"),
-                })
+                }, project_id=project_id)
         except Exception as exc:
             if not dry_run:
                 update_document(source, {
                     "phase0_summary_validation_error": str(exc),
                     "phase0.postprocess": _status("error", str(exc)),
-                })
+                }, project_id=project_id)
             return
 
     if stage in ("all", "discourse"):
@@ -93,10 +93,10 @@ def run_document(source: dict[str, Any], stage: str = "all", dry_run: bool = Fal
                     "phase0_discourse_raw": raw,
                     "phase0_discourse": discourse,
                     "phase0.discourse": _status("ok"),
-                })
+                }, project_id=project_id)
         except Exception as exc:
             if not dry_run:
-                update_document(source, {"phase0.discourse": _status("error", str(exc))})
+                update_document(source, {"phase0.discourse": _status("error", str(exc))}, project_id=project_id)
 
 
 def main() -> None:
@@ -109,8 +109,8 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
-    for source in find_documents(limit=args.limit, document_id=args.document_id, retry_errors=args.retry_errors):
-        run_document(source, stage=args.stage, dry_run=args.dry_run)
+    for source in find_documents(limit=args.limit, document_id=args.document_id, retry_errors=args.retry_errors, project_id=args.project):
+        run_document(source, stage=args.stage, dry_run=args.dry_run, project_id=args.project)
 
 
 if __name__ == "__main__":
