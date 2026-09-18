@@ -1,7 +1,7 @@
 # AI26 public codebook — ideological contestation over AI
 
 This is the publication-safe reference codebook for the AI26 study described in
-`TomiToivio/LaclauGPT/paper/PAPER.md`. It is public methodology, not a dump of
+`TomiToivio/LaclauGPT/paper/PHASE_1_PAPER.md`. It is public methodology, not a dump of
 private corpus-derived labels or researcher annotations.
 
 The codebook is intentionally **non-adjudicative**. It supplies candidate
