@@ -10,6 +10,15 @@ import ollama
 
 PROMPT_VERSION = "ai26-phase0-summary-v1"
 
+# Input/context bounds for the summary call. This stage runs *before* every other LLM
+# stage, so an unbounded document here blocks the whole document. Real AI26 sources
+# reach ~130k characters (~32k tokens), far beyond gemma4:12b's window, which produced
+# empty responses and a bare "Expecting value: line 1 column 1 (char 0)" (#225). Mirrors
+# the discourse stage's bounds.
+SUMMARY_MAX_CHARS = int(os.getenv("LACLAUGPT_SUMMARY_MAX_CHARS", "24000"))
+SUMMARY_NUM_CTX = int(os.getenv("LACLAUGPT_SUMMARY_NUM_CTX", "8192"))
+SUMMARY_NUM_PREDICT = int(os.getenv("LACLAUGPT_SUMMARY_NUM_PREDICT", "2048"))
+
 SYSTEM_PROMPT = """You are LaclauGPT, a social-science research assistant.
 Analyze one AI26 RSS/article document conservatively and transparently.
 Return JSON only with keys: summary, claims, actors, entities, topics, signifiers,
@@ -28,14 +37,57 @@ Use evidence from the current document. Abstain when evidence is weak.
 """
 
 
+class SummaryParseError(ValueError):
+    """Raised when Ollama returned text that is not valid summary JSON."""
+
+    def __init__(self, message: str, *, raw_response: str, metadata: dict[str, Any]) -> None:
+        super().__init__(message)
+        self.raw_response = raw_response
+        self.metadata = metadata
+
+
+def _document_label(record: dict[str, Any]) -> str:
+    return str(
+        record.get("document_id")
+        or (record.get("metadata") or {}).get("url")
+        or record.get("source_url")
+        or "<unknown>"
+    )
+
+
+def _bounded_text(text: str) -> tuple[str, bool]:
+    """Cap the document text sent to the model; report whether truncation happened."""
+    if len(text) <= SUMMARY_MAX_CHARS:
+        return text, False
+    return text[:SUMMARY_MAX_CHARS], True
+
+
 def summarize_record(record: dict[str, Any], normalized_text: str) -> tuple[str, dict[str, Any]]:
     model = os.getenv("OLLAMA_MODEL", "gemma4:12b")
     metadata = record.get("metadata") or {}
+    bounded_text, truncated = _bounded_text(normalized_text)
+    request_metadata = {
+        "document_id": _document_label(record),
+        "input_chars": len(normalized_text),
+        "sent_chars": len(bounded_text),
+        "truncated": truncated,
+        "max_chars": SUMMARY_MAX_CHARS,
+        "num_ctx": SUMMARY_NUM_CTX,
+        "num_predict": SUMMARY_NUM_PREDICT,
+    }
+    truncation_note = (
+        "\n\n### Input handling\n"
+        f"Document was truncated from {len(normalized_text)} to {len(bounded_text)} characters "
+        "to stay within the Phase 0 summary context budget."
+        if truncated
+        else ""
+    )
     user_prompt = (
         "### Source metadata\n"
         + json.dumps(metadata, ensure_ascii=False, default=str)
         + "\n\n### Document\n"
-        + normalized_text
+        + bounded_text
+        + truncation_note
     )
     response = ollama.chat(
         model=model,
@@ -44,11 +96,30 @@ def summarize_record(record: dict[str, Any], normalized_text: str) -> tuple[str,
             {"role": "user", "content": user_prompt},
         ],
         format="json",
-        options={"temperature": 0.0},
+        options={
+            "temperature": 0.0,
+            "num_ctx": SUMMARY_NUM_CTX,
+            "num_predict": SUMMARY_NUM_PREDICT,
+        },
     )
     raw = response["message"]["content"]
-    parsed = json.loads(raw)
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        label = request_metadata["document_id"]
+        raise SummaryParseError(
+            "Summary JSON parse failed for "
+            f"{label} ({len(normalized_text)} chars; sent {len(bounded_text)} chars; "
+            f"truncated={truncated}): {exc}",
+            raw_response=raw,
+            metadata=request_metadata,
+        ) from exc
     parsed["model_metadata"] = {"provider": "ollama", "model": model}
     parsed["prompt_version"] = PROMPT_VERSION
     parsed["generated_at"] = datetime.now(timezone.utc).isoformat()
+    parsed["input_metadata"] = {
+        "original_chars": len(normalized_text),
+        "sent_chars": len(bounded_text),
+        "truncated": truncated,
+    }
     return raw, parsed

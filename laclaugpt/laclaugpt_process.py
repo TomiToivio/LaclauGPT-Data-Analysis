@@ -53,6 +53,7 @@ def run_document(source: dict[str, Any], stage: str = "all", dry_run: bool = Fal
 
     summary_data = source.get("phase0_summary")
     if stage in ("all", "summary"):
+        raw: str | None = None
         try:
             raw, summary_data = summarize_record(working, working["normalized_text"])
             if not dry_run:
@@ -63,7 +64,18 @@ def run_document(source: dict[str, Any], stage: str = "all", dry_run: bool = Fal
                 }, project_id=project_id)
         except Exception as exc:
             if not dry_run:
-                record_stage_failure(source, "summary", str(exc), project_id=project_id)
+                extra = None
+                # Keep whatever the model produced so the failure stays debuggable,
+                # mirroring the discourse stage's phase0_discourse_raw (#225).
+                if raw:
+                    extra = {"phase0_summary_raw": raw}
+                else:
+                    candidate = getattr(exc, "raw_response", None)
+                    if candidate:
+                        extra = {"phase0_summary_raw": candidate}
+                record_stage_failure(
+                    source, "summary", str(exc), extra_fields=extra, project_id=project_id
+                )
             return
 
     if stage in ("all", "postprocess"):
