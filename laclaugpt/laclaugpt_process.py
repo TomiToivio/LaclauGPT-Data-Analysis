@@ -5,7 +5,7 @@ import argparse
 from datetime import datetime, timezone
 from typing import Any
 
-from laclaugpt_discourse import analyze_discourse
+from laclaugpt_discourse import DiscourseParseError, analyze_discourse
 from laclaugpt_mongo import find_documents, update_document
 from laclaugpt_ontology import export_discourse
 from laclaugpt_postprocess import validate_summary
@@ -96,6 +96,13 @@ def run_document(source: dict[str, Any], stage: str = "all", dry_run: bool = Fal
                     "phase0_discourse": discourse,
                     "phase0_ontology": ontology,
                     "phase0.discourse": _status("ok"),
+                }, project_id=project_id)
+        except DiscourseParseError as exc:
+            if not dry_run:
+                update_document(source, {
+                    "phase0_discourse_raw": exc.raw_response,
+                    "phase0_discourse_error_metadata": exc.metadata,
+                    "phase0.discourse": _status("error", str(exc)),
                 }, project_id=project_id)
         except Exception as exc:
             if not dry_run:
