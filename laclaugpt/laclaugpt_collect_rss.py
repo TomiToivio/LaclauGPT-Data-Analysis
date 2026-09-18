@@ -13,6 +13,7 @@ import os
 import re
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import feedparser
 import requests
@@ -34,8 +35,32 @@ def _strip_html(value: str) -> str:
     return re.sub(r"\s+", " ", html.unescape(text)).strip()
 
 
+TRACKING_QUERY_PREFIXES = ("utm_",)
+TRACKING_QUERY_KEYS = {"fbclid", "gclid", "mc_cid", "mc_eid"}
+
+
+def _canonicalize_url(url: str) -> str:
+    """Normalize article URLs for stable identity and deduplication."""
+    url = _text(url)
+    if not url:
+        return ""
+    parts = urlsplit(url)
+    if parts.scheme not in {"http", "https"} or not parts.netloc:
+        return url
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parts.query, keep_blank_values=True)
+        if key.lower() not in TRACKING_QUERY_KEYS
+        and not any(key.lower().startswith(prefix) for prefix in TRACKING_QUERY_PREFIXES)
+    ]
+    path = parts.path or "/"
+    if path != "/":
+        path = path.rstrip("/")
+    return urlunsplit((parts.scheme.lower(), parts.netloc.lower(), path, urlencode(query), ""))
+
+
 def _entry_url(entry: Any) -> str:
-    return _text(entry.get("link") or entry.get("id"))
+    return _canonicalize_url(entry.get("link") or entry.get("id"))
 
 
 def _entry_summary(entry: Any) -> str:
@@ -114,6 +139,7 @@ def collect_source(
         if not source_text:
             continue
 
+        source_url = _canonicalize_url(source_url)
         source_id = hashlib.sha256(source_url.encode("utf-8")).hexdigest()
         content_hash = hashlib.sha256(source_text.encode("utf-8")).hexdigest()
         fields = {
