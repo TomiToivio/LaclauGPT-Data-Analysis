@@ -63,6 +63,7 @@ remote = [
   "pymongo>=4.8",
   "redis>=5.0",
   "boto3>=1.35",
+  "pymongo>=4.8",
 ]
 dev = [
   "pytest>=8.3",
@@ -109,7 +110,7 @@ packages = ["src/laclaugpt_data_analysis"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
-pythonpath = ["src", "."]
+pythonpath = ["src", ".", "laclaugpt"]
 
 [tool.ruff]
 target-version = "py311"
