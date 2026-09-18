@@ -153,6 +153,17 @@ def materialize_record(
     for key, value in sorted(record.source_native_ids.items()):
         graph.add((source, dct.identifier, rdflib.Literal(f"{key}:{value}")))
 
+    # Phase 1: record-level analytical summary text and the explicit uncertainty
+    # record (issue #144). Uncertainty and abstentions are first-class research
+    # output (abstention is a valid result), so they are projected rather than
+    # dropped.
+    if record.analysis.summary:
+        graph.add((source, ns.analysisSummary, rdflib.Literal(record.analysis.summary, lang=_language(record.source.language))))
+    for note in record.analysis.uncertainty:
+        graph.add((source, ns.uncertainty, rdflib.Literal(note)))
+    for note in record.analysis.abstentions:
+        graph.add((source, ns.abstention, rdflib.Literal(note)))
+
     run_key = run_id or f"rdf:{record.source_url}:{record.schema_version}:{RDF_PROFILE_VERSION}"
     run = rdflib.URIRef(stable_uri(base_uri, project_id, "activity", run_key))
     graph.add((run, rdf.type, prov.Activity))
@@ -205,6 +216,14 @@ def materialize_record(
         (record.analysis.floating_signifiers, ns.FloatingSignifier),
         (record.analysis.empty_signifier_candidates, ns.EmptySignifier),
         (record.analysis.frontier, ns.DiscursiveFrontier),
+        # Phase 1 analytical objects (issue #144). These are produced by the
+        # default pipeline's discourse/postprocess stages and were previously
+        # dropped from the RDF projection.
+        (record.analysis.discourses, ns.Discourse),
+        (record.analysis.imaginaries, ns.SociotechnicalImaginary),
+        (record.analysis.us, ns.CollectiveSubject),
+        (record.analysis.them, ns.Other),
+        (record.analysis.affects, ns.Affect),
     ]
     for objects, rdf_type in object_groups:
         for obj in objects:
@@ -217,6 +236,15 @@ def materialize_record(
             graph.add((node, ns.reviewState, rdflib.Literal(_review(obj.review_status))))
             if obj.confidence is not None:
                 graph.add((node, ns.confidence, rdflib.Literal(obj.confidence)))
+            if obj.uncertainty:
+                graph.add((node, ns.uncertainty, rdflib.Literal(obj.uncertainty)))
+            if obj.description:
+                graph.add((node, dct.description, rdflib.Literal(obj.description, lang=_language(record.source.language))))
+            # Corpus-level validation flags (e.g. floating/empty signifier
+            # candidates) must survive projection so a consumer does not treat a
+            # document-level candidate as a corpus-established finding.
+            if obj.metadata.get("corpus_validation_required"):
+                graph.add((node, ns.corpusValidationRequired, rdflib.Literal(True)))
             graph.add((node, prov.wasGeneratedBy, prov_uris.get(obj.provenance_id, run)))
             for evidence_id in obj.evidence_ids:
                 if evidence_id in evidence_uris:
@@ -248,6 +276,99 @@ def materialize_record(
         for evidence_id in relation.evidence_ids:
             if evidence_id in evidence_uris:
                 graph.add((art, ns.hasEvidence, evidence_uris[evidence_id]))
+
+    # Phase 1: equivalence / difference chains (issue #144). A chain is not a
+    # single articulation: it groups heterogeneous members, so it is projected as
+    # its own resource whose membership is preserved as explicit edges.
+    for chain in list(record.analysis.equivalence_chains) + list(record.analysis.difference_chains):
+        chain_node = rdflib.URIRef(stable_uri(base_uri, project_id, "chain", chain.chain_id))
+        chain_type = ns.EquivalenceChain if chain.chain_type == "equivalence" else ns.DifferenceChain
+        graph.add((chain_node, rdf.type, chain_type))
+        graph.add((chain_node, rdf.type, ns.RelationChain))
+        graph.add((chain_node, dct.identifier, rdflib.Literal(chain.chain_id)))
+        graph.add((chain_node, dct.type, rdflib.Literal(chain.chain_type)))
+        graph.add((chain_node, ns.reviewState, rdflib.Literal(_review(chain.review_status))))
+        graph.add((chain_node, prov.wasGeneratedBy, prov_uris.get(chain.provenance_id, run)))
+        for member_ref in chain.member_refs:
+            member = object_uris.get(member_ref) or rdflib.URIRef(stable_uri(base_uri, project_id, "concept", member_ref))
+            graph.add((chain_node, ns.hasMember, member))
+        for evidence_id in chain.evidence_ids:
+            if evidence_id in evidence_uris:
+                graph.add((chain_node, ns.hasEvidence, evidence_uris[evidence_id]))
+
+    # Phase 1: descriptive topics. These are descriptive computation, NOT
+    # discourse-theoretical categories, so they are SKOS concepts typed
+    # laclaugpt:Topic with no formation/articulation semantics (issue #144).
+    for topic in record.analysis.topics:
+        topic_id = getattr(topic, "topic_id", None) or getattr(topic, "id", None)
+        label = getattr(topic, "canonical_label", None) or getattr(topic, "label", None)
+        if not topic_id or not label:
+            continue
+        node = rdflib.URIRef(stable_uri(base_uri, project_id, "topic", topic_id))
+        graph.add((node, rdf.type, ns.Topic))
+        graph.add((node, rdf.type, skos.Concept))
+        graph.add((node, dct.identifier, rdflib.Literal(topic_id)))
+        graph.add((node, skos.prefLabel, rdflib.Literal(label, lang=_language(record.source.language))))
+        graph.add((node, ns.descriptive, rdflib.Literal(True)))
+
+    # Phase 1: sentiments and stances. Policy (issue #144): these ARE projected,
+    # but explicitly typed as descriptive observations, never as affect or
+    # antagonism. Sentiment polarity is not affective investment and must not be
+    # readable as a discourse-theoretical claim in the graph.
+    for kind, objects in (("sentiment", record.analysis.sentiments), ("stance", record.analysis.stances)):
+        for obj in objects:
+            node = rdflib.URIRef(stable_uri(base_uri, project_id, kind, obj.object_id))
+            object_uris[obj.object_id] = node
+            graph.add((node, rdf.type, ns.DescriptiveObservation))
+            graph.add((node, rdf.type, skos.Concept))
+            graph.add((node, dct.identifier, rdflib.Literal(obj.object_id)))
+            graph.add((node, dct.type, rdflib.Literal(kind)))
+            graph.add((node, skos.prefLabel, rdflib.Literal(obj.label, lang=_language(record.source.language))))
+            graph.add((node, ns.descriptive, rdflib.Literal(True)))
+            graph.add((node, ns.reviewState, rdflib.Literal(_review(obj.review_status))))
+            if obj.confidence is not None:
+                graph.add((node, ns.confidence, rdflib.Literal(obj.confidence)))
+            if obj.uncertainty:
+                graph.add((node, ns.uncertainty, rdflib.Literal(obj.uncertainty)))
+            graph.add((node, prov.wasGeneratedBy, prov_uris.get(obj.provenance_id, run)))
+            for evidence_id in obj.evidence_ids:
+                if evidence_id in evidence_uris:
+                    graph.add((node, ns.hasEvidence, evidence_uris[evidence_id]))
+
+    # Phase 1: descriptive themes (issue #144). Projected as descriptive
+    # observations for the same reason as sentiments/stances.
+    for obj in record.analysis.themes:
+        node = rdflib.URIRef(stable_uri(base_uri, project_id, "theme", obj.object_id))
+        object_uris.setdefault(obj.object_id, node)
+        graph.add((node, rdf.type, ns.DescriptiveObservation))
+        graph.add((node, rdf.type, skos.Concept))
+        graph.add((node, dct.identifier, rdflib.Literal(obj.object_id)))
+        graph.add((node, dct.type, rdflib.Literal("theme")))
+        graph.add((node, skos.prefLabel, rdflib.Literal(obj.label, lang=_language(record.source.language))))
+        graph.add((node, ns.descriptive, rdflib.Literal(True)))
+        graph.add((node, ns.reviewState, rdflib.Literal(_review(obj.review_status))))
+        graph.add((node, prov.wasGeneratedBy, prov_uris.get(obj.provenance_id, run)))
+        for evidence_id in obj.evidence_ids:
+            if evidence_id in evidence_uris:
+                graph.add((node, ns.hasEvidence, evidence_uris[evidence_id]))
+
+    # Phase 1: formula of populism (issue #144). Projected as a structured
+    # resource so the Us/Frontier components and the populist verdict survive;
+    # only evidenced components present on the canonical record are emitted.
+    formula = record.analysis.formula_of_populism
+    if isinstance(formula, dict) and formula:
+        formula_node = rdflib.URIRef(stable_uri(base_uri, project_id, "formula", record.source_url))
+        graph.add((formula_node, rdf.type, ns.FormulaOfPopulism))
+        graph.add((formula_node, dct.identifier, rdflib.Literal("formula_of_populism")))
+        graph.add((formula_node, prov.wasGeneratedBy, run))
+        if "populist" in formula and formula.get("populist") is not None:
+            graph.add((formula_node, ns.populist, rdflib.Literal(bool(formula.get("populist")))))
+        if formula.get("non_populist_reason"):
+            graph.add((formula_node, ns.nonPopulistReason, rdflib.Literal(formula["non_populist_reason"])))
+        for key, value in sorted(formula.items()):
+            if key in {"populist", "non_populist_reason"} or value in (None, "", [], {}):
+                continue
+            graph.add((formula_node, ns.formulaComponent, rdflib.Literal(f"{key}:{value}")))
     return dataset
 
 
@@ -309,6 +430,31 @@ def validate_dataset(dataset, *, shapes_path: str | Path | None = None) -> Valid
                     issues.append(ValidationIssue(str(node), f"{PROV}wasGeneratedBy", "Theory-specific signifier-role claims must retain provenance."))
                 if not any(graph.objects(node, ns.reviewState)):
                     issues.append(ValidationIssue(str(node), f"{LACLAUGPT}reviewState", "Theory-specific signifier-role claims must retain review state."))
+        # Phase 1 analytical objects and relation chains (issue #144).
+        phase1_classes = (
+            ns.Discourse, ns.SociotechnicalImaginary, ns.CollectiveSubject, ns.Other,
+            ns.Affect, ns.DiscourseFormation, ns.Signifier, ns.DiscursiveFrontier,
+        )
+        for rdf_type in phase1_classes:
+            for node in graph.subjects(rdflib.namespace.RDF.type, rdf_type):
+                if not any(graph.objects(node, prov.wasGeneratedBy)):
+                    issues.append(ValidationIssue(str(node), f"{PROV}wasGeneratedBy", "A Phase 1 discourse-theoretical object must retain generation provenance."))
+                if not any(graph.objects(node, ns.reviewState)):
+                    issues.append(ValidationIssue(str(node), f"{LACLAUGPT}reviewState", "A Phase 1 discourse-theoretical object must retain review state."))
+        for node in graph.subjects(rdflib.namespace.RDF.type, ns.RelationChain):
+            if len(set(graph.objects(node, ns.hasMember))) < 2:
+                issues.append(ValidationIssue(str(node), f"{LACLAUGPT}hasMember", "An equivalence/difference chain must retain at least two members."))
+            if not any(graph.objects(node, prov.wasGeneratedBy)):
+                issues.append(ValidationIssue(str(node), f"{PROV}wasGeneratedBy", "A relation chain must retain generation provenance."))
+        for node in graph.subjects(rdflib.namespace.RDF.type, ns.FormulaOfPopulism):
+            if not any(graph.objects(node, prov.wasGeneratedBy)):
+                issues.append(ValidationIssue(str(node), f"{PROV}wasGeneratedBy", "The Formula of Populism projection must retain generation provenance."))
+        # Descriptive observations must be explicitly marked descriptive so a
+        # consumer cannot read polarity as affective investment.
+        for rdf_type in (ns.DescriptiveObservation, ns.Topic):
+            for node in graph.subjects(rdflib.namespace.RDF.type, rdf_type):
+                if not any(graph.objects(node, ns.descriptive)):
+                    issues.append(ValidationIssue(str(node), f"{LACLAUGPT}descriptive", "A descriptive observation must be explicitly marked descriptive."))
     return ValidationReport(not issues, tuple(issues), "\n".join(x.message for x in issues))
 
 

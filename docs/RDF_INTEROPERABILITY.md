@@ -42,6 +42,47 @@ The implementation follows the parent profile rather than defining a second onto
 | signifiers | `laclaugpt:Signifier` + `skos:Concept` |
 | nodal/floating/empty signifiers | corresponding LaclauGPT theory-specific class + provenance/review state |
 | relations / antagonisms | explicit `laclaugpt:Articulation` resources |
+| analyses summary, uncertainty, abstentions | `laclaugpt:analysisSummary`, `laclaugpt:uncertainty`, `laclaugpt:abstention` on the source |
+
+### Phase 1 analytical objects (issue #144)
+
+The default Phase 1 pipeline populates additional typed fields. These are all
+projected, with evidence links, `prov:wasGeneratedBy`, `laclaugpt:reviewState`,
+`laclaugpt:confidence` and `laclaugpt:uncertainty` preserved where the canonical
+object carries them:
+
+| Canonical Phase 1 object | RDF representation |
+| --- | --- |
+| `discourses` | `laclaugpt:Discourse` + `skos:Concept` |
+| `imaginaries` | `laclaugpt:SociotechnicalImaginary` + `skos:Concept` |
+| `us` | `laclaugpt:CollectiveSubject` + `skos:Concept` |
+| `them` | `laclaugpt:Other` + `skos:Concept` |
+| `affects` | `laclaugpt:Affect` + `skos:Concept` |
+| `equivalence_chains` | `laclaugpt:EquivalenceChain` + `laclaugpt:RelationChain`, members via `laclaugpt:hasMember` |
+| `difference_chains` | `laclaugpt:DifferenceChain` + `laclaugpt:RelationChain`, members via `laclaugpt:hasMember` |
+| `formula_of_populism` | `laclaugpt:FormulaOfPopulism` with `laclaugpt:populist`, `laclaugpt:nonPopulistReason`, `laclaugpt:formulaComponent` |
+| candidate objects flagged for corpus validation | `laclaugpt:corpusValidationRequired true` |
+
+A chain is projected as its own resource rather than collapsed into pairwise
+articulations, because a chain groups heterogeneous members and its membership is
+analytical content. Objects whose canonical `metadata.corpus_validation_required`
+is set keep that flag in RDF, so a consumer cannot mistake a document-level
+candidate for a corpus-established finding.
+
+### Descriptive computation: explicit typing policy
+
+Topics, sentiments, stances and themes come from descriptive computation, not
+discourse theory. They **are** projected — but deliberately typed as
+`laclaugpt:DescriptiveObservation` (or `laclaugpt:Topic`) and marked
+`laclaugpt:descriptive true`, and never as `laclaugpt:Affect`,
+`laclaugpt:DiscursiveFrontier` or a formation.
+
+This is the encoding of the project rule that **sentiment polarity is not
+affective investment**: a consumer can retrieve polarity as an observation but
+cannot read it as a theory-facing claim, because the node lacks the
+theory-specific type. `topic_assignments` and `representations` are not
+projected; they are document-processing bookkeeping rather than analytical
+objects, and this omission is recorded here rather than left silent.
 
 Analytical edges are reified as `laclaugpt:Articulation` resources so evidence, review state, relation type and generation provenance remain attachable without requiring RDF-star.
 
@@ -58,7 +99,11 @@ Lexical strings, SKOS/discourse concepts and source occurrences are never equate
 - at least two endpoints for every articulation;
 - `prov:wasGeneratedBy` for articulations;
 - allowed review states;
-- generation provenance and review state for theory-specific signifier-role claims.
+- generation provenance and review state for theory-specific signifier-role claims;
+- generation provenance and review state for Phase 1 discourse-theoretical objects (`Discourse`, `SociotechnicalImaginary`, `CollectiveSubject`, `Other`, `Affect`, `DiscourseFormation`, `Signifier`, `DiscursiveFrontier`);
+- at least two members, generation provenance and review state for every `RelationChain`;
+- generation provenance for the `FormulaOfPopulism` projection;
+- `laclaugpt:descriptive true` on every `DescriptiveObservation` and `Topic`, so polarity cannot be read as a theory-facing claim.
 
 Validation reports contain focus node, path, message and severity. Persistent store writes occur only after validation passes.
 
