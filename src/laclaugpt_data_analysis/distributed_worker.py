@@ -375,27 +375,49 @@ class AI26Handler:
         self.binding = binding
         self.settings = settings
         self.handoff = handoff
-        project_config = _load_project_config(binding.private_config)
+        self.project_config = _load_project_config(binding.private_config)
         self.codebook = load_codebook(binding.codebook)
-        self.context = PipelineContext(
-            project_id=settings.project_id,
-            run_id=binding.manifest.run_id,
-            project_config=project_config,
-            codebook=self.codebook,
-            llm=OllamaProvider(
-                host=resolve_llm_host(),
-                model=AI26_MODEL,
-            ),
-            media_stager=build_media_stager(settings),
-        )
+        self.provider = OllamaProvider(host=resolve_llm_host() or None)
+        self.stager = build_media_stager(settings)
 
     def __call__(self, task: TaskEnvelope) -> dict[str, Any]:
         self.binding.validate_task(task)
         record = self.handoff.resolve(task.record_ref)
-        try:
-            return run_canonical_pipeline(record, self.context)
-        except ObjectUnavailableError:
-            raise
+        staging_provenance: dict[str, Any] = {}
+        if self.stager is not None:
+            report = self.stager.stage_record(record)
+            staging_provenance = report.provenance()
+            retriable = [item for item in report.staged if item.retriable]
+            if retriable:
+                refs = ", ".join(item.ref for item in retriable)
+                raise ObjectUnavailableError(f"media staging failed (retriable): {refs}")
+
+        context = PipelineContext(
+            project_context="AI26 distributed bounded test",
+            project_config=self.project_config,
+            project_config_revision=self.binding.manifest.config_sha256,
+            config_revision=self.binding.manifest.config_sha256,
+            codebook_revision=self.binding.manifest.codebook_sha256,
+            provenance={
+                "private_config_sha256": [self.binding.manifest.config_sha256],
+                "codebook_sha256": [self.binding.manifest.codebook_sha256],
+                "run_id": [self.binding.manifest.run_id],
+                **{
+                    key: value if isinstance(value, list) else [str(value)]
+                    for key, value in staging_provenance.items()
+                },
+            },
+        )
+        analyzed = run_canonical_pipeline(
+            record,
+            provider=self.provider,
+            context=context,
+            codebook_entries=self.codebook.entries,
+            model=AI26_MODEL,
+            project_profile="ai26",
+            allow_cloud_fallback=False,
+        )
+        return analyzed.model_dump(mode="json")
 
 
 class AI26TaskWorker(TaskWorker):
