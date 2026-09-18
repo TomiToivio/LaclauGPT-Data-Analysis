@@ -1,0 +1,6 @@
+# Minimal dependencies for the hand-maintained Phase 0 core.
+# Intentionally excludes Redis, Allas, multimodal, NLP and Phase 1 stacks.
+feedparser>=6.0,<7
+ollama>=0.6,<1
+pydantic>=2.7,<3
+pymongo>=4.8,<5
