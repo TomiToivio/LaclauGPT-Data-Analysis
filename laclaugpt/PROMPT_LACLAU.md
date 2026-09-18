@@ -292,3 +292,45 @@ save_analysis(validated)
 ```
 
 No agent framework is required.
+
+
+---
+
+## 9. Phase 0 Formula component rule: Us / Frontier / Affect
+
+The old Formula of Populism implementation is deprecated for new Phase 0 output.
+
+Do not ask the model:
+
+```text
+Is this populist?
+```
+
+Do not generate:
+
+- `is_populist`
+- `populism_score`
+- `populist: true/false`
+- `classification: populist/not_populist`
+
+Instead detect three independent candidate structures:
+
+```text
+Us construction
+Frontier / antagonistic boundary
+Affect / affective investment
+```
+
+Each observation should retain a source-local text span, confidence, provenance and source timestamp where available.
+
+Important safeguards:
+
+- a plural pronoun is not automatically a meaningful Us
+- negative sentiment is not automatically a Frontier
+- sentiment is not affective investment
+- a Frontier can exist without a stable Us
+- affect can exist without either an Us or Frontier
+- absence of one component must not force absence of the others
+- no aggregate populism verdict is produced
+
+The component representation should remain graph-friendly so the same observation can later be projected into discourse, DNA, SNA/RDF and temporal views without inventing a new populism label.

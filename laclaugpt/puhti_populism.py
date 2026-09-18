@@ -1,3 +1,13 @@
+"""DEPRECATED legacy EP24 Formula of Populism script.
+
+Phase 0 no longer generates binary populism classifications or aggregate
+populism scores. New code should use laclaugpt_discourse.py, which extracts
+Us constructions, Frontiers and Affect independently.
+
+This legacy implementation is retained only as archaeology/reference and is
+not part of the Phase 0 runtime.
+"""
+
 from os import name, system
 import pandas as pd
 import ollama
