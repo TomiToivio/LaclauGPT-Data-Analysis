@@ -15,10 +15,12 @@ from laclaugpt_summary import summarize_record
 STAGES = ("preprocess", "summary", "postprocess", "discourse")
 
 
-def _status(status: str, error: str | None = None) -> dict[str, Any]:
+def _status(status: str, error: str | None = None, attempts: int | None = None) -> dict[str, Any]:
     value: dict[str, Any] = {"status": status, "updated_at": datetime.now(timezone.utc).isoformat()}
     if error:
         value["error"] = error
+    if attempts is not None:
+        value["attempts"] = attempts
     return value
 
 
@@ -99,7 +101,17 @@ def run_document(source: dict[str, Any], stage: str = "all", dry_run: bool = Fal
                 }, project_id=project_id)
         except Exception as exc:
             if not dry_run:
-                update_document(source, {"phase0.discourse": _status("error", str(exc))}, project_id=project_id)
+                prior = (source.get("phase0") or {}).get("discourse") or {}
+                attempts = int(prior.get("attempts") or 0) + 1
+                fields: dict[str, Any] = {
+                    "phase0.discourse": _status("error", str(exc), attempts)
+                }
+                # Retain whatever the model produced. The Phase 0 design keeps the raw
+                # response so a failure stays debuggable; discarding it here made
+                # long-document failures impossible to inspect after the fact (#201).
+                if "raw" in locals() and raw:
+                    fields["phase0_discourse_raw"] = raw
+                update_document(source, fields, project_id=project_id)
 
 
 def main() -> None:

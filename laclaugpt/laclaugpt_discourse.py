@@ -24,6 +24,15 @@ from pydantic import BaseModel, Field
 
 PROMPT_VERSION = "ai26-phase0-discourse-v1"
 
+# Input/context bounds for the discourse call. Real AI26 sources reach ~130k
+# characters (~32k tokens), far beyond gemma4:12b's window; sending them whole
+# yielded empty responses and multi-minute hangs (issue #201). The context budget
+# reserves room for the prompt and the generated JSON.
+DISCOURSE_NUM_CTX = int(os.getenv("LACLAUGPT_DISCOURSE_NUM_CTX", "8192"))
+DISCOURSE_NUM_PREDICT = int(os.getenv("LACLAUGPT_DISCOURSE_NUM_PREDICT", "2048"))
+# ~4 characters per token, keeping the document well inside num_ctx.
+DISCOURSE_MAX_CHARS = int(os.getenv("LACLAUGPT_DISCOURSE_MAX_CHARS", "24000"))
+
 
 class UsConstruct(BaseModel):
     label: str
@@ -223,15 +232,32 @@ def _ollama():
     return ollama
 
 
+def _bounded_text(text: str, *, limit: int) -> tuple[str, bool, int]:
+    """Bound the document text sent to the model.
+
+    Real AI26 sources (METR posts, institutional reports) run to ~130k characters —
+    far beyond the model's context window. Sending them whole produced empty/unusable
+    responses and multi-minute hangs (issue #201), so the text is capped and the
+    truncation is reported to the caller rather than happening silently.
+    """
+    original = len(text)
+    if original <= limit:
+        return text, False, original
+    return text[:limit], True, original
+
+
 def analyze_discourse(
     record: dict[str, Any],
     normalized_text: str,
     summary: dict[str, Any],
 ) -> tuple[str, dict[str, Any]]:
     model = os.getenv("OLLAMA_MODEL", "gemma4:12b")
+    max_chars = int(os.getenv("LACLAUGPT_DISCOURSE_MAX_CHARS", str(DISCOURSE_MAX_CHARS)))
+    text, truncated, original_chars = _bounded_text(normalized_text, limit=max_chars)
+
     user_prompt = (
         "### Current document\n"
-        + normalized_text
+        + text
         + "\n\n### Prior summary\n"
         + json.dumps(summary, ensure_ascii=False, default=str)
     )
@@ -242,11 +268,30 @@ def analyze_discourse(
             {"role": "user", "content": user_prompt},
         ],
         format="json",
-        options={"temperature": 0.0},
+        # An explicit context window keeps the request inside the model's budget
+        # instead of silently overflowing it.
+        options={"temperature": 0.0, "num_ctx": DISCOURSE_NUM_CTX, "num_predict": DISCOURSE_NUM_PREDICT},
     )
     raw = response["message"]["content"]
-    parsed = json.loads(raw)
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        # Fail with something a human can act on, and keep the response: the module
+        # returns `raw` to the caller, which stores it for debugging.
+        raise ValueError(
+            f"discourse model returned unparseable JSON for document "
+            f"{record.get('document_id', '?')} "
+            f"({original_chars} chars, {len(text)} sent"
+            f"{', truncated' if truncated else ''}): {exc}; "
+            f"raw response ({len(raw)} chars): {raw[:200]!r}"
+        ) from exc
+
     parsed["model_metadata"] = {"provider": "ollama", "model": model}
     parsed["prompt_version"] = PROMPT_VERSION
     parsed["generated_at"] = datetime.now(timezone.utc).isoformat()
+    parsed["input_metadata"] = {
+        "original_chars": original_chars,
+        "sent_chars": len(text),
+        "truncated": truncated,
+    }
     return raw, parsed

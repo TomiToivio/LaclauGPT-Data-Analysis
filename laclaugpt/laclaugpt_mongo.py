@@ -26,7 +26,7 @@ def resolve_mongo_config() -> tuple[str, str]:
     database = next((os.getenv(name) for name in MONGO_DB_ENV_VARS if os.getenv(name)), None)
     if not uri or not database:
         pairs = " or ".join(
-            f"{u}/{d}" for u, d in zip(MONGO_URI_ENV_VARS, MONGO_DB_ENV_VARS)
+            f"{u}/{d}" for u, d in zip(MONGO_URI_ENV_VARS, MONGO_DB_ENV_VARS, strict=False)
         )
         raise RuntimeError(f"MongoDB configuration is required via {pairs}")
     return uri, database
@@ -47,6 +47,14 @@ def find_documents(
     retry_errors: bool = False,
     project_id: str | None = None,
 ):
+    """Select the next documents to process.
+
+    The default set is documents that have not finished the discourse stage **and
+    have not already failed it**. Including ``error`` here meant a permanently
+    unprocessable document (for example one too long for the model) was returned on
+    every run, ahead of everything else, and starved the queue (#202). Failed
+    documents are reachable explicitly via ``retry_errors=True``.
+    """
     query: dict[str, Any] = {}
     if document_id:
         query["document_id"] = document_id
@@ -58,9 +66,22 @@ def find_documents(
             {"phase0.discourse.status": "error"},
         ]
     else:
-        query["$or"] = [
-            {"phase0.discourse.status": {"$exists": False}},
-            {"phase0.discourse.status": {"$ne": "ok"}},
+        # Not yet attempted, or attempted but not finished — but never a recorded
+        # failure, so the default run always makes forward progress.
+        query["$and"] = [
+            {
+                "$or": [
+                    {"phase0.discourse.status": {"$exists": False}},
+                    {"phase0.discourse.status": {"$nin": ["ok", "error"]}},
+                ]
+            },
+            {
+                "$nor": [
+                    {"phase0.preprocess.status": "error"},
+                    {"phase0.summary.status": "error"},
+                    {"phase0.postprocess.status": "error"},
+                ]
+            },
         ]
     return list(_collection(project_id).find(query).sort("source_date", DESCENDING).limit(limit))
 
