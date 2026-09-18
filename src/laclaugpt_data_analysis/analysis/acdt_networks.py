@@ -17,6 +17,7 @@ class ActorInteractionNetworkPlugin:
 
     spec = PluginSpec(
         name="acdt_actor_network",
+        phase=2, default_enabled=False, experimental=True,
         version="1.0",
         method_id="social_network_analysis",
         method_version="1.0",

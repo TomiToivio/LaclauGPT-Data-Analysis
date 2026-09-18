@@ -27,6 +27,7 @@ from .context_envelope import PromptEnvelope, build_prompt_envelope
 from .critical_ai import run_optional_critical_ai
 from .llm.structured_output import chat_structured
 from .models import Topic
+from .phases import phase_manifest
 from .prompt_library import load_prompt, prompt_provenance
 from .research_record import ensure_research_layers
 
@@ -229,6 +230,16 @@ _AI26_CAPABILITIES = {
     "valueflows": None,
 }
 
+#: Capabilities that belong to Phase 2 (experimental/optional). They are never
+#: enabled by default; a project must opt in explicitly, and enabling an
+#: unimplemented one stays a fail-closed configuration error.
+_PHASE2_CAPABILITY_KEYS = frozenset({"sna", "ant", "valueflows", "dna_statement_coding", "critical_ai"})
+
+
+def phase_for_capability(key: str) -> int:
+    """Return the pipeline phase a capability key belongs to (1 or 2)."""
+    return 2 if key in _PHASE2_CAPABILITY_KEYS else 1
+
 
 def _analysis_flags(context: PipelineContext) -> dict[str, Any]:
     analysis = context.project_config.get("analysis") if context.project_config else None
@@ -302,7 +313,22 @@ def _model_run_metadata(context: PipelineContext, response, prompt_meta: dict[st
 
 
 def prompt_ids_for_stage(project_profile: str, stage: str) -> tuple[str, str]:
+    """Return (system_id, task_id) prompt resources for a profile and stage.
+
+    Profiles are kept explicitly separate (issue #140): the AI26 profile uses its
+    own ``ai26.*`` resources and the EP24 profile its own ``ep24.*``/``laclau.*``
+    resources, so project assumptions never leak between them.
+    """
     profile = project_profile.casefold()
+    if profile == "ai26":
+        if stage == "frame":
+            return "ai26.system", "ai26.frame_analysis"
+        if stage == "summary":
+            return "ai26.system", "ai26.summary_analysis"
+        if stage == "discourse":
+            return "ai26.system", "ai26.discourse_analysis"
+        if stage == "postprocess":
+            return "ai26.system", "ai26.postprocess"
     if stage == "frame":
         return ("multimodal.system", "multimodal.frame_analysis") if profile == "ai26" else ("laclau.system", "laclau.frame_analysis")
     if stage == "summary":
@@ -530,6 +556,13 @@ def build_discourse_graph(record: CanonicalRecord) -> dict[str, Any]:
 
 
 def run_canonical_pipeline(record: CanonicalRecord, *, provider, context: PipelineContext | None = None, codebook_entries: list[CodebookEntry] | None = None, preprocessor: Preprocessor | None = None, graph_sink: GraphSink | None = None, vector_sink: VectorSink | None = None, model: str = "auto", project_profile: str = "generic", prompt_version: str = "canonical-pipeline-v1", allow_cloud_fallback: bool | None = None) -> CanonicalRecord:
+    """Run the Phase 1 default pipeline over one record.
+
+    Stage order is the legacy-derived Phase 1 contract
+    (``preprocess -> frame (conditional) -> summary -> discourse -> postprocess``).
+    Phase 2 capabilities (DNA, Critical AI, SNA/ANT/valueflows) run only when a
+    project explicitly enables them; see :mod:`laclaugpt_data_analysis.phases`.
+    """
     ctx = context or PipelineContext()
     if project_profile.casefold() == "ai26":
         _validate_project_analysis_config(ctx)
@@ -539,8 +572,11 @@ def run_canonical_pipeline(record: CanonicalRecord, *, provider, context: Pipeli
     analyze_frames(record, provider=provider, context=ctx, codebook_entries=entries, model=model, prompt_version=f"{prompt_version}:frame", project_profile=project_profile, allow_cloud_fallback=allow_cloud_fallback)
     summary = summarize_record(record, provider=provider, context=ctx, codebook_entries=entries, model=model, prompt_version=f"{prompt_version}:summary", project_profile=project_profile, allow_cloud_fallback=allow_cloud_fallback)
     discourse = discourse_analysis(record, provider=provider, context=ctx, codebook_entries=entries, model=model, prompt_version=f"{prompt_version}:discourse", project_profile=project_profile, allow_cloud_fallback=allow_cloud_fallback) if _enabled(ctx, "laclau") or project_profile.casefold() != "ai26" else DiscourseProposal()
-    run_optional_critical_ai(record, provider=provider, context=ctx, codebook_entries=entries, model=model, allow_cloud_fallback=allow_cloud_fallback)
+    # Phase 2 only: DNA statement coding, then Critical AI Studies, when enabled.
+    if _enabled(ctx, "dna_statement_coding", default=False) or _enabled(ctx, "critical_ai", default=False):
+        run_optional_critical_ai(record, provider=provider, context=ctx, codebook_entries=entries, model=model, allow_cloud_fallback=allow_cloud_fallback)
     postprocess_record(record, summary, discourse, ctx)
+    _append_stage(record, "phase_manifest", phase_manifest())
     graph = build_discourse_graph(record)
     _append_stage(record, "discourse_graph", graph)
     if graph_sink:

@@ -17,6 +17,7 @@ ThematicExecutor = Callable[[Sequence[CanonicalRecord], Mapping[str, Any]], Mapp
 class ThematicAnalysisAdapterPlugin:
     spec = PluginSpec(
         name="acdt_thematic_analysis",
+        phase=2, default_enabled=False, experimental=True,
         version="1.0",
         method_id="thematic_analysis",
         method_version="1.0",

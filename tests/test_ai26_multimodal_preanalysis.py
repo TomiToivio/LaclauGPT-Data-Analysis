@@ -81,17 +81,18 @@ def test_multimodal_prompt_family_loads_hashes_and_renders() -> None:
 
 
 def test_ai26_stage_selection_separates_multimodal_and_discourse_prompts() -> None:
+    """AI26 uses its own prompt profile, separate from the EP24/laclau set (#140)."""
     assert prompt_ids_for_stage("ai26", "frame") == (
-        "multimodal.system",
-        "multimodal.frame_analysis",
+        "ai26.system",
+        "ai26.frame_analysis",
     )
     assert prompt_ids_for_stage("ai26", "summary") == (
-        "multimodal.system",
-        "multimodal.summary_analysis",
+        "ai26.system",
+        "ai26.summary_analysis",
     )
     assert prompt_ids_for_stage("ai26", "discourse") == (
-        "laclau.system",
-        "laclau.discourse_analysis",
+        "ai26.system",
+        "ai26.discourse_analysis",
     )
     assert prompt_ids_for_stage("ep24", "frame") == (
         "laclau.system",
@@ -170,16 +171,16 @@ def test_ai26_pipeline_persists_multimodal_castells_and_run_provenance() -> None
     )
 
     assert len(provider.requests) == 3
-    assert "Multimodal pre-analysis method" in provider.requests[0].system
+    assert "AI26 multimodal and discourse pre-analysis assistant" in provider.requests[0].system
     assert "frame-001" in provider.requests[0].user
     assert "12.5" in provider.requests[0].user
     assert "AI26 relevance guide only" in provider.requests[0].user
-    assert "Light Castells-style sociological context" in provider.requests[1].user
+    assert "AI26 multimodal and discourse pre-analysis assistant" in provider.requests[1].system
     assert "Laclau" in provider.requests[2].system
 
     frame_result = result.intermediate.frame_analysis[0]
     prompt_ids = [item["prompt_id"] for item in frame_result["prompt_resources"]]
-    assert prompt_ids == ["multimodal.system", "multimodal.frame_analysis"]
+    assert prompt_ids == ["ai26.system", "ai26.frame_analysis"]
     assert "multimodal_synthesis" in result.intermediate.stage_outputs
     assert "castells_context" in result.intermediate.stage_outputs
     assert "discourse_analysis" in result.intermediate.stage_outputs

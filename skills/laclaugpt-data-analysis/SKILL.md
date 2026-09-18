@@ -20,6 +20,18 @@ Do not reconstruct authoritative settings, codebooks, or prompts from model memo
 
 Analysis owns canonical enrichment of `CanonicalRecord`: NLP, embeddings, topic/statistical methods, multimodal evidence handling, LLM-assisted interpretation, context memory, codebooks, orchestration, validation, provenance, review semantics, and analysis exports. Collection, Visualization, Storage, Simulation, and umbrella project governance remain sibling responsibilities.
 
+## Pipeline phases
+
+The Phase 1 default pipeline is the legacy-derived order
+`preprocessing -> conditional frame analysis -> summary -> Laclaudian discourse
+analysis -> postprocessing`. Phase 1 stages run by default; `frame` is skipped
+cleanly when a record has no frames.
+
+Phase 2 methods are **experimental, optional and off by default**: DNA
+(`dna_statement_coding`), Critical AI Studies (`critical_ai`), SNA (`sna`),
+`ant`, `valueflows`. They remain available but must not be presented or run as
+part of the default pipeline. See `docs/PHASE1_PIPELINE.md`.
+
 ## Canonical prompt library
 
 Treat prompts as part of the scientific method. Stable analytical instructions belong in the versioned prompt library under `src/laclaugpt_data_analysis/prompts/`, loaded through `PromptLibrary` / `load_prompt`, not as new inline Python strings or instructions reconstructed from memory.

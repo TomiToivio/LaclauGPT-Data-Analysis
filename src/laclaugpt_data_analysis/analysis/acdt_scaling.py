@@ -21,6 +21,7 @@ class LegacyScalingPlugin:
         self.executor = executor
         self.spec = PluginSpec(
             name=f"acdt_{method_id}",
+            phase=2, default_enabled=False, experimental=True,
             version="1.0",
             method_id=method_id,
             method_version="1.0",

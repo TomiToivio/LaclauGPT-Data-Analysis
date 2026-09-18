@@ -15,6 +15,27 @@ First-party prompts live under `src/laclaugpt_data_analysis/prompts/`. A filenam
 - `prompts/multimodal/system_v1.md` -> `multimodal.system:v1`
 - `prompts/multimodal/frame_analysis_v1.md` -> `multimodal.frame_analysis:v1`
 - `prompts/multimodal/summary_analysis_v1.md` -> `multimodal.summary_analysis:v1`
+- `prompts/ai26/system_v1.md` -> `ai26.system:v1`
+- `prompts/ai26/frame_analysis_v1.md` -> `ai26.frame_analysis:v1`
+- `prompts/ai26/summary_analysis_v1.md` -> `ai26.summary_analysis:v1`
+- `prompts/ai26/discourse_analysis_v1.md` -> `ai26.discourse_analysis:v1`
+- `prompts/ai26/postprocess_v1.md` -> `ai26.postprocess:v1`
+
+## Project prompt profiles
+
+The pipeline selects prompts per **project profile**, and the profiles are kept
+explicitly separate so project assumptions never leak between them:
+
+| Profile | Phase 1 stages use |
+| --- | --- |
+| **AI26** | `ai26.system` + `ai26.{frame_analysis,summary_analysis,discourse_analysis,postprocess}` |
+| **EP24** | `laclau.system` + `laclau.{frame_analysis,summary_analysis}` and `ep24.{laclau_analysis,postprocess}` |
+
+The AI26 profile combines the current AI26 methodology (problem-oriented
+multimodality, light Castells contextualisation, current evidence discipline and
+schemas) with the explicitness of the legacy EP24 prompts. The EP24 profile
+retains its 2024 election research context where methodologically appropriate.
+The legacy prompt texts are archived for reference in `docs/legacy_ep24_prompts/`.
 
 The multimodal prompt family is a pre-discourse layer. It uses Bateman/Wildfeuer/Hiippala-style problem-oriented multimodality and social-semiotic description for frames/items, followed by a deliberately light Castells-style sociological contextualisation. It must not perform the later dedicated Laclau/Mouffe/Palonen, DNA, Critical AI Studies or other deep theoretical stages.
 

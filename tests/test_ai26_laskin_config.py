@@ -71,11 +71,12 @@ def test_machine_layer_disables_browser_capture() -> None:
     assert values["capabilities"]["browser_capture"] is False
 
 
-def test_all_ai26_stages_enabled_by_operator_decision() -> None:
+def test_phase1_stages_enabled_and_phase2_off_by_operator_decision() -> None:
+    """Phase 1 runs by default; Phase 2 (DNA/Critical AI) is off by default (#140)."""
     analysis = _compose().as_dict()["analysis"]
     assert analysis["laclau"] is True
-    assert analysis["dna_statement_coding"]["enabled"] is True
-    assert analysis["critical_ai"]["enabled"] is True
+    assert analysis["dna_statement_coding"]["enabled"] is False
+    assert analysis["critical_ai"]["enabled"] is False
 
 
 def test_optional_stages_remain_individually_switchable() -> None:
@@ -148,6 +149,11 @@ def test_context_composition_order_is_documented() -> None:
 @pytest.mark.parametrize(
     "prompt_ref",
     [
+        "ai26.system:v1",
+        "ai26.frame_analysis:v1",
+        "ai26.summary_analysis:v1",
+        "ai26.discourse_analysis:v1",
+        "ai26.postprocess:v1",
         "multimodal.system:v1",
         "multimodal.frame_analysis:v1",
         "multimodal.summary_analysis:v1",

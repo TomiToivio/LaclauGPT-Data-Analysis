@@ -17,6 +17,7 @@ class MultimodalRhetoricPerformativePlugin:
 
     spec = PluginSpec(
         name="acdt_multimodal_rhetoric_performative",
+        phase=2, default_enabled=False, experimental=True,
         version="1.0",
         method_id="multimodal_rhetoric_performative",
         method_version="1.0",

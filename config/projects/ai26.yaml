@@ -36,8 +36,9 @@ codebook:
   merge_order: [public, private_overlay]
 
 analysis:
-  # IMPLEMENTED and load-bearing. Enabling an unavailable top-level capability
-  # now fails closed in the canonical pipeline instead of silently doing nothing.
+  # Phase 1 default pipeline (issue #140): preprocessing -> conditional frame
+  # analysis -> summary -> Laclaudian discourse analysis -> postprocessing.
+  # These capabilities run by default. See laclaugpt_data_analysis.phases.
   laclau: true
   palonen: true
   sociotechnical_imaginaries: true
@@ -51,15 +52,16 @@ analysis:
   temporal: true
   multimodal: true
 
-  # DELIBERATELY EXCLUDED from AI26. These are not implemented as canonical
-  # AI26 stages; changing one to true is a configuration error until an actual
-  # implementation and projection contract exists.
-  sna: false
-  ant: false
-  valueflows: false
-
+  # ---------------------------------------------------------------------------
+  # PHASE 2 — EXPERIMENTAL / OPTIONAL. OFF BY DEFAULT (issue #140).
+  #
+  # DNA (discourse network analysis) and Critical AI Studies are Phase 2
+  # methods. They remain available in the repository but must not run in the
+  # default Phase 1 pipeline. Enable them only when a study explicitly wants
+  # them, and keep them labelled experimental in any report.
+  # ---------------------------------------------------------------------------
   dna_statement_coding:
-    enabled: true
+    enabled: false
     prompt_version: v1
     concept_mode: codebook_or_provisional
     require_binary_agreement: false
@@ -69,13 +71,20 @@ analysis:
     include_periodic_context: false
 
   critical_ai:
-    enabled: true
+    enabled: false
     prompt_version: v1
     include_prior_laclau: true
     include_prior_dna: true
     include_rag: true
     include_periodic_context: true
     evidence_mode: strict
+
+  # PHASE 2 network/graph methods. Not implemented as canonical AI26 stages;
+  # changing one to true is a configuration error until an implementation and
+  # projection contract exists.
+  sna: false
+  ant: false
+  valueflows: false
 
 arenas:
   - elites

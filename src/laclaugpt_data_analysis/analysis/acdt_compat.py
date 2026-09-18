@@ -47,6 +47,7 @@ def _hashtags(record: CanonicalRecord) -> list[str]:
 class WordFrequencyPlugin:
     spec = PluginSpec(
         name="acdt_word_frequency",
+        phase=2, default_enabled=False, experimental=True,
         version="1.0",
         method_id="word_frequency",
         method_version="1.0",
@@ -91,6 +92,7 @@ class WordFrequencyPlugin:
 class HashtagCooccurrencePlugin:
     spec = PluginSpec(
         name="acdt_hashtag_cooccurrence",
+        phase=2, default_enabled=False, experimental=True,
         version="1.0",
         method_id="hashtag_cooccurrence",
         method_version="1.0",
@@ -141,6 +143,7 @@ class TemporalPeakPlugin:
 
     spec = PluginSpec(
         name="acdt_peak_analysis",
+        phase=2, default_enabled=False, experimental=True,
         version="1.0",
         method_id="peak_analysis",
         method_version="1.0",
@@ -192,6 +195,7 @@ class TemporalPeakPlugin:
 class CloseReadingSamplerPlugin:
     spec = PluginSpec(
         name="acdt_close_reading_sampler",
+        phase=2, default_enabled=False, experimental=True,
         version="1.0",
         method_id="close_reading_sampler",
         method_version="1.0",
@@ -260,6 +264,7 @@ class TopicModelAdapterPlugin:
         self.executor = executor
         self.spec = PluginSpec(
             name="acdt_topic_model_lda" if lda else "acdt_topic_model_generic",
+            phase=2, default_enabled=False, experimental=True,
             version=version,
             method_id="topic_model_lda" if lda else "topic_model_generic",
             method_version="1.0",
@@ -291,6 +296,7 @@ class LegacyMeasurementPassThroughPlugin:
         self.field_names = tuple(field_names)
         self.spec = PluginSpec(
             name=name or f"acdt_legacy_{method_id}",
+            phase=2, default_enabled=False, experimental=True,
             version="1.0",
             method_id=method_id,
             method_version="legacy-import/1.0",

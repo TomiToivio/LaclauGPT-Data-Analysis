@@ -57,6 +57,35 @@ It contains storage-neutral analytical contracts, NLP/embedding/topic/classifica
 
 The package works locally with CSV + SQLite + local files and can scale to MongoDB + Redis + S3-compatible object storage.
 
+## Phase 1 default pipeline (legacy order)
+
+The **default analysis path** runs the Phase 1 pipeline in the conceptual order
+of the original legacy EP24 pipeline:
+
+```text
+preprocessing
+  -> frame analysis (only when the record carries images/video/frames)
+  -> summary analysis
+  -> Laclaudian discourse analysis
+  -> postprocessing
+```
+
+Each stage has one responsibility; `frame` is skipped cleanly for text-only
+records. The modern implementation keeps its own schemas and evidence handling;
+what descends from the legacy pipeline is the stage order and per-stage
+responsibility. See **[docs/PHASE1_PIPELINE.md](docs/PHASE1_PIPELINE.md)** and
+**[docs/LEGACY_PIPELINE_LINEAGE.md](docs/LEGACY_PIPELINE_LINEAGE.md)**.
+
+**Phase 2 — experimental / optional, off by default.** Discourse Network
+Analysis (`dna_statement_coding`), Critical AI Studies (`critical_ai`), Social
+Network Analysis (`sna`), `ant` and `valueflows` remain in the repository but do
+**not** run unless a study explicitly enables them. Network measures are not
+substitutes for Laclaudian interpretation.
+
+Project prompt profiles are kept separate: **AI26** uses the `ai26.*` prompt
+resources and **EP24** its own, so project assumptions never leak between them.
+See **[docs/PROMPT_LIBRARY.md](docs/PROMPT_LIBRARY.md)**.
+
 ## Plugin-first analysis runtime
 
 The core runtime follows one stable shape:

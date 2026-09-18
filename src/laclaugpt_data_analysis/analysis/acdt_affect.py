@@ -29,6 +29,7 @@ class ValidatedLexiconAffectPlugin:
         }[mode]
         self.spec = PluginSpec(
             name=f"acdt_{mode}",
+            phase=2, default_enabled=False, experimental=True,
             version="1.0",
             method_id=method_id,
             method_version="1.0",

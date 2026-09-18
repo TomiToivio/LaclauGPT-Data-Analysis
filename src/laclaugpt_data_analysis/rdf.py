@@ -573,6 +573,7 @@ class RDFMaterializationPlugin:
 
         return PluginSpec(
             name="rdf_materialization",
+            phase=2, default_enabled=False, experimental=True,
             version=RDF_PROFILE_VERSION,
             method_id="rdf_interoperability_projection",
             method_version=RDF_PROFILE_VERSION,

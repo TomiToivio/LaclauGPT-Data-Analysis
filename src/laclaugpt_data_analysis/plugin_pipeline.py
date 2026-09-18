@@ -55,6 +55,14 @@ class PluginSpec:
     method_id: str | None = None
     method_version: str | None = None
     interpretation_mode: InterpretationMode = "exploratory_instrumentalist"
+    #: Pipeline phase this plugin belongs to. Phase 1 plugins form the default
+    #: analysis path; Phase 2 plugins are experimental/optional and are never
+    #: invoked unless a project explicitly enables them.
+    phase: int = 1
+    #: Whether the plugin participates in a default run of its phase.
+    default_enabled: bool = True
+    #: Human-facing label used in docs/UI for phase 2 material.
+    experimental: bool = False
 
     @property
     def stable_method_id(self) -> str:
@@ -64,11 +72,22 @@ class PluginSpec:
     def stable_method_version(self) -> str:
         return self.method_version or self.version
 
+    @property
+    def runs_by_default(self) -> bool:
+        return self.phase == 1 and self.default_enabled
+
     def validate(self) -> None:
         if not self.name.strip() or not self.version.strip():
             raise ValueError("plugin name/version must not be empty")
         if self.scope not in {"record", "corpus"}:
             raise ValueError(f"unsupported plugin scope: {self.scope}")
+        if self.phase not in {1, 2}:
+            raise ValueError(f"unsupported plugin phase: {self.phase}")
+        if self.phase == 2 and self.default_enabled:
+            raise ValueError(
+                "phase 2 plugins must not be enabled by default "
+                f"(plugin {self.name!r} declares default_enabled=True)"
+            )
         if self.name in self.dependencies:
             raise ValueError("plugin cannot depend on itself")
         if any(not prompt_id.strip() for prompt_id in self.prompt_ids):
