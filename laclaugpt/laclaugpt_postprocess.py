@@ -16,6 +16,10 @@ from os.path import isfile, join
 import time
 import logging
 from logging.handlers import RotatingFileHandler
+import dotenv
+dotenv.load_dotenv()
+MAPBOX_API_KEY = dotenv.get_key(dotenv.find_dotenv(), "MAPBOX_API_KEY")
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.ERROR)  # Only ERROR and above get logged
 # Set up a rotating file handler
@@ -192,7 +196,7 @@ def get_geolocation(address):
    lat = None
    lng = None
    try:
-      geo = geocoder.mapbox(address,key='pk.eyJ1Ijoia3liZXJwdW5ra2FyaSIsImEiOiJjbWVsNTVqMXMwOWhmMmpxenE3NmV0YjVqIn0.IKrUarc0rWuYvL_dKsdUvQ')
+      geo = geocoder.mapbox(address,key=MAPBOX_API_KEY)
       geojson = geo.json
       json_address = geojson["address"]
       lat = geojson["lat"]
