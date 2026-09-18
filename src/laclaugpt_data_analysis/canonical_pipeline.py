@@ -234,17 +234,34 @@ def _analysis_flags(context: PipelineContext) -> dict[str, Any]:
     return dict(analysis) if isinstance(analysis, dict) else {}
 
 
+_PHASE2_CAPABILITIES = frozenset({"sna", "ant", "valueflows", "dna_statement_coding", "critical_ai"})
+
+
+def _analysis_phase(context: PipelineContext) -> int:
+    value = context.project_config.get("analysis_phase", 1) if context.project_config else 1
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("analysis_phase must be an integer") from exc
+
+
+def _phase_allows(context: PipelineContext, key: str) -> bool:
+    return key not in _PHASE2_CAPABILITIES or _analysis_phase(context) >= 2
+
+
 def _enabled(context: PipelineContext, key: str, *, default: bool = True) -> bool:
     value = _analysis_flags(context).get(key, default)
-    if isinstance(value, dict):
-        return bool(value.get("enabled", default))
-    return bool(value)
+    configured = bool(value.get("enabled", default)) if isinstance(value, dict) else bool(value)
+    return configured and _phase_allows(context, key)
 
 
 def _effective_stage_set(context: PipelineContext) -> list[str]:
     stages: list[str] = []
     for key, implementation in _AI26_CAPABILITIES.items():
         if _enabled(context, key, default=False) and implementation:
+            stages.append(key)
+    for key in ("dna_statement_coding", "critical_ai"):
+        if _enabled(context, key, default=False):
             stages.append(key)
     return sorted(stages)
 
@@ -256,6 +273,9 @@ def _validate_project_analysis_config(context: PipelineContext) -> None:
     unknown = sorted(set(flags) - set(_AI26_CAPABILITIES) - {"dna_statement_coding", "critical_ai"})
     if unknown:
         raise ValueError(f"unknown analysis capability flag(s): {', '.join(unknown)}")
+    phase = _analysis_phase(context)
+    if phase < 1:
+        raise ValueError("analysis_phase must be >= 1")
 
 
 def _append_stage(record: CanonicalRecord, name: str, payload: dict[str, Any]) -> None:

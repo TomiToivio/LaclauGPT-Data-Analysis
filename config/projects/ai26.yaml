@@ -20,6 +20,7 @@
 # Context is never promoted to source evidence merely by appearing in the prompt.
 
 project: ai26
+analysis_phase: 1  # Phase 2 modules remain hard-gated until this becomes 2.
 dataset:
   title: Ideological contestation over AI
   languages: [en, fi]
@@ -51,16 +52,30 @@ analysis:
   temporal: true
   multimodal: true
 
-  # DELIBERATELY EXCLUDED from AI26. These are not implemented as canonical
-  # AI26 stages; changing one to true is a configuration error until an actual
-  # implementation and projection contract exists.
-  sna: false
-  ant: false
-  valueflows: false
+  # Phase 2 / experimental / optional. Even if enabled here, these remain
+  # unavailable while top-level analysis_phase is 1.
+  sna:
+    enabled: false
+    phase: 2
+    experimental: true
+    optional: true
+  ant:
+    enabled: false
+    phase: 2
+    experimental: true
+    optional: true
+  valueflows:
+    enabled: false
+    phase: 2
+    experimental: true
+    optional: true
 
   # Phase 2 / experimental / optional. Off by default during Phase 1.
   dna_statement_coding:
     enabled: false
+    phase: 2
+    experimental: true
+    optional: true
     prompt_version: v1
     concept_mode: codebook_or_provisional
     require_binary_agreement: false
@@ -72,6 +87,9 @@ analysis:
   # Phase 2 / experimental / optional. Off by default during Phase 1.
   critical_ai:
     enabled: false
+    phase: 2
+    experimental: true
+    optional: true
     prompt_version: v1
     include_prior_laclau: true
     include_prior_dna: true

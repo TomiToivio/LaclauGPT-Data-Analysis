@@ -55,14 +55,14 @@ def _ctx(**analysis):
         "entities": True,
         "sentiment": True,
         "sociotechnical_imaginaries": True,
-        "sna": False,
-        "ant": False,
-        "valueflows": False,
+        "sna": {"enabled": False, "phase": 2, "experimental": True, "optional": True},
+        "ant": {"enabled": False, "phase": 2, "experimental": True, "optional": True},
+        "valueflows": {"enabled": False, "phase": 2, "experimental": True, "optional": True},
         "dna_statement_coding": {"enabled": False},
         "critical_ai": {"enabled": False},
     }
     defaults.update(analysis)
-    return PipelineContext(project_config={"analysis": defaults})
+    return PipelineContext(project_config={"analysis_phase": 1, "analysis": defaults})
 
 
 def test_phase1_text_only_order_skips_frame_and_postprocesses_last():
@@ -116,7 +116,7 @@ def test_phase2_methods_are_off_by_default_in_phase1_context():
     ctx = _ctx()
     assert ctx.project_config["analysis"]["dna_statement_coding"]["enabled"] is False
     assert ctx.project_config["analysis"]["critical_ai"]["enabled"] is False
-    assert ctx.project_config["analysis"]["sna"] is False
+    assert ctx.project_config["analysis"]["sna"]["enabled"] is False
 
 
 def test_ep24_and_ai26_prompt_profiles_are_distinct():
@@ -135,3 +135,9 @@ def test_ep24_and_ai26_prompt_profiles_are_distinct():
         "laclau.system",
         "laclau.discourse_analysis",
     )
+
+
+def test_phase1_gate_blocks_phase2_module_even_when_flag_is_accidentally_enabled():
+    ctx = _ctx(sna={"enabled": True, "phase": 2, "experimental": True, "optional": True})
+    from laclaugpt_data_analysis.canonical_pipeline import _effective_stage_set
+    assert "sna" not in _effective_stage_set(ctx)
