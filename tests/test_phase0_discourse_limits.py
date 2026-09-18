@@ -112,6 +112,8 @@ def test_process_persists_raw_response_on_discourse_parse_failure(monkeypatch):
         project_id="ai26",
     )
 
-    assert writes[-1]["phase0.discourse"]["raw_response"] == "<bad-json>"
+    # record_stage_failure carries the raw response through extra_fields
+    # (phase0_discourse_raw), matching what the pipeline persists.
+    assert writes[-1]["phase0_discourse_raw"] == "<bad-json>"
     assert writes[-1]["phase0.discourse"]["status"] == "error"
     assert "doc-1" in writes[-1]["phase0.discourse"]["error"]

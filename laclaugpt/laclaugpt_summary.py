@@ -9,6 +9,12 @@ from typing import Any
 import ollama
 
 PROMPT_VERSION = "ai26-phase0-summary-v1"
+
+# Input/context bounds for the summary call. This stage runs *before* every other LLM
+# stage, so an unbounded document here blocks the whole document. Real AI26 sources
+# reach ~130k characters (~32k tokens), far beyond gemma4:12b's window, which produced
+# empty responses and a bare "Expecting value: line 1 column 1 (char 0)" (#225). Mirrors
+# the discourse stage's bounds.
 DEFAULT_SUMMARY_MAX_CHARS = 24000
 DEFAULT_SUMMARY_NUM_CTX = 8192
 DEFAULT_SUMMARY_NUM_PREDICT = 2048
@@ -17,20 +23,17 @@ DEFAULT_SUMMARY_NUM_PREDICT = 2048
 class SummaryParseError(ValueError):
     """Raised when Ollama returned text that is not valid summary JSON."""
 
-    def __init__(self, message: str, *, raw_response: str, metadata: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        raw_response: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.raw_response = raw_response
-        self.metadata = metadata
+        self.metadata = dict(metadata or {})
 
-
-# Input/context bounds for the summary call. This stage runs *before* every other LLM
-# stage, so an unbounded document here blocks the whole document. Real AI26 sources
-# reach ~130k characters (~32k tokens), far beyond gemma4:12b's window, which produced
-# empty responses and a bare "Expecting value: line 1 column 1 (char 0)" (#225). Mirrors
-# the discourse stage's bounds.
-SUMMARY_MAX_CHARS = int(os.getenv("LACLAUGPT_SUMMARY_MAX_CHARS", "24000"))
-SUMMARY_NUM_CTX = int(os.getenv("LACLAUGPT_SUMMARY_NUM_CTX", "8192"))
-SUMMARY_NUM_PREDICT = int(os.getenv("LACLAUGPT_SUMMARY_NUM_PREDICT", "2048"))
 
 SYSTEM_PROMPT = """You are LaclauGPT, a social-science research assistant.
 Analyze one AI26 RSS/article document conservatively and transparently.
@@ -54,16 +57,19 @@ def _document_label(record: dict[str, Any]) -> str:
     return str(
         record.get("document_id")
         or (record.get("metadata") or {}).get("url")
+        or record.get("source_url")
         or record.get("url")
         or "<unknown>"
     )
 
 
 def _runtime_int(name: str, default: int) -> int:
+    """Resolve an integer setting at call time, so a running process can be tuned."""
     return int(os.getenv(name, str(default)))
 
 
 def _bounded_text(text: str, max_chars: int) -> tuple[str, bool]:
+    """Cap the document text sent to the model; report whether truncation happened."""
     if len(text) <= max_chars:
         return text, False
     return text[:max_chars], True
@@ -82,24 +88,7 @@ def summarize_record(record: dict[str, Any], normalized_text: str) -> tuple[str,
         "truncated": truncated,
         "max_chars": max_chars,
     }
-    truncation_note = (
-        "\n\n### Input handling\n"
-        f"Document was truncated from {len(normalized_text)} to {len(bounded_text)} characters "
-        "to stay within the Phase 0 summary context budget."
-        if truncated
-        else ""
-    )
     metadata = record.get("metadata") or {}
-    bounded_text, truncated = _bounded_text(normalized_text)
-    request_metadata = {
-        "document_id": _document_label(record),
-        "input_chars": len(normalized_text),
-        "sent_chars": len(bounded_text),
-        "truncated": truncated,
-        "max_chars": SUMMARY_MAX_CHARS,
-        "num_ctx": SUMMARY_NUM_CTX,
-        "num_predict": SUMMARY_NUM_PREDICT,
-    }
     truncation_note = (
         "\n\n### Input handling\n"
         f"Document was truncated from {len(normalized_text)} to {len(bounded_text)} characters "
@@ -147,12 +136,7 @@ def summarize_record(record: dict[str, Any], normalized_text: str) -> tuple[str,
         "num_ctx": num_ctx,
         "num_predict": num_predict,
     }
-    parsed["input_metadata"] = request_metadata
     parsed["prompt_version"] = PROMPT_VERSION
     parsed["generated_at"] = datetime.now(timezone.utc).isoformat()
-    parsed["input_metadata"] = {
-        "original_chars": len(normalized_text),
-        "sent_chars": len(bounded_text),
-        "truncated": truncated,
-    }
+    parsed["input_metadata"] = request_metadata
     return raw, parsed
