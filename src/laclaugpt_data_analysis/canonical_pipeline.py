@@ -568,7 +568,7 @@ def run_canonical_pipeline(record: CanonicalRecord, *, provider, context: Pipeli
             model=model,
             allow_cloud_fallback=allow_cloud_fallback,
         )
-    if _enabled(ctx, "dna_statement_coding", default=False):
+    elif _enabled(ctx, "dna_statement_coding", default=False):
         from .dna_statement_coding import run_optional_dna_statement_coding
         run_optional_dna_statement_coding(
             record,
