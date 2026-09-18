@@ -57,14 +57,15 @@ def test_disabled_summary_capability_stays_empty() -> None:
     assert record.analysis.topics == []
 
 
-def test_unavailable_true_capability_fails_closed() -> None:
+def test_phase2_true_capability_fails_closed() -> None:
     ctx = PipelineContext(project_config={"analysis": {"sna": True}})
     try:
         _validate_project_analysis_config(ctx)
     except ValueError as exc:
+        assert "Phase 2 / experimental" in str(exc)
         assert "sna" in str(exc)
     else:
-        raise AssertionError("sna=true must fail until a canonical stage exists")
+        raise AssertionError("sna=true must fail in the Phase 1 canonical runner")
 
 
 def test_effective_stage_set_is_auditable() -> None:
@@ -75,14 +76,9 @@ def test_effective_stage_set_is_auditable() -> None:
                 "topics": True,
                 "entities": False,
                 "sentiment": True,
-                "dna_statement_coding": {"enabled": True},
+                "dna_statement_coding": {"enabled": False},
                 "critical_ai": {"enabled": False},
             }
         }
     )
-    assert _effective_stage_set(ctx) == [
-        "dna_statement_coding",
-        "laclau",
-        "sentiment",
-        "topics",
-    ]
+    assert _effective_stage_set(ctx) == ["laclau", "sentiment", "topics"]
