@@ -8,11 +8,12 @@ from laclaugpt_data_analysis.canonical import (
     DiscourseObject,
     Entity,
     Evidence,
+    FrameReference,
     Relation,
     RelationChain,
 )
 from laclaugpt_data_analysis.canonical_pipeline import build_discourse_graph
-from laclaugpt_data_analysis.interoperability import GraphProjection
+from laclaugpt_data_analysis.interoperability import GraphProjection, Producer
 from laclaugpt_data_analysis.models import Provenance, Topic
 from laclaugpt_data_analysis.portable_exchange import (
     read_gexf,
@@ -20,403 +21,305 @@ from laclaugpt_data_analysis.portable_exchange import (
     write_gexf,
     write_graphml,
 )
-from laclaugpt_data_analysis.rdf import import_profile_dataset, materialize_record, validate_dataset
+from laclaugpt_data_analysis.rdf import (
+    import_profile_dataset,
+    materialize_record,
+    serialize_dataset,
+    validate_dataset,
+)
 
 
-def golden_record() -> CanonicalRecord:
-    text = (
-        "AI should serve democratic society. Safety and innovation must be balanced. "
-        "Public institutions should govern advanced AI instead of unaccountable firms."
-    )
-    source_url = "https://example.test/ai26/golden-record"
-    prov = Provenance(
-        provenance_id="prov:phase1-golden",
-        method="synthetic-offline-contract",
-        pipeline_version="ai26-phase1-legacy-order-v1",
-        created_at=datetime(2026, 9, 18, 9, 0, tzinfo=UTC),
-        metadata={"issue": 145, "synthetic": True},
-    )
-    evidence = [
-        Evidence(
-            evidence_id="ev:text:democracy",
-            kind="text-span",
-            source_url=source_url,
-            quote="AI should serve democratic society.",
-            start_offset=0,
-            end_offset=35,
-            provenance_id=prov.provenance_id,
-            metadata={"exact": True},
-        ),
-        Evidence(
-            evidence_id="ev:text:balance",
-            kind="text-span",
-            source_url=source_url,
-            quote="Safety and innovation must be balanced.",
-            start_offset=36,
-            end_offset=75,
-            provenance_id=prov.provenance_id,
-            metadata={"exact": True},
-        ),
-        Evidence(
-            evidence_id="ev:frame:1",
-            kind="frame",
-            source_url=source_url,
-            ref="frame-1",
-            timestamp_seconds=1.5,
-            provenance_id=prov.provenance_id,
-            metadata={"description": "Public hearing scene with AI policy slogan"},
-        ),
-    ]
-
+def golden_ai26_record() -> CanonicalRecord:
+    source_url = "https://example.invalid/ai26/golden-145"
     record = CanonicalRecord(
         source_url=source_url,
-        source_native_ids={"synthetic_id": "ai26-phase1-golden"},
+        source_native_ids={"synthetic": "ai26-golden-145"},
         source={
             "platform": "synthetic",
-            "source_type": "multimodal-post",
-            "author": "AI26 contract fixture",
+            "author": "AI26 Research Fixture",
             "language": "en",
-            "created_at": datetime(2026, 9, 18, 8, 30, tzinfo=UTC),
-            "collection_method": "offline-synthetic",
+            "created_at": datetime(2026, 9, 18, 8, 0, tzinfo=UTC),
         },
         content={
-            "title": "AI26 Phase 1 golden record",
-            "text": text,
-            "language": "en",
+            "title": "Democratic AI future",
+            "text": (
+                "Citizens demand democratic control of AI. Open systems should serve the public, "
+                "not closed monopolies. Freedom and openness belong together."
+            ),
             "frames": [
-                {
-                    "id": "frame-1",
-                    "timestamp_seconds": 1.5,
-                    "description": "Public hearing scene with AI policy slogan",
-                    "provenance_id": prov.provenance_id,
-                }
+                FrameReference(
+                    id="frame-1",
+                    timestamp_seconds=1.5,
+                    description="A protest placard reads: Democratic AI for everyone.",
+                    provenance_id="prov-1",
+                ).model_dump(mode="json")
             ],
         },
-        intermediate={
-            "frame_analysis": [
-                {
-                    "frame_id": "frame-1",
-                    "timestamp_seconds": 1.5,
-                    "analysis": {
-                        "scene_and_participants": ["public hearing", "speaker"],
-                        "visible_text": ["Democratic AI"],
-                        "semiotic_contribution": "Frames democratic governance as legitimate AI control.",
-                    },
-                }
-            ]
-        },
-        evidence=evidence,
-        provenance=[prov],
-        review={
-            "status": "PROVISIONAL",
-            "reviewer": "synthetic-human-review",
-            "reviewed_at": datetime(2026, 9, 18, 9, 5, tzinfo=UTC),
-            "note": "Synthetic evidence-grounded Phase 1 contract fixture.",
-            "flags": ["offline-test-only"],
-        },
     )
-
-    record.analysis.entities = [
+    record.provenance.append(
+        Provenance(
+            provenance_id="prov-1",
+            method="synthetic-phase1-contract",
+            model="offline-fixture",
+            created_at=datetime(2026, 9, 18, 8, 5, tzinfo=UTC),
+            metadata={"project": "AI26", "phase": "1"},
+        )
+    )
+    record.evidence.extend(
+        [
+            Evidence(
+                evidence_id="ev-text",
+                kind="text_span",
+                source_url=source_url,
+                quote="Citizens demand democratic control of AI.",
+                start_offset=0,
+                end_offset=41,
+                provenance_id="prov-1",
+            ),
+            Evidence(
+                evidence_id="ev-frame",
+                kind="frame",
+                source_url=source_url,
+                ref="frame-1",
+                quote="Democratic AI for everyone.",
+                timestamp_seconds=1.5,
+                provenance_id="prov-1",
+            ),
+        ]
+    )
+    record.analysis.entities.append(
         Entity(
-            entity_id="entity:public-institutions",
-            label="public institutions",
-            entity_type="organization",
-            evidence_ids=["ev:text:democracy"],
-            provenance_id=prov.provenance_id,
-            review_status="PROVISIONAL",
+            entity_id="entity-citizens",
+            label="Citizens",
+            entity_type="collective",
+            evidence_ids=["ev-text"],
+            provenance_id="prov-1",
         )
-    ]
-    record.analysis.topics = [
+    )
+    record.analysis.topics.append(
         Topic(
-            topic_id="topic:ai-governance",
+            topic_id="topic-ai-governance",
             canonical_label="AI governance",
-            metadata={"source_stage": "summary", "review_status": "PROVISIONAL"},
+            aliases=["democratic AI"],
+            description="Synthetic Phase 1 topic candidate.",
         )
-    ]
-    record.analysis.signifiers = [
+    )
+    record.analysis.signifiers.extend(
+        [
+            DiscourseObject(
+                object_id="signifier-ai",
+                label="AI",
+                kind="signifier",
+                evidence_ids=["ev-text", "ev-frame"],
+                confidence=0.95,
+                provenance_id="prov-1",
+            ),
+            DiscourseObject(
+                object_id="signifier-freedom",
+                label="freedom",
+                kind="signifier",
+                evidence_ids=["ev-text"],
+                confidence=0.85,
+                provenance_id="prov-1",
+            ),
+            DiscourseObject(
+                object_id="signifier-openness",
+                label="openness",
+                kind="signifier",
+                evidence_ids=["ev-text"],
+                confidence=0.84,
+                provenance_id="prov-1",
+            ),
+        ]
+    )
+    record.analysis.nodal_points.append(
         DiscourseObject(
-            object_id="signifier:safety",
-            label="safety",
-            kind="signifier",
-            evidence_ids=["ev:text:balance"],
-            provenance_id=prov.provenance_id,
-            review_status="PROVISIONAL",
-        )
-    ]
-    record.analysis.nodal_points = [
-        DiscourseObject(
-            object_id="nodal:democratic-ai",
+            object_id="nodal-democratic-ai",
             label="democratic AI",
-            kind="nodal_point",
-            evidence_ids=["ev:text:democracy", "ev:frame:1"],
-            provenance_id=prov.provenance_id,
-            review_status="PROVISIONAL",
-        )
-    ]
-    record.analysis.floating_signifiers = [
-        DiscourseObject(
-            object_id="floating:innovation",
-            label="innovation",
-            kind="floating_signifier",
-            evidence_ids=["ev:text:balance"],
-            provenance_id=prov.provenance_id,
-            review_status="PROVISIONAL",
+            kind="nodal_point_candidate",
+            evidence_ids=["ev-text", "ev-frame"],
+            confidence=0.75,
+            provenance_id="prov-1",
             metadata={"corpus_validation_required": True},
         )
-    ]
-    record.analysis.empty_signifier_candidates = [
+    )
+    record.analysis.floating_signifiers.append(
         DiscourseObject(
-            object_id="empty:democracy",
+            object_id="floating-freedom",
+            label="freedom",
+            kind="floating_signifier_candidate",
+            evidence_ids=["ev-text"],
+            confidence=0.6,
+            provenance_id="prov-1",
+            metadata={"corpus_validation_required": True},
+        )
+    )
+    record.analysis.empty_signifier_candidates.append(
+        DiscourseObject(
+            object_id="empty-democracy",
             label="democracy",
-            kind="empty_signifier",
-            evidence_ids=["ev:text:democracy"],
-            provenance_id=prov.provenance_id,
-            review_status="PROVISIONAL",
+            kind="empty_signifier_candidate",
+            evidence_ids=["ev-text", "ev-frame"],
+            confidence=0.5,
+            provenance_id="prov-1",
             metadata={"corpus_validation_required": True},
         )
-    ]
-    record.analysis.formations = [
+    )
+    record.analysis.formations.append(
         DiscourseObject(
-            object_id="formation:democratic-ai",
-            label="democratic AI governance",
-            kind="formation",
-            evidence_ids=["ev:text:democracy", "ev:text:balance"],
-            provenance_id=prov.provenance_id,
-            review_status="PROVISIONAL",
+            object_id="formation-democratic-ai",
+            label="democratic AI formation",
+            kind="formation_candidate",
+            evidence_ids=["ev-text", "ev-frame"],
+            confidence=0.55,
+            provenance_id="prov-1",
             metadata={"corpus_validation_required": True},
         )
-    ]
-    record.analysis.imaginaries = [
+    )
+    record.analysis.imaginaries.append(
         DiscourseObject(
-            object_id="imaginary:public-ai",
-            label="publicly governed advanced AI",
-            kind="imaginary",
-            evidence_ids=["ev:text:democracy", "ev:frame:1"],
-            provenance_id=prov.provenance_id,
-            review_status="PROVISIONAL",
+            object_id="imaginary-public-ai",
+            label="AI as democratic public infrastructure",
+            kind="sociotechnical_imaginary_candidate",
+            evidence_ids=["ev-text", "ev-frame"],
+            confidence=0.65,
+            provenance_id="prov-1",
         )
-    ]
-    record.analysis.frontier = [
+    )
+    record.analysis.frontier.append(
         DiscourseObject(
-            object_id="frontier:public-vs-unaccountable",
-            label="public institutions / unaccountable firms",
-            kind="frontier",
-            evidence_ids=["ev:text:democracy"],
-            provenance_id=prov.provenance_id,
-            review_status="PROVISIONAL",
+            object_id="frontier-public-monopoly",
+            label="public control / closed monopoly",
+            kind="frontier_candidate",
+            evidence_ids=["ev-text"],
+            confidence=0.7,
+            provenance_id="prov-1",
         )
-    ]
-    record.analysis.affects = [
+    )
+    record.analysis.affects.append(
         DiscourseObject(
-            object_id="affect:concern",
-            label="concern about unaccountable control",
+            object_id="affect-hope",
+            label="hopeful democratic investment",
             kind="affect",
-            evidence_ids=["ev:text:democracy"],
-            provenance_id=prov.provenance_id,
-            review_status="PROVISIONAL",
+            evidence_ids=["ev-frame"],
+            confidence=0.6,
+            provenance_id="prov-1",
         )
-    ]
-
-    record.analysis.relations = [
-        Relation(
-            relation_id="relation:articulation:1",
-            relation_type="ARTICULATES",
-            source_ref="nodal:democratic-ai",
-            target_ref="signifier:safety",
-            evidence_ids=["ev:text:balance"],
-            provenance_id=prov.provenance_id,
-            review_status="PROVISIONAL",
-        ),
-        Relation(
-            relation_id="relation:equivalence:1",
-            relation_type="EQUIVALENT_TO",
-            source_ref="nodal:democratic-ai",
-            target_ref="empty:democracy",
-            evidence_ids=["ev:text:democracy"],
-            provenance_id=prov.provenance_id,
-            review_status="PROVISIONAL",
-        ),
-        Relation(
-            relation_id="relation:difference:1",
-            relation_type="DIFFERENTIATED_FROM",
-            source_ref="nodal:democratic-ai",
-            target_ref="floating:innovation",
-            evidence_ids=["ev:text:balance"],
-            provenance_id=prov.provenance_id,
-            review_status="PROVISIONAL",
-        ),
-    ]
-    record.analysis.equivalence_chains = [
+    )
+    record.analysis.relations.extend(
+        [
+            Relation(
+                relation_id="rel-articulation",
+                relation_type="ARTICULATES",
+                source_ref="signifier-freedom",
+                target_ref="signifier-openness",
+                evidence_ids=["ev-text"],
+                provenance_id="prov-1",
+            ),
+            Relation(
+                relation_id="rel-antagonism",
+                relation_type="ANTAGONISTIC_TO",
+                source_ref="nodal-democratic-ai",
+                target_ref="frontier-public-monopoly",
+                evidence_ids=["ev-text"],
+                provenance_id="prov-1",
+            ),
+        ]
+    )
+    record.analysis.equivalence_chains.append(
         RelationChain(
-            chain_id="equivalence_chain:1",
+            chain_id="eq-democratic-values",
             chain_type="equivalence",
-            member_refs=["nodal:democratic-ai", "empty:democracy"],
-            evidence_ids=["ev:text:democracy"],
-            provenance_id=prov.provenance_id,
-            review_status="PROVISIONAL",
+            member_refs=["signifier-freedom", "signifier-openness"],
+            evidence_ids=["ev-text"],
+            provenance_id="prov-1",
         )
-    ]
-    record.analysis.difference_chains = [
+    )
+    record.analysis.difference_chains.append(
         RelationChain(
-            chain_id="difference_chain:1",
+            chain_id="diff-public-monopoly",
             chain_type="difference",
-            member_refs=["nodal:democratic-ai", "floating:innovation"],
-            evidence_ids=["ev:text:balance"],
-            provenance_id=prov.provenance_id,
-            review_status="PROVISIONAL",
+            member_refs=["nodal-democratic-ai", "frontier-public-monopoly"],
+            evidence_ids=["ev-text"],
+            provenance_id="prov-1",
         )
-    ]
-    record.analysis.antagonisms = [
-        Relation(
-            relation_id="antagonism:1",
-            relation_type="ANTAGONISTIC_TO",
-            source_ref="frontier:public-vs-unaccountable",
-            target_ref="formation:democratic-ai",
-            evidence_ids=["ev:text:democracy"],
-            provenance_id=prov.provenance_id,
-            review_status="PROVISIONAL",
-        )
-    ]
-    record.analysis.status = "analyzed"
+    )
+    record.review.status = "PROVISIONAL"
+    record.review.reviewer = "synthetic-researcher"
+    record.review.note = "Offline golden record for Phase 1 contract verification."
     return record
 
 
-def phase1_projection(record: CanonicalRecord):
-    graph = build_discourse_graph(record)
-    evidence_by_id = {item.evidence_id: item for item in record.evidence}
-    node_by_id = {node["id"]: node for node in graph["nodes"]}
-
-    for obj in (
-        record.analysis.signifiers
-        + record.analysis.formations
-        + record.analysis.imaginaries
-        + record.analysis.nodal_points
-    ):
-        node = node_by_id[obj.object_id]
-        node["evidence_ids"] = list(obj.evidence_ids)
-        node["provenance_id"] = obj.provenance_id
-        node["evidence_kinds"] = [
-            evidence_by_id[evidence_id].kind for evidence_id in obj.evidence_ids
-        ]
-
-    relation_edges = [
-        {
-            "source": relation.source_ref,
-            "target": relation.target_ref,
-            "type": relation.relation_type,
-            "relation_id": relation.relation_id,
-            "evidence_ids": list(relation.evidence_ids),
-            "provenance_id": relation.provenance_id,
-        }
-        for relation in record.analysis.relations + record.analysis.antagonisms
-    ]
-    graph["edges"].extend(relation_edges)
-
-    projection = GraphProjection(
-        projection_id="ai26-phase1-discourse-golden",
+def projection_for() -> GraphProjection:
+    return GraphProjection(
+        projection_id="ai26-phase1-canonical-discourse",
         graph_type="directed-multigraph",
-        node_semantics="Phase 1 canonical discourse objects plus source document",
-        edge_semantics="candidate membership and explicit evidence-grounded discourse relations",
-        weighting_method="unweighted",
-        projection_method="canonical discourse graph plus explicit relation edges",
+        node_semantics="canonical Phase 1 documents, evidence and discourse objects",
+        edge_semantics="candidate membership, evidence support and explicit discourse relations",
+        weighting_method="none",
+        projection_method="canonical discourse graph projection",
         parameters={
-            "lossy": True,
-            "omits": [
-                "full canonical record fields",
-                "review notes and corrections",
-                "topic/entity fields not represented as graph nodes",
-                "relation-chain ordering beyond explicit relation edges",
-                "frame-analysis payloads beyond evidence references",
-            ],
+            "lossy": [
+                "nested metadata is JSON-stringified in GraphML/GEXF",
+                "canonical ordering is not semantically significant in graph formats",
+                "RDF omits raw/private source payloads and some non-profile canonical fields",
+            ]
         },
-        producer={"type": "tool", "id": "laclaugpt-data-analysis", "version": "1"},
-        provenance_id="prov:phase1-golden",
+        producer=Producer(type="tool", id="laclaugpt-data-analysis", version="1"),
+        provenance_id="prov-1",
     )
-    return graph, projection
 
 
-def _stable_topology(nodes, edges):
-    node_ids = {node["id"] for node in nodes}
-    relation_edges = {
-        (
-            edge["source"],
-            edge["target"],
-            edge.get("relation_id", ""),
-            edge.get("type", ""),
-            edge.get("evidence_ids", ""),
-        )
-        for edge in edges
-        if edge.get("relation_id")
-    }
-    return node_ids, relation_edges
+def _assert_phase1_only(record: CanonicalRecord) -> None:
+    dump = json.dumps(record.canonical_dict(), ensure_ascii=False, sort_keys=True).casefold()
+    for forbidden in ("dna_statement", "critical_ai", "network_centrality", "brokerage"):
+        assert forbidden not in dump
 
 
-def test_phase1_ai26_golden_record_cross_representation_contract(tmp_path):
-    record = golden_record()
-    payload = record.canonical_dict()
-    validated = CanonicalRecord.model_validate(payload)
-
-    assert validated.source_url == record.source_url
-    assert {item.kind for item in validated.analysis.signifiers} == {
-        "signifier",
-    }
+def test_phase1_ai26_golden_record_survives_graph_exchange_and_rdf(tmp_path) -> None:
+    record = golden_ai26_record()
+    validated = CanonicalRecord.model_validate(record.canonical_dict())
     assert validated.content.frames[0].id == "frame-1"
-    assert {item.kind for item in validated.evidence} == {"text-span", "frame"}
+    assert validated.review.status == "PROVISIONAL"
+    _assert_phase1_only(validated)
 
-    graph, projection = phase1_projection(validated)
-    graph_json = json.loads(json.dumps(graph, sort_keys=True))
-    assert graph_json["schema"] == "laclaugpt-discourse-graph-v1"
-    assert "nodal:democratic-ai" in {node["id"] for node in graph_json["nodes"]}
-    assert any(
-        edge.get("relation_id") == "relation:articulation:1"
-        and edge["evidence_ids"] == ["ev:text:balance"]
-        for edge in graph_json["edges"]
-    )
-    assert any(
-        node["id"] == "nodal:democratic-ai"
-        and node["evidence_ids"] == ["ev:text:democracy", "ev:frame:1"]
-        for node in graph_json["nodes"]
-    )
+    graph = build_discourse_graph(validated)
+    node_ids = {node["id"] for node in graph["nodes"]}
+    edge_ids = {edge.get("id") for edge in graph["edges"]}
+    assert {"ev-text", "ev-frame", "signifier-ai", "nodal-democratic-ai"} <= node_ids
+    assert {"rel-articulation", "rel-antagonism"} <= edge_ids
+    assert any(edge["type"] == "EVIDENCE_FOR" and edge["source"] == "ev-text" for edge in graph["edges"])
+    assert any(edge["type"] == "EQUIVALENT_TO" for edge in graph["edges"])
+    assert any(edge["type"] == "DIFFERENTIATED_FROM" for edge in graph["edges"])
 
-    graphml_path = tmp_path / "phase1.graphml"
-    gexf_path = tmp_path / "phase1.gexf"
-    write_graphml(
-        graphml_path,
-        nodes=graph_json["nodes"],
-        edges=graph_json["edges"],
-        projection=projection,
-    )
-    write_gexf(
-        gexf_path,
-        nodes=graph_json["nodes"],
-        edges=graph_json["edges"],
-        projection=projection,
-    )
+    graph_round_trip = json.loads(json.dumps(graph, ensure_ascii=False, sort_keys=True))
+    assert graph_round_trip["source_url"] == validated.source_url
+    assert {node["id"] for node in graph_round_trip["nodes"]} == node_ids
+
+    projection = projection_for()
+    graphml_path = tmp_path / "ai26-phase1.graphml"
+    gexf_path = tmp_path / "ai26-phase1.gexf"
+    write_graphml(graphml_path, nodes=graph["nodes"], edges=graph["edges"], projection=projection)
+    write_gexf(gexf_path, nodes=graph["nodes"], edges=graph["edges"], projection=projection)
 
     graphml_nodes, graphml_edges, graphml_projection = read_graphml(graphml_path)
     gexf_nodes, gexf_edges, gexf_projection = read_gexf(gexf_path)
-    expected_topology = _stable_topology(graph_json["nodes"], graph_json["edges"])
-    assert _stable_topology(graphml_nodes, graphml_edges) == expected_topology
-    assert _stable_topology(gexf_nodes, gexf_edges) == expected_topology
+    assert {node["id"] for node in graphml_nodes} == node_ids
+    assert {node["id"] for node in gexf_nodes} == node_ids
     assert graphml_projection.projection_id == projection.projection_id
-    assert gexf_projection.parameters["lossy"] is True
+    assert gexf_projection.projection_id == projection.projection_id
+    assert any(edge.get("type") == "EVIDENCE_FOR" for edge in graphml_edges)
+    assert any(edge.get("type") == "EVIDENCE_FOR" for edge in gexf_edges)
+    assert any(edge.get("laclaugpt_edge_id") == "rel-articulation" for edge in graphml_edges)
+    assert any(edge.get("id") == "rel-articulation" for edge in gexf_edges)
 
-    dataset = materialize_record(validated, project_id="AI26", run_id="phase1-golden")
+    dataset = materialize_record(validated, project_id="AI26")
     report = validate_dataset(dataset)
     assert report.conforms is True
     imported = import_profile_dataset(dataset)
-    articulation = next(item for item in imported if item.get("id") == "relation:articulation:1")
-    assert articulation["review_state"] == "PROVISIONAL"
-    assert articulation["generated_by"]
-    assert articulation["evidence"]
-
-    phase2_keys = {"dna_statement_coding", "sna", "critical_ai", "ant", "valueflows"}
-    canonical_json = json.dumps(validated.canonical_dict(), sort_keys=True).lower()
-    for key in phase2_keys:
-        assert key not in validated.analysis.plugin_results
-        assert key not in validated.analysis.plugin_failures
-    assert '"discourse_statement"' not in canonical_json
-    assert '"critical_ai"' not in canonical_json
-
-    assert projection.parameters["lossy"] is True
-    assert "review notes and corrections" in projection.parameters["omits"]
+    assert any(item["kind"] == "source" and item["source_url"] == validated.source_url for item in imported)
+    assert any(item["kind"] == "articulation" and item["id"] == "rel-articulation" for item in imported)
+    nquads = serialize_dataset(dataset, "nquads")
+    assert "ev-text" in nquads
+    assert "rel-articulation" in nquads
+    assert "https://w3id.org/laclaugpt/Articulation" in nquads
