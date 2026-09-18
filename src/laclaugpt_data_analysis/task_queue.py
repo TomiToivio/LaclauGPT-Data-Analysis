@@ -383,6 +383,17 @@ class RedisStreamQueue:
         message = str(exc).lower()
         return "unknown command" in message and "xautoclaim" in message
 
+    @staticmethod
+    def _is_xpending_idle_unsupported(exc: Exception) -> bool:
+        """True when the server rejected XPENDING's IDLE filter syntax.
+
+        Redis 6.0 lacks the XPENDING IDLE filter added in Redis 7.0 and reports
+        the unsupported form as a ResponseError, typically just "syntax error".
+        Limit the compatibility fallback to that server-side syntax rejection so
+        unrelated Redis failures still propagate.
+        """
+        return "syntax error" in str(exc).lower()
+
     def __init__(
         self,
         url: str,
@@ -490,6 +501,16 @@ class RedisStreamQueue:
                     idle=min_idle_ms,
                 )
             except TypeError:
+                pending = self.redis.xpending_range(
+                    self.stream,
+                    self.group,
+                    min=start,
+                    max="+",
+                    count=self._LEGACY_PENDING_BATCH,
+                )
+            except Exception as exc:
+                if not self._is_xpending_idle_unsupported(exc):
+                    raise
                 pending = self.redis.xpending_range(
                     self.stream,
                     self.group,

@@ -192,3 +192,59 @@ def test_non_compatibility_responserror_still_propagates() -> None:
     queue = _queue(BrokenClient())
     with pytest.raises(ResponseError):
         queue.reclaim(min_idle_ms=5000)
+
+
+def test_reclaim_xpending_idle_falls_back_on_redis6_responserror() -> None:
+    """Issue #197: Redis 6 rejects XPENDING IDLE with ResponseError syntax error."""
+    pytest.importorskip("redis")
+    from redis.exceptions import ResponseError
+
+    class Redis60IdleSyntaxClient(Redis60Client):
+        def __init__(self, pending):
+            super().__init__(pending)
+            self.filtered_pending_calls = 0
+
+        def xpending_range(self, stream, group, *, min, max, count, **kwargs):
+            if "idle" in kwargs:
+                self.filtered_pending_calls += 1
+                raise ResponseError("syntax error")
+            return super().xpending_range(
+                stream, group, min=min, max=max, count=count, **kwargs
+            )
+
+    client = Redis60IdleSyntaxClient(
+        [
+            {
+                "message_id": "2-0",
+                "consumer": "old",
+                "time_since_delivered": 6000,
+                "times_delivered": 1,
+            }
+        ]
+    )
+    queue = _queue(client)
+
+    claimed = queue.reclaim(min_idle_ms=5000)
+
+    assert claimed is not None
+    assert claimed.message_id == "2-0"
+    assert client.filtered_pending_calls == 1
+    assert client.pending_calls == [("stream", "group", "-", "+", 100)]
+    assert client.claim_calls == [("stream", "group", "consumer", 5000, ["2-0"])]
+
+
+def test_reclaim_xpending_idle_non_compatibility_responserror_propagates() -> None:
+    """XPENDING failures other than the Redis 6 syntax rejection must surface."""
+    pytest.importorskip("redis")
+    from redis.exceptions import ResponseError
+
+    class BrokenPendingClient(Redis60Client):
+        def xpending_range(self, stream, group, *, min, max, count, **kwargs):
+            raise ResponseError(
+                "WRONGTYPE Operation against a key holding the wrong kind of value"
+            )
+
+    queue = _queue(BrokenPendingClient([]))
+
+    with pytest.raises(ResponseError, match="WRONGTYPE"):
+        queue.reclaim(min_idle_ms=5000)
