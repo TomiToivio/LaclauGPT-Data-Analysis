@@ -57,15 +57,10 @@ def test_disabled_summary_capability_stays_empty() -> None:
     assert record.analysis.topics == []
 
 
-def test_phase2_true_capability_fails_closed() -> None:
+def test_phase2_capability_can_be_explicitly_selected_without_entering_default_stage_set() -> None:
     ctx = PipelineContext(project_config={"analysis": {"sna": True}})
-    try:
-        _validate_project_analysis_config(ctx)
-    except ValueError as exc:
-        assert "Phase 2 / experimental" in str(exc)
-        assert "sna" in str(exc)
-    else:
-        raise AssertionError("sna=true must fail in the Phase 1 canonical runner")
+    _validate_project_analysis_config(ctx)
+    assert "sna" in _effective_stage_set(ctx)
 
 
 def test_effective_stage_set_is_auditable() -> None:
