@@ -7,11 +7,13 @@ description: >-
   They are not source evidence and must never be used as actor-level ground-truth ideology.
 project: ai26
 required_sections: [arenas, safeguards, sampling_dimensions]
-optional_sections: [current_watch_relations]
+optional_sections: [current_watch_relations, entity_seeds, bibliography, rdf_mapping, rag_policy]
 
 entries:
   - kind: formation
+    id: accelerationist
     label: accelerationist
+    display_label: Accelerationist
     aliases: [accelerationism, techno-optimism, e/acc]
     definition: >-
       Provisional sampling/aggregation anchor for discourses linking accelerated AI or
@@ -21,7 +23,9 @@ entries:
     metadata: {state: PROVISIONAL, human_validation_required: true}
 
   - kind: formation
+    id: existential_risk
     label: existential_risk
+    display_label: Existential risk
     aliases: [doomerism, AI doomerism, existential risk, x-risk]
     definition: >-
       Provisional aggregation label for discourse centred on catastrophic or existential AI risk.
@@ -30,7 +34,9 @@ entries:
     metadata: {state: PROVISIONAL, human_validation_required: true}
 
   - kind: formation
+    id: left_accelerationist
     label: left_accelerationist
+    display_label: Left accelerationist
     aliases: [left-wing accelerationism, left techno-optimism, post-work techno-optimism]
     definition: >-
       Provisional anchor for technology-positive projects articulating automation with egalitarian,
@@ -39,7 +45,9 @@ entries:
     metadata: {state: PROVISIONAL, human_validation_required: true}
 
   - kind: formation
+    id: ai_safety
     label: ai_safety
+    display_label: AI safety
     aliases: [AI safety, AI safety discourse, alignment discourse]
     definition: >-
       Provisional anchor for discourse about alignment, evaluation, standards, incidents, pacing,
@@ -48,7 +56,9 @@ entries:
     metadata: {state: PROVISIONAL, human_validation_required: true}
 
   - kind: formation
+    id: critical_ai
     label: critical_ai
+    display_label: Critical AI
     aliases: [ai critical, Critical AI, Critical AI Studies]
     definition: >-
       Provisional anchor for discourse foregrounding power, labour, inequality, discrimination,
@@ -57,7 +67,9 @@ entries:
     metadata: {state: PROVISIONAL, human_validation_required: true}
 
   - kind: formation
+    id: anti_ai
     label: anti_ai
+    display_label: Anti-AI
     aliases: [anti-ai, AI opposition, anti_ai_protest, pause_ai]
     definition: >-
       Provisional anchor for broader opposition to AI or mobilisations against particular deployments.
@@ -210,6 +222,107 @@ sections:
     - [generative AI, copyright]
     - [data centres, energy]
     - [AI, corporate concentration]
+
+
+  entity_seeds:
+    - label: Nick Srnicek
+      wikipedia_title: Nick Srnicek
+      entity_type: person
+      formation_hints: [left_accelerationist]
+      rdf_types: [schema:Person, prov:Agent]
+      description: Researcher seed for post-work, automation and postcapitalist context; not actor-level formation evidence.
+    - label: Alex Williams
+      wikipedia_title: Alex Williams (political theorist)
+      entity_type: person
+      formation_hints: [left_accelerationist]
+      rdf_types: [schema:Person, prov:Agent]
+      description: Researcher seed for left-accelerationist context; not actor-level formation evidence.
+    - label: Aaron Bastani
+      wikipedia_title: Aaron Bastani
+      entity_type: person
+      formation_hints: [left_accelerationist]
+      rdf_types: [schema:Person, prov:Agent]
+      description: Researcher seed for automation/abundance context; not actor-level formation evidence.
+    - label: Eliezer Yudkowsky
+      wikipedia_title: Eliezer Yudkowsky
+      entity_type: person
+      formation_hints: [existential_risk, ai_safety]
+      rdf_types: [schema:Person, prov:Agent]
+      description: Retrieval seed for existential-risk and AI-safety discourse; hints are not permanent actor labels.
+    - label: Timnit Gebru
+      wikipedia_title: Timnit Gebru
+      entity_type: person
+      formation_hints: [critical_ai]
+      rdf_types: [schema:Person, prov:Agent]
+      description: Retrieval seed for Critical AI context; not actor-level formation evidence.
+    - label: PauseAI
+      wikipedia_title: PauseAI
+      entity_type: organization
+      formation_hints: [anti_ai, ai_safety]
+      rdf_types: [schema:Organization, prov:Agent]
+      description: Movement seed for pause/slowdown discourse. Failure to resolve Wikipedia must not trigger guessed Wikidata IDs.
+
+  bibliography:
+    - id: Jasanoff_2015
+      kind: research_reference
+      citation: "Jasanoff, S. (2015). Future Imperfect: Science, Technology, and the Imaginations of Modernity."
+      rag_role: sociotechnical_imaginaries
+    - id: Srnicek_Williams_2015
+      kind: research_reference
+      citation: "Srnicek, N. & Williams, A. (2015). Inventing the Future."
+      rag_role: left_accelerationist
+    - id: Bastani_2019
+      kind: research_reference
+      citation: "Bastani, A. (2019). Fully Automated Luxury Communism."
+      rag_role: left_accelerationist
+    - id: Gebru_Torres_2024
+      kind: research_reference
+      citation: "Gebru, T. & Torres, É. P. (2024). TESCREAL critique and ideological genealogy."
+      rag_role: critical_ai
+    - id: Richter_Katzenbach_Schaefer_2023
+      kind: research_reference
+      citation: "Richter, V., Katzenbach, C. & Schäfer, M. S. (2023). Research on imaginaries of AI."
+      rag_role: sociotechnical_imaginaries
+    - id: Oldenburg_Papyshev_2025
+      kind: research_reference
+      citation: "Oldenburg & Papyshev (2025). The Stories We Govern By: AI, Risk, and the Power of Imaginaries."
+      rag_role: ai_imaginaries
+    - id: De_Lima_Zou_2026
+      kind: research_reference
+      citation: "De, Lima & Zou (2026). What is Safety? Corporate Discourse, Power, and the Politics of Generative AI Safety."
+      rag_role: ai_safety
+
+  rdf_mapping:
+    identity:
+      local_identity: project_local_stable_id
+      external_identity: wikidata_qid_when_available
+      display_identity: english_wikipedia_title
+      rule: Wikipedia URLs are never primary keys.
+    classes:
+      person: schema:Person
+      organization: schema:Organization
+      corporation: schema:Corporation
+      government: schema:GovernmentOrganization
+      media: schema:NewsMediaOrganization
+      formation: [skos:Concept, laclaugpt:Formation]
+      signifier: [skos:Concept, laclaugpt:Signifier]
+    provenance_classes:
+      - background_knowledge
+      - researcher_seed
+      - corpus_evidence
+      - llm_inference
+    seed_relation: laclaugpt:seedFormation
+    analytical_relation: laclaugpt:formationEvidence
+
+  rag_policy:
+    retrieval: query_driven
+    whole_codebook_injection: false
+    log_supplied_chunks: true
+    safeguards:
+      - source text has epistemic priority for document-level claims
+      - researcher seed hints are context, not evidence
+      - background knowledge is distinct from corpus evidence and llm inference
+      - only relevant concepts should be retrieved for each analysis step
 
   safeguards:
     - frequency is not hegemony
