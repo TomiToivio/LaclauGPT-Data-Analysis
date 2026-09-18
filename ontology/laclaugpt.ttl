@@ -1,6 +1,7 @@
 @prefix lg: <https://laclaugpt.org/ontology/> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .\n@prefix prov: <http://www.w3.org/ns/prov#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix prov: <http://www.w3.org/ns/prov#> .
 
 lg:Document a rdfs:Class .
 lg:Actor a rdfs:Class .
