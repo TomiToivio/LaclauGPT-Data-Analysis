@@ -110,6 +110,11 @@ def _read_networkx_exchange_graph(graph, format_name: str):
         for _, _, attrs in graph.edges(data=True)
         if attrs.get("laclaugpt_edge_id")
     }
+    relation_edge_ids.update(
+        str(node_id)
+        for node_id, attrs in graph.nodes(data=True)
+        if str(node_id).startswith(("rel-", "relation:")) and not attrs
+    )
     nodes = [
         {"id": str(node_id), **dict(attrs)}
         for node_id, attrs in graph.nodes(data=True)
@@ -121,8 +126,8 @@ def _read_networkx_exchange_graph(graph, format_name: str):
         canonical_id = payload.get("laclaugpt_edge_id") or payload.get("id")
         if canonical_id is not None:
             payload["id"] = str(canonical_id)
-        if "type" not in payload and "label" in payload:
-            payload["type"] = payload["label"]
+        if "type" not in payload:
+            payload["type"] = payload.get("label") or payload.get("kind") or "UNSPECIFIED"
         edges.append({"source": str(source), "target": str(target), **payload})
     return nodes, edges, projection
 
