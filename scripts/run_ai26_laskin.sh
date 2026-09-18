@@ -145,6 +145,55 @@ if ! flock -n 9; then
 fi
 
 cd "$ROOT_DIR"
+
+# The frozen manifest is a provenance boundary, not a permanent deployment pin.
+# A source-changing deploy legitimately makes it stale. Cron must repair that
+# boundary deliberately before work starts, while holding the same lock as the
+# worker so no cycle can observe a half-refreshed runtime.
+RUNTIME_STATE=$("$PY" - "$RUN_MANIFEST" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+from laclaugpt_data_analysis.distributed_worker import _runtime_public_git_sha, _source_tree_sha256
+
+manifest = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(json.dumps({
+    "manifest_git": str(manifest.get("public_git_sha") or ""),
+    "manifest_tree": str(manifest.get("source_tree_sha256") or ""),
+    "runtime_git": _runtime_public_git_sha(),
+    "runtime_tree": _source_tree_sha256(),
+}, sort_keys=True))
+PY
+)
+MANIFEST_GIT=$(printf '%s' "$RUNTIME_STATE" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["manifest_git"])')
+MANIFEST_TREE=$(printf '%s' "$RUNTIME_STATE" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["manifest_tree"])')
+RUNTIME_GIT=$(printf '%s' "$RUNTIME_STATE" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["runtime_git"])')
+RUNTIME_TREE=$(printf '%s' "$RUNTIME_STATE" | "$PY" -c 'import json,sys; print(json.load(sys.stdin)["runtime_tree"])')
+
+if [[ "$MANIFEST_TREE" != "$RUNTIME_TREE" || "$MANIFEST_GIT" != "$RUNTIME_GIT" ]]; then
+  PUBLIC_CODEBOOK=${LACLAUGPT_AI26_PUBLIC_CODEBOOK:-"$ROOT_DIR/codebooks/public/ai26_v2.yaml"}
+  PRIVATE_OVERLAY=${LACLAUGPT_AI26_PRIVATE_OVERLAY:-"$PRIVATE_CONFIG_DIR/codebooks/ai26_overlay.yaml"}
+  FREEZE_BIN="$ROOT_DIR/.venv/bin/laclaugpt-freeze-ai26"
+  [[ -x "$FREEZE_BIN" ]] || fail "stale manifest detected but freeze command not found: $FREEZE_BIN"
+  [[ -f "$PUBLIC_CODEBOOK" ]] || fail "stale manifest detected but public AI26 codebook not found: $PUBLIC_CODEBOOK"
+
+  log "AI26 manifest stale; re-freezing before scheduled analysis manifest_git=$MANIFEST_GIT runtime_git=$RUNTIME_GIT manifest_tree=$MANIFEST_TREE runtime_tree=$RUNTIME_TREE"
+  FREEZE_ARGS=(
+    --private-root "$PRIVATE_CONFIG_DIR"
+    --public-codebook "$PUBLIC_CODEBOOK"
+    --analysis-config "$PRIVATE_CONFIG"
+    --run-id "$LACLAUGPT_RUN_ID"
+    --model "$LACLAUGPT_LLM_MODEL"
+    --public-git-sha "$RUNTIME_GIT"
+  )
+  if [[ -f "$PRIVATE_OVERLAY" ]]; then
+    FREEZE_ARGS+=(--private-overlay "$PRIVATE_OVERLAY")
+  fi
+  "$FREEZE_BIN" "${FREEZE_ARGS[@]}" >/dev/null
+  log "AI26 manifest re-frozen for scheduled analysis git=$RUNTIME_GIT tree=$RUNTIME_TREE"
+fi
+
 log "AI26 Laskin analysis start run=$LACLAUGPT_RUN_ID max_tasks=$MAX_TASKS mode=$RUN_MODE debug=${LACLAUGPT_DEBUG:-0}"
 
 set +e
