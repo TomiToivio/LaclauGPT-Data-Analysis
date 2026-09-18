@@ -7,7 +7,8 @@ from laclaugpt_data_analysis.coordination import (
     MessageEnvelope,
 )
 from laclaugpt_data_analysis.distributed import ProjectNamespace
-from laclaugpt_data_analysis.task_queue import InMemoryTaskQueue, TaskEnvelope
+from laclaugpt_data_analysis.config import Settings
+from laclaugpt_data_analysis.task_queue import InMemoryTaskQueue, RedisStreamQueue, TaskEnvelope, redis_queue_from_settings
 
 
 def test_file_config_store_preserves_immutable_history(tmp_path: Path) -> None:
@@ -98,3 +99,30 @@ def test_namespace_exposes_cross_module_settings_and_lock_keys() -> None:
     assert namespace.settings_key("storage", "current") == "laclaugpt:ai26:settings:storage:current"
     assert namespace.worker_key("simulation", "worker-1") == "laclaugpt:ai26:worker:simulation:worker-1"
     assert namespace.lock_key("analysis:record-1") == "laclaugpt:ai26:lock:analysis:record-1"
+
+
+def test_redis_queue_from_settings_uses_documented_namespace(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_init(self, url: str, **kwargs) -> None:
+        captured["url"] = url
+        captured.update(kwargs)
+
+    monkeypatch.setattr(RedisStreamQueue, "__init__", fake_init)
+    settings = Settings(project_id="ai26", redis_url="redis://example.invalid:6379/0")
+
+    queue = redis_queue_from_settings(
+        settings,
+        run_id="ai26-distributed-001",
+        worker_id="laskin-worker-1",
+    )
+
+    assert isinstance(queue, RedisStreamQueue)
+    assert captured == {
+        "url": "redis://example.invalid:6379/0",
+        "stream": "laclaugpt:ai26:stream:analysis:ai26-distributed-001:tasks",
+        "group": "laclaugpt:ai26:group:analysis:ai26-distributed-001",
+        "consumer": "laskin-worker-1",
+        "dead_letter_stream": "laclaugpt:ai26:stream:analysis:ai26-distributed-001:dead",
+        "heartbeat_key": "laclaugpt:ai26:worker:analysis:laskin-worker-1",
+    }
