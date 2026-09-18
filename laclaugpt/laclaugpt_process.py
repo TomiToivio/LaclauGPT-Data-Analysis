@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from laclaugpt_discourse import DiscourseParseError, analyze_discourse
-from laclaugpt_mongo import find_documents, update_document
+from laclaugpt_mongo import find_documents, record_stage_failure, update_document
 from laclaugpt_ontology import export_discourse
 from laclaugpt_postprocess import validate_summary
 from laclaugpt_preprocess import preprocess_record
@@ -39,7 +39,7 @@ def run_document(source: dict[str, Any], stage: str = "all", dry_run: bool = Fal
                 }, project_id=project_id)
         except Exception as exc:
             if not dry_run:
-                update_document(source, {"phase0.preprocess": _status("error", str(exc))}, project_id=project_id)
+                record_stage_failure(source, "preprocess", str(exc), project_id=project_id)
             return
 
     if not working.get("normalized_text"):
@@ -63,7 +63,7 @@ def run_document(source: dict[str, Any], stage: str = "all", dry_run: bool = Fal
                 }, project_id=project_id)
         except Exception as exc:
             if not dry_run:
-                update_document(source, {"phase0.summary": _status("error", str(exc))}, project_id=project_id)
+                record_stage_failure(source, "summary", str(exc), project_id=project_id)
             return
 
     if stage in ("all", "postprocess"):
@@ -78,10 +78,13 @@ def run_document(source: dict[str, Any], stage: str = "all", dry_run: bool = Fal
                 }, project_id=project_id)
         except Exception as exc:
             if not dry_run:
-                update_document(source, {
-                    "phase0_summary_validation_error": str(exc),
-                    "phase0.postprocess": _status("error", str(exc)),
-                }, project_id=project_id)
+                record_stage_failure(
+                    source,
+                    "postprocess",
+                    str(exc),
+                    extra_fields={"phase0_summary_validation_error": str(exc)},
+                    project_id=project_id,
+                )
             return
 
     if stage in ("all", "discourse"):
@@ -99,14 +102,19 @@ def run_document(source: dict[str, Any], stage: str = "all", dry_run: bool = Fal
                 }, project_id=project_id)
         except DiscourseParseError as exc:
             if not dry_run:
-                update_document(source, {
-                    "phase0_discourse_raw": exc.raw_response,
-                    "phase0_discourse_error_metadata": exc.metadata,
-                    "phase0.discourse": _status("error", str(exc)),
-                }, project_id=project_id)
+                record_stage_failure(
+                    source,
+                    "discourse",
+                    str(exc),
+                    extra_fields={
+                        "phase0_discourse_raw": exc.raw_response,
+                        "phase0_discourse_error_metadata": exc.metadata,
+                    },
+                    project_id=project_id,
+                )
         except Exception as exc:
             if not dry_run:
-                update_document(source, {"phase0.discourse": _status("error", str(exc))}, project_id=project_id)
+                record_stage_failure(source, "discourse", str(exc), project_id=project_id)
 
 
 def main() -> None:

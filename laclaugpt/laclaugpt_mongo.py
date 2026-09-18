@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone
 from typing import Any
 
 from pymongo import DESCENDING, MongoClient
@@ -41,10 +42,7 @@ def find_documents(
             {"phase0.discourse.status": "error"},
         ]
     else:
-        query["$or"] = [
-            {"phase0.discourse.status": {"$exists": False}},
-            {"phase0.discourse.status": {"$ne": "ok"}},
-        ]
+        query["phase0.discourse.status"] = {"$exists": False}
     return list(_collection(project_id).find(query).sort("source_date", DESCENDING).limit(limit))
 
 
@@ -59,3 +57,47 @@ def update_document(record: dict[str, Any], fields: dict[str, Any], *, project_i
     if not source_url:
         raise ValueError("record has no source_url")
     upsert_document(str(source_url), fields, project_id=project_id)
+
+
+def record_stage_failure(
+    record: dict[str, Any],
+    stage: str,
+    error: str,
+    *,
+    extra_fields: dict[str, Any] | None = None,
+    project_id: str | None = None,
+) -> None:
+    """Persist a visible failure record and increment its attempt counter."""
+    source_url = record.get("source_url")
+    if not source_url:
+        raise ValueError("record has no source_url")
+
+    now = datetime.now(timezone.utc).isoformat()
+    stage_prefix = f"phase0.{stage}"
+    set_fields: dict[str, Any] = {
+        f"{stage_prefix}.status": "error",
+        f"{stage_prefix}.error": error,
+        f"{stage_prefix}.updated_at": now,
+        f"{stage_prefix}.last_failure_at": now,
+    }
+    if extra_fields:
+        set_fields.update(extra_fields)
+
+    _collection(project_id).update_one(
+        {"source_url": str(source_url)},
+        {
+            "$set": set_fields,
+            "$setOnInsert": {f"{stage_prefix}.first_failure_at": now},
+            "$inc": {f"{stage_prefix}.attempt_count": 1},
+        },
+        upsert=True,
+    )
+
+    # Preserve first_failure_at on existing documents as well.
+    _collection(project_id).update_one(
+        {
+            "source_url": str(source_url),
+            f"{stage_prefix}.first_failure_at": {"$exists": False},
+        },
+        {"$set": {f"{stage_prefix}.first_failure_at": now}},
+    )
