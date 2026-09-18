@@ -5,6 +5,19 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 
+_LIST_FIELDS = (
+    "claims",
+    "actors",
+    "entities",
+    "topics",
+    "signifiers",
+    "future_visions",
+    "governance_positions",
+    "evidence",
+    "uncertainty_notes",
+)
+
+
 class DocumentSummary(BaseModel):
     document_id: str
     source_url: str
@@ -25,10 +38,36 @@ class DocumentSummary(BaseModel):
     prompt_version: str = ""
 
 
+def _normalise_list_fields(summary: dict[str, Any]) -> tuple[dict[str, Any], list[str]]:
+    normalised = dict(summary)
+    coerced_fields: list[str] = []
+
+    for field_name in _LIST_FIELDS:
+        value = normalised.get(field_name)
+        if value is None or isinstance(value, list):
+            continue
+        if isinstance(value, str):
+            text = value.strip()
+            normalised[field_name] = [text] if text else []
+            coerced_fields.append(field_name)
+
+    return normalised, coerced_fields
+
+
 def validate_summary(record: dict[str, Any], summary: dict[str, Any]) -> DocumentSummary:
     metadata = record.get("metadata") or {}
+    normalised, coerced_fields = _normalise_list_fields(summary)
+
+    if coerced_fields:
+        notes = list(normalised.get("uncertainty_notes") or [])
+        fields = ", ".join(coerced_fields)
+        notes.append(
+            f"Phase 0 postprocess normalized scalar list field(s) to one-element lists: {fields}."
+        )
+        normalised["uncertainty_notes"] = notes
+
     payload = {
-        **summary,
+        **normalised,
         "document_id": record["document_id"],
         "source_url": metadata.get("source_url") or record.get("source_url") or "",
         "source_date": metadata.get("source_date"),
