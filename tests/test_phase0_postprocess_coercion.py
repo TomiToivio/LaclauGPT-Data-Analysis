@@ -64,6 +64,19 @@ def test_blank_scalar_list_field_becomes_empty_list() -> None:
     assert "evidence" in validated.uncertainty_notes[-1]
 
 
+def test_null_list_field_becomes_empty_list_and_is_recorded() -> None:
+    validated = validate_summary(
+        _record(),
+        {
+            "summary": "Usable summary.",
+            "governance_positions": None,
+        },
+    )
+
+    assert validated.governance_positions == []
+    assert "governance_positions" in validated.uncertainty_notes[-1]
+
+
 def test_non_string_invalid_container_still_fails() -> None:
     with pytest.raises(ValidationError):
         validate_summary(
