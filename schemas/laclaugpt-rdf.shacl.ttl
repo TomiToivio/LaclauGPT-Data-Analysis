@@ -42,3 +42,62 @@ laclaugpt:SignifierRoleShape a sh:NodeShape ;
         sh:minCount 1 ;
         sh:datatype xsd:string
     ] .
+
+# Phase 1 AI26 analytical projection. These shapes intentionally validate the
+# semantic RDF projection rather than redefining CanonicalRecord as RDF-first.
+laclaugpt:Phase1ConceptShape a sh:NodeShape ;
+    sh:targetClass laclaugpt:Discourse, laclaugpt:SociotechnicalImaginary,
+        laclaugpt:CollectiveSubject, laclaugpt:OpposingSubject,
+        laclaugpt:DiscursiveFrontier, laclaugpt:Affect ;
+    sh:property [
+        sh:path prov:wasGeneratedBy ;
+        sh:minCount 1 ;
+        sh:message "Phase 1 analytical concepts must retain generation provenance."@en
+    ] ;
+    sh:property [
+        sh:path laclaugpt:reviewState ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+        sh:in ("PROVISIONAL" "ACCEPTED" "REJECTED" "REVISED" "CANONICAL" "SUPERSEDED")
+    ] ;
+    sh:property [
+        sh:path laclaugpt:confidence ;
+        sh:minInclusive 0 ;
+        sh:maxInclusive 1
+    ] .
+
+laclaugpt:DiscourseChainShape a sh:NodeShape ;
+    sh:targetClass laclaugpt:EquivalenceChain, laclaugpt:DifferenceChain ;
+    sh:property [
+        sh:path laclaugpt:hasMember ;
+        sh:minCount 2 ;
+        sh:message "A discourse chain must contain at least two members."@en
+    ] ;
+    sh:property [
+        sh:path prov:wasGeneratedBy ;
+        sh:minCount 1
+    ] ;
+    sh:property [
+        sh:path laclaugpt:reviewState ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+        sh:in ("PROVISIONAL" "ACCEPTED" "REJECTED" "REVISED" "CANONICAL" "SUPERSEDED")
+    ] .
+
+laclaugpt:PopulismFormulaShape a sh:NodeShape ;
+    sh:targetClass laclaugpt:PopulismFormula ;
+    sh:property [
+        sh:path laclaugpt:hasComponent ;
+        sh:minCount 1 ;
+        sh:message "A Formula of Populism must retain at least one component."@en
+    ] ;
+    sh:property [
+        sh:path prov:wasGeneratedBy ;
+        sh:minCount 1
+    ] ;
+    sh:property [
+        sh:path laclaugpt:reviewState ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+        sh:in ("PROVISIONAL" "ACCEPTED" "REJECTED" "REVISED" "CANONICAL" "SUPERSEDED")
+    ] .
