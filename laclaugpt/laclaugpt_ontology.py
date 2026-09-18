@@ -95,6 +95,7 @@ def build_jsonld(record: dict[str, Any], discourse: dict[str, Any]) -> dict[str,
         "articulations": "lg:articulates",
         "chains_equivalence": "lg:equivalentTo",
         "chains_difference": "lg:differentFrom",
+        "antagonisms": "lg:antagonisticTo",
         "frontiers": "lg:constructsFrontier",
         "affects": "lg:expressesAffect",
     }
@@ -122,6 +123,10 @@ def build_jsonld(record: dict[str, Any], discourse: dict[str, Any]) -> dict[str,
                 assertion["lg:confidence"] = raw["confidence"]
             if raw.get("evidence"):
                 assertion["lg:surfaceForm"] = str(raw["evidence"])
+            if raw.get("validated") is not None:
+                assertion["lg:validated"] = bool(raw["validated"])
+            if raw.get("correction_of"):
+                assertion["prov:wasRevisionOf"] = {"@id": str(raw["correction_of"])}
             graph.append(assertion)
 
     return {
