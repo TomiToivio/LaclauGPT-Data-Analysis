@@ -64,18 +64,16 @@ def actor_concept_projection(
     return nodes, edges, projection
 
 
-def write_graphml(
-    path: str | Path,
+def _networkx_exchange_graph(
     *,
     nodes: Iterable[Mapping[str, Any]],
     edges: Iterable[Mapping[str, Any]],
     projection: GraphProjection,
-) -> None:
-    """Write GraphML with projection semantics embedded as graph attributes."""
+):
     try:
         import networkx as nx
     except ImportError as exc:  # pragma: no cover - optional dependency
-        raise RuntimeError("GraphML exchange requires the 'analysis' optional dependencies") from exc
+        raise RuntimeError("Graph exchange requires the 'analysis' optional dependencies") from exc
 
     graph = nx.MultiDiGraph()
     graph.graph["laclaugpt_projection"] = json.dumps(
@@ -84,7 +82,7 @@ def write_graphml(
     for node in nodes:
         payload = dict(node)
         node_id = str(payload.pop("id"))
-        graph.add_node(node_id, **{key: _graphml_scalar(value) for key, value in payload.items()})
+        graph.add_node(node_id, **{key: _graph_scalar(value) for key, value in payload.items()})
     for edge in edges:
         payload = dict(edge)
         source = str(payload.pop("source"))
@@ -92,8 +90,22 @@ def write_graphml(
         graph.add_edge(
             source,
             target,
-            **{key: _graphml_scalar(value) for key, value in payload.items()},
+            **{key: _graph_scalar(value) for key, value in payload.items()},
         )
+    return graph
+
+
+def write_graphml(
+    path: str | Path,
+    *,
+    nodes: Iterable[Mapping[str, Any]],
+    edges: Iterable[Mapping[str, Any]],
+    projection: GraphProjection,
+) -> None:
+    """Write GraphML with projection semantics embedded as graph attributes."""
+    graph = _networkx_exchange_graph(nodes=nodes, edges=edges, projection=projection)
+    import networkx as nx
+
     nx.write_graphml(graph, Path(path))
 
 
@@ -105,9 +117,38 @@ def read_graphml(path: str | Path) -> tuple[list[dict[str, Any]], list[dict[str,
         raise RuntimeError("GraphML exchange requires the 'analysis' optional dependencies") from exc
 
     graph = nx.read_graphml(Path(path), force_multigraph=True)
+    return _read_networkx_exchange_graph(graph, "GraphML")
+
+
+def write_gexf(
+    path: str | Path,
+    *,
+    nodes: Iterable[Mapping[str, Any]],
+    edges: Iterable[Mapping[str, Any]],
+    projection: GraphProjection,
+) -> None:
+    """Write GEXF with the same stable IDs and embedded projection semantics as GraphML."""
+    graph = _networkx_exchange_graph(nodes=nodes, edges=edges, projection=projection)
+    import networkx as nx
+
+    nx.write_gexf(graph, Path(path))
+
+
+def read_gexf(path: str | Path) -> tuple[list[dict[str, Any]], list[dict[str, Any]], GraphProjection]:
+    """Read GEXF and require LaclauGPT construction semantics to be present."""
+    try:
+        import networkx as nx
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise RuntimeError("GEXF exchange requires the 'analysis' optional dependencies") from exc
+
+    graph = nx.read_gexf(Path(path))
+    return _read_networkx_exchange_graph(graph, "GEXF")
+
+
+def _read_networkx_exchange_graph(graph, format_name: str):
     raw_projection = graph.graph.get("laclaugpt_projection")
     if not raw_projection:
-        raise ValueError("GraphML lacks laclaugpt_projection construction semantics")
+        raise ValueError(f"{format_name} lacks laclaugpt_projection construction semantics")
     projection = GraphProjection.model_validate(json.loads(raw_projection))
     nodes = [{"id": str(node_id), **dict(attrs)} for node_id, attrs in graph.nodes(data=True)]
     edges = [
@@ -153,7 +194,7 @@ def read_parquet_rows(path: str | Path) -> tuple[list[dict[str, Any]], dict[str,
     return table.to_pylist(), json.loads(raw.decode("utf-8"))
 
 
-def _graphml_scalar(value: Any) -> str | int | float | bool:
+def _graph_scalar(value: Any) -> str | int | float | bool:
     if isinstance(value, (str, int, float, bool)):
         return value
     if value is None:
