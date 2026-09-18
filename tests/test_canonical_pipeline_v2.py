@@ -1,6 +1,6 @@
 from datetime import UTC, date, datetime
 
-from laclaugpt_data_analysis.canonical import CanonicalRecord, DiscourseObject
+from laclaugpt_data_analysis.canonical import CanonicalRecord, DiscourseObject, Evidence, Relation
 from laclaugpt_data_analysis.canonical_pipeline import (
     DiscourseProposal,
     DiscursiveElement,
@@ -180,22 +180,22 @@ def test_discourse_graph_has_no_dangling_edge_endpoints():
         ),
     ]
     record.evidence.append(
-        {
-            "evidence_id": "evidence:1",
-            "kind": "text_span",
-            "source_url": record.source_url,
-            "quote": "AI should serve democratic society.",
-        }
+        Evidence(
+            evidence_id="evidence:1",
+            kind="text_span",
+            source_url=record.source_url,
+            quote="AI should serve democratic society.",
+        )
     )
     record.analysis.relations.append(
-        {
-            "relation_id": "relation:articulation",
-            "relation_type": "articulation",
-            "source_ref": "signifier:source",
-            "target_ref": "signifier:target",
-            "evidence_ids": ["evidence:1"],
-            "review_status": "PROVISIONAL",
-        }
+        Relation(
+            relation_id="relation:articulation",
+            relation_type="articulation",
+            source_ref="signifier:source",
+            target_ref="signifier:target",
+            evidence_ids=["evidence:1"],
+            review_status="PROVISIONAL",
+        )
     )
 
     graph = build_discourse_graph(record)
