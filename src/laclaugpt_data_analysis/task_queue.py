@@ -370,6 +370,19 @@ class RedisStreamQueue:
 
     _LEGACY_PENDING_BATCH = 100
 
+    @staticmethod
+    def _is_xautoclaim_unknown_command(exc: Exception) -> bool:
+        """True when the server rejected XAUTOCLAIM as an unknown command.
+
+        Redis 6.0 does not implement XAUTOCLAIM. The server reports this as a
+        ``ResponseError`` ("unknown command `XAUTOCLAIM`"), which is a ``RedisError``
+        and **not** a ``RuntimeError``/``TypeError``/``AttributeError`` — so the
+        compatibility fallback must inspect the message rather than rely on the
+        exception class.
+        """
+        message = str(exc).lower()
+        return "unknown command" in message and "xautoclaim" in message
+
     def __init__(
         self,
         url: str,
@@ -453,10 +466,10 @@ class RedisStreamQueue:
                 count=1,
             )
         except (AttributeError, TypeError):
+            # Very old client libraries without the xautoclaim method.
             response = None
-        except RuntimeError as exc:
-            message = str(exc).casefold()
-            if "unknown command" not in message or "xautoclaim" not in message:
+        except Exception as exc:
+            if not self._is_xautoclaim_unknown_command(exc):
                 raise
             response = None
         if response:
