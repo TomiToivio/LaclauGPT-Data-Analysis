@@ -18,7 +18,6 @@ from typing import Any
 
 import feedparser
 import requests
-
 from ai26_rss import SOURCES
 from laclaugpt_collect_rss import _canonicalize_url, _entry_url
 
