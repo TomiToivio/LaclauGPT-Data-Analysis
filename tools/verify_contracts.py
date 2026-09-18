@@ -45,6 +45,7 @@ DEFAULT_FIXTURE = REPOSITORY_ROOT / "tests" / "fixtures" / "canonical_parity_v1.
 EXPECTED_SOURCE_URL = "https://example.invalid/laclaugpt/synthetic/record-001"
 EXPECTED_LEGACY_ID = "legacy-001"
 EXPECTED_LEGACY_FIELD = "must-survive-roundtrip"
+EXPECTED_FIXTURE_SHA256 = "e7132b2c24d809b9d841fe7aeef4fbc92c82c2078a5439f27752f9650dddd7aa"
 
 
 class CheckFailure(Exception):
@@ -58,7 +59,17 @@ def _require(condition: bool, message: str) -> None:
 
 def _load_fixture(path: Path) -> dict[str, Any]:
     _require(path.is_file(), f"parity fixture not found: {path}")
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    raw = path.read_bytes()
+    if path.resolve() == DEFAULT_FIXTURE.resolve():
+        import hashlib
+
+        digest = hashlib.sha256(raw).hexdigest()
+        _require(
+            digest == EXPECTED_FIXTURE_SHA256,
+            "vendored canonical parity fixture drifted from the authoritative shared bytes "
+            f"(expected {EXPECTED_FIXTURE_SHA256}, got {digest})",
+        )
+    payload = json.loads(raw.decode("utf-8"))
     _require(isinstance(payload, dict), "parity fixture must be a JSON object")
     return payload
 
