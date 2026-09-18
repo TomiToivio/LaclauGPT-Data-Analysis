@@ -638,16 +638,11 @@ def build_discourse_graph(record: CanonicalRecord) -> dict[str, Any]:
                 "evidence_ids": list(relation.evidence_ids),
             }
         )
-        for evidence_id in relation.evidence_ids:
-            edges.append(
-                {
-                    "id": f"evidence-for-relation:{evidence_id}:{relation.relation_id}",
-                    "source": evidence_id,
-                    "target": relation.relation_id,
-                    "type": "EVIDENCE_FOR_RELATION",
-                }
-            )
-
+        # Relation evidence remains attached to the relation edge via
+        # `evidence_ids`. Do not emit an edge to `relation.relation_id`:
+        # relation IDs identify edges, not nodes, and using them as endpoints
+        # creates dangling references that GraphML/GEXF silently materialize as
+        # phantom nodes during export.
     for chain in record.analysis.equivalence_chains + record.analysis.difference_chains:
         relation_type = "EQUIVALENT_TO" if chain.chain_type == "equivalence" else "DIFFERENTIATED_FROM"
         for left, right in zip(chain.member_refs, chain.member_refs[1:], strict=False):
