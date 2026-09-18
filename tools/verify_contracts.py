@@ -32,14 +32,19 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any
+from urllib.request import urlopen
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SRC = REPOSITORY_ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-# Repository-local vendored copy of the meta-repository fixture.
+# Repository-local vendored copy of the authoritative Collection fixture.
 DEFAULT_FIXTURE = REPOSITORY_ROOT / "tests" / "fixtures" / "canonical_parity_v1.json"
+AUTHORITATIVE_FIXTURE_URL = (
+    "https://raw.githubusercontent.com/TomiToivio/"
+    "LaclauGPT-Data-Collection/main/tests/fixtures/canonical_parity_v1.json"
+)
 
 # The invariants the fixture README defines as normative.
 EXPECTED_SOURCE_URL = "https://example.invalid/laclaugpt/synthetic/record-001"
@@ -226,6 +231,29 @@ def check_storage_selector_semantics() -> None:
         raise CheckFailure("mongodb selection without an endpoint must fail closed")
 
 
+
+def check_vendored_fixture_matches_collection(path: Path = DEFAULT_FIXTURE) -> None:
+    """Fail when the vendored parity fixture diverges from Collection's copy.
+
+    This check is intentionally tiny and byte-oriented: the fixture is a shared
+    cross-repository contract, so formatting drift is contract drift too.
+    Network failures are reported distinctly from content mismatches.
+    """
+    try:
+        with urlopen(AUTHORITATIVE_FIXTURE_URL, timeout=10) as response:  # noqa: S310
+            authoritative = response.read()
+    except Exception as exc:  # noqa: BLE001 - surface CI/network failure clearly
+        raise CheckFailure(
+            f"could not fetch authoritative Collection parity fixture: {exc}"
+        ) from exc
+
+    local = path.read_bytes()
+    _require(
+        local == authoritative,
+        "vendored canonical_parity_v1.json differs from Collection authoritative copy",
+    )
+
+
 def check_schema_version_is_declared() -> None:
     """The module must declare the canonical schema version it emits."""
     from laclaugpt_data_analysis.canonical import SCHEMA_VERSION
@@ -258,6 +286,7 @@ def main(argv: list[str] | None = None) -> int:
         ("review state is not promoted", lambda: check_review_is_not_promoted(record)),
         ("schema version declared", check_schema_version_is_declared),
         ("storage selector semantics", check_storage_selector_semantics),
+        ("vendored fixture matches Collection", lambda: check_vendored_fixture_matches_collection(args.fixture)),
     ]
 
     failures: list[str] = []
