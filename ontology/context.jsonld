@@ -1,0 +1,15 @@
+{
+  "@context": {
+    "lg": "https://laclaugpt.org/ontology/",
+    "rdf": "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "skos": "http://www.w3.org/2004/02/skos/core#",
+    "prov": "http://www.w3.org/ns/prov#",
+    "sourceDocument": {"@id": "lg:sourceDocument", "@type": "@id"},
+    "subject": {"@id": "lg:subject", "@type": "@id"},
+    "object": {"@id": "lg:object", "@type": "@id"},
+    "relation": {"@id": "lg:relation", "@type": "@id"},
+    "wasGeneratedBy": {"@id": "prov:wasGeneratedBy", "@type": "@id"},
+    "wasDerivedFrom": {"@id": "prov:wasDerivedFrom", "@type": "@id"}
+  }
+}
