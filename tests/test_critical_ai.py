@@ -224,7 +224,7 @@ def test_multilingual_source_material_is_preserved_in_critical_ai_prompt(text: s
         record(text),
         provider=provider,
         context=PipelineContext(
-            project_config={"analysis": {"critical_ai": {"enabled": True}}}
+            project_config={"analysis_phase": 2, "analysis": {"critical_ai": {"enabled": True}}}
         ),
         project_profile="ai26",
         model="gemma4:test",

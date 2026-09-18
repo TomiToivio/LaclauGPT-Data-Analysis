@@ -23,9 +23,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 PROMPT_VERSION = "ai26-phase0-discourse-v2"
-DISCOURSE_MAX_CHARS = int(os.getenv("LACLAUGPT_DISCOURSE_MAX_CHARS", "24000"))
-DISCOURSE_NUM_CTX = int(os.getenv("LACLAUGPT_DISCOURSE_NUM_CTX", "8192"))
-DISCOURSE_NUM_PREDICT = int(os.getenv("LACLAUGPT_DISCOURSE_NUM_PREDICT", "2048"))
+DEFAULT_DISCOURSE_MAX_CHARS = 24000
+DEFAULT_DISCOURSE_NUM_CTX = 8192
+DEFAULT_DISCOURSE_NUM_PREDICT = 2048
 
 
 class DiscourseParseError(ValueError):
@@ -253,25 +253,14 @@ def _document_label(record: dict[str, Any]) -> str:
     )
 
 
-def _discourse_limits() -> tuple[int, int, int]:
-    """Resolve the discourse input/context budget at call time.
-
-    These are read per call (like ``OLLAMA_MODEL``) so an operator can tune a running
-    process, and so a test that sets the environment after import is honoured. Module
-    constants below remain as the declared defaults.
-    """
-    return (
-        int(os.getenv("LACLAUGPT_DISCOURSE_MAX_CHARS", str(DISCOURSE_MAX_CHARS))),
-        int(os.getenv("LACLAUGPT_DISCOURSE_NUM_CTX", str(DISCOURSE_NUM_CTX))),
-        int(os.getenv("LACLAUGPT_DISCOURSE_NUM_PREDICT", str(DISCOURSE_NUM_PREDICT))),
-    )
+def _runtime_int(name: str, default: int) -> int:
+    return int(os.getenv(name, str(default)))
 
 
-def _bounded_text(text: str, limit: int | None = None) -> tuple[str, bool]:
-    cap = _discourse_limits()[0] if limit is None else limit
-    if len(text) <= cap:
+def _bounded_text(text: str, max_chars: int) -> tuple[str, bool]:
+    if len(text) <= max_chars:
         return text, False
-    return text[:cap], True
+    return text[:max_chars], True
 
 
 def analyze_discourse(
@@ -280,16 +269,16 @@ def analyze_discourse(
     summary: dict[str, Any],
 ) -> tuple[str, dict[str, Any]]:
     model = os.getenv("OLLAMA_MODEL", "gemma4:12b")
-    max_chars, num_ctx, num_predict = _discourse_limits()
-    bounded_text, truncated = _bounded_text(normalized_text, limit=max_chars)
+    max_chars = _runtime_int("LACLAUGPT_DISCOURSE_MAX_CHARS", DEFAULT_DISCOURSE_MAX_CHARS)
+    num_ctx = _runtime_int("LACLAUGPT_DISCOURSE_NUM_CTX", DEFAULT_DISCOURSE_NUM_CTX)
+    num_predict = _runtime_int("LACLAUGPT_DISCOURSE_NUM_PREDICT", DEFAULT_DISCOURSE_NUM_PREDICT)
+    bounded_text, truncated = _bounded_text(normalized_text, max_chars)
     request_metadata = {
         "document_id": _document_label(record),
         "original_chars": len(normalized_text),
         "sent_chars": len(bounded_text),
         "truncated": truncated,
         "max_chars": max_chars,
-        "num_ctx": num_ctx,
-        "num_predict": num_predict,
     }
     truncation_note = (
         "\n\n### Input handling\n"
@@ -335,8 +324,8 @@ def analyze_discourse(
     parsed["model_metadata"] = {
         "provider": "ollama",
         "model": model,
-        "num_ctx": DISCOURSE_NUM_CTX,
-        "num_predict": DISCOURSE_NUM_PREDICT,
+        "num_ctx": num_ctx,
+        "num_predict": num_predict,
     }
     parsed["input_metadata"] = request_metadata
     parsed["prompt_version"] = PROMPT_VERSION
