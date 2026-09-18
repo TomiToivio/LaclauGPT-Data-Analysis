@@ -113,6 +113,7 @@ def summarize_record(record: dict[str, Any], normalized_text: str) -> tuple[str,
 
     raw = ""
     attempts = 0
+    empty_responses = 0
     max_attempts = empty_retries + 1
     while attempts < max_attempts:
         attempts += 1
@@ -132,9 +133,11 @@ def summarize_record(record: dict[str, Any], normalized_text: str) -> tuple[str,
         raw = response["message"]["content"]
         if raw.strip():
             break
+        empty_responses += 1
 
     request_metadata["attempt_count"] = attempts
-    request_metadata["empty_retry_count"] = attempts - 1 if not raw.strip() else max(0, attempts - 1)
+    request_metadata["empty_response_count"] = empty_responses
+    request_metadata["empty_retry_count"] = max(0, empty_responses - 1)
 
     try:
         parsed = json.loads(raw)
