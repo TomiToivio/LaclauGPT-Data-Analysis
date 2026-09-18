@@ -116,7 +116,6 @@ Use **all provided data** in your analysis.
 
 
 def ollama_multimodal_analysis(user_prompt, system_prompt, model, frame_file=None):
-   # mistral-small3.2:24b or gemma3:27b
    multimodal_analysis = None
    logger.debug(f"OSINT Analysis - User Prompt: {user_prompt}")
    images = []
@@ -169,9 +168,9 @@ def laclaugpt_process():
          source_language = message.get("source_language")
          translated_text = message.get("translated_text")
          laclaugpt_preprocessed = message.get("laclaugpt_preprocessed")
-         laclaugpt_multimodal = message.get("laclaugpt_multimodal")
-         laclaugpt_discourse = message.get("laclaugpt_discourse")
+         laclaugpt_processed = message.get("laclaugpt_processed")
          laclaugpt_postprocessed = message.get("laclaugpt_postprocessed")
+         laclaugpt_discourse = message.get("laclaugpt_discourse")
          spacy_entities = message.get("spacy_entities")
          # Skip if whisper_transcript and source_text are both empty
          if not source_text:
@@ -251,10 +250,10 @@ def laclaugpt_process():
             "source_raw_text": str(source_raw_text),
             "source_language": str(source_language),
             "translated_text": str(translated_text),
-            "laclaugpt_multimodal": laclaugpt_multimodal,
-            "laclaugpt_discourse": laclaugpt_discourse,
             "laclaugpt_preprocessed": laclaugpt_preprocessed,
+            "laclaugpt_processed": laclaugpt_processed,
             "laclaugpt_postprocessed": laclaugpt_postprocessed,
+            "laclaugpt_discourse": laclaugpt_discourse,
             "laclaugpt_topics": laclaugpt_topics,
             "laclaugpt_entities": laclaugpt_entities,
             "positive_sentiments": positive_sentiments,
