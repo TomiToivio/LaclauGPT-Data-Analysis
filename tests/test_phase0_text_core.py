@@ -1,5 +1,5 @@
-from laclaugpt_preprocess import preprocess_record
 from laclaugpt_postprocess import validate_summary
+from laclaugpt_preprocess import preprocess_record
 
 
 def test_phase0_text_smoke():

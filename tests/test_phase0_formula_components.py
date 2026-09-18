@@ -30,4 +30,4 @@ def test_prompt_declares_required_phase0_fields():
 
 
 def test_prompt_version_is_explicit():
-    assert PROMPT_VERSION == "ai26-phase0-discourse-v1"
+    assert PROMPT_VERSION == "ai26-phase0-discourse-v2"
