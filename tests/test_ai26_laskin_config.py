@@ -133,7 +133,7 @@ def test_public_layers_contain_no_credential_markers() -> None:
 
 def test_project_layer_pins_the_paper_as_source_of_truth() -> None:
     text = PROJECT.read_text(encoding="utf-8")
-    assert "paper/PAPER.md" in text
+    assert "paper/PHASE_1_PAPER.md" in text
     assert "codebooks/public/ai26_v2.yaml" in text
 
 

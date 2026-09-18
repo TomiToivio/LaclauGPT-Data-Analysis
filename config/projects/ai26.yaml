@@ -4,7 +4,7 @@
 # defines WHAT is analysed; machine/execution layers define WHERE and WHEN.
 # Keep study semantics here and operational concerns out of this file.
 #
-# Source of truth: TomiToivio/LaclauGPT paper/PAPER.md, docs/AI26_REFERENCE_CASE.md.
+# Source of truth: TomiToivio/LaclauGPT paper/PHASE_1_PAPER.md, docs/AI26_REFERENCE_CASE.md.
 # Credentials, private source lists, real corpus data and machine paths never
 # belong in this file or in Git at all.
 #
