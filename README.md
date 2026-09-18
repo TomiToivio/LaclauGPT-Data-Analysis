@@ -57,6 +57,24 @@ It contains storage-neutral analytical contracts, NLP/embedding/topic/classifica
 
 The package works locally with CSV + SQLite + local files and can scale to MongoDB + Redis + S3-compatible object storage.
 
+## Phase 1 default analysis pipeline
+
+Phase 1 follows the legacy LaclauGPT multimodal stage order while using the current canonical schemas, evidence rules and AI26 methodology:
+
+```text
+preprocessing
+  -> frame analysis (only when image/video frames exist)
+  -> summary analysis
+  -> Laclaudian discourse analysis
+  -> postprocessing
+```
+
+The default AI26 path uses AI26-specific multimodal and discourse prompts. EP24 is an explicit project profile with its own election-specific prompt templates. Model outputs remain provisional, evidence-linked pre-analysis for human review.
+
+DNA, SNA, Critical AI Studies and other advanced methods are Phase 2 / experimental / optional. They are disabled by default and are not allowed to enter the Phase 1 canonical runner silently.
+
+The postprocessing stage runs after Laclaudian analysis and normalizes the richer summary/discourse outputs into validated canonical fields for export, validation, comparison and visualization. It does not replace the summary or discourse analysis.
+
 ## Plugin-first analysis runtime
 
 The core runtime follows one stable shape:
