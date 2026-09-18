@@ -68,15 +68,17 @@ def _adapt_shared_parity_fixture(data: dict[str, Any]) -> dict[str, Any]:
         media.append(value)
     content["media_references"] = media
 
-    shared_plugin = dict((analysis.get("plugin_results") or {}).get("cross_module_fixture") or {})
+    shared_plugin = dict(
+        (analysis.get("plugin_results") or {}).get("cross_module_fixture") or {}
+    )
     for key in ("analysis_objects", "events", "actors", "narrative_episodes"):
         if key in analysis:
             shared_plugin[key] = analysis.pop(key)
 
     original_codebook_refs = list(analysis.get("codebook_refs") or [])
     original_uncertainty = list(analysis.get("uncertainty") or [])
-    shared_plugin["codebook_refs"] = original_codebook_refs
-    shared_plugin["uncertainty"] = original_uncertainty
+    shared_plugin.setdefault("codebook_refs", original_codebook_refs)
+    shared_plugin.setdefault("uncertainty", original_uncertainty)
     analysis.setdefault("plugin_results", {})["cross_module_fixture"] = shared_plugin
 
     for key, kind in (
