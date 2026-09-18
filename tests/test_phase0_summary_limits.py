@@ -76,7 +76,7 @@ def test_summary_retries_empty_response_then_succeeds(monkeypatch):
     assert len(fake.calls) == 3
     assert parsed["input_metadata"]["attempt_count"] == 3
     assert parsed["input_metadata"]["empty_response_count"] == 2
-    assert parsed["input_metadata"]["empty_retry_count"] == 1
+    assert parsed["input_metadata"]["empty_retry_count"] == 2
 
 
 def test_summary_does_not_retry_nonempty_invalid_json(monkeypatch):
