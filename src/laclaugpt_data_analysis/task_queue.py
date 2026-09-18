@@ -586,6 +586,8 @@ def redis_queue_from_settings(
     run_id: str,
     worker_id: str,
 ) -> RedisStreamQueue:
+    if not settings.redis_url:
+        raise ValueError("LACLAUGPT_REDIS_URL is required for Redis task mode")
     namespace = settings.distributed_namespace
     return RedisStreamQueue(
         settings.redis_url,
