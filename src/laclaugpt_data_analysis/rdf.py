@@ -204,7 +204,12 @@ def materialize_record(
         (record.analysis.nodal_points, ns.NodalPoint),
         (record.analysis.floating_signifiers, ns.FloatingSignifier),
         (record.analysis.empty_signifier_candidates, ns.EmptySignifier),
+        (record.analysis.discourses, ns.Discourse),
+        (record.analysis.imaginaries, ns.SociotechnicalImaginary),
+        (record.analysis.us, ns.CollectiveSubject),
+        (record.analysis.them, ns.OpposingSubject),
         (record.analysis.frontier, ns.DiscursiveFrontier),
+        (record.analysis.affects, ns.Affect),
     ]
     for objects, rdf_type in object_groups:
         for obj in objects:
@@ -215,8 +220,12 @@ def materialize_record(
             graph.add((node, dct.identifier, rdflib.Literal(obj.object_id)))
             graph.add((node, skos.prefLabel, rdflib.Literal(obj.label, lang=_language(record.source.language))))
             graph.add((node, ns.reviewState, rdflib.Literal(_review(obj.review_status))))
+            if obj.description:
+                graph.add((node, dct.description, rdflib.Literal(obj.description, lang=_language(record.source.language))))
             if obj.confidence is not None:
                 graph.add((node, ns.confidence, rdflib.Literal(obj.confidence)))
+            if obj.uncertainty:
+                graph.add((node, ns.uncertainty, rdflib.Literal(obj.uncertainty)))
             graph.add((node, prov.wasGeneratedBy, prov_uris.get(obj.provenance_id, run)))
             for evidence_id in obj.evidence_ids:
                 if evidence_id in evidence_uris:
@@ -232,6 +241,58 @@ def materialize_record(
         graph.add((node, schema.name, rdflib.Literal(entity.label, lang=_language(record.source.language))))
         graph.add((node, ns.reviewState, rdflib.Literal(_review(entity.review_status))))
         graph.add((node, prov.wasGeneratedBy, prov_uris.get(entity.provenance_id, run)))
+        for evidence_id in entity.evidence_ids:
+            if evidence_id in evidence_uris:
+                graph.add((node, ns.hasEvidence, evidence_uris[evidence_id]))
+
+    for chain in list(record.analysis.equivalence_chains) + list(record.analysis.difference_chains):
+        chain_node = rdflib.URIRef(stable_uri(base_uri, project_id, "chain", chain.chain_id))
+        chain_type = ns.EquivalenceChain if chain.chain_type == "equivalence" else ns.DifferenceChain
+        graph.add((chain_node, rdf.type, chain_type))
+        graph.add((chain_node, dct.identifier, rdflib.Literal(chain.chain_id)))
+        graph.add((chain_node, ns.reviewState, rdflib.Literal(_review(chain.review_status))))
+        graph.add((chain_node, prov.wasGeneratedBy, prov_uris.get(chain.provenance_id, run)))
+        for index, member_ref in enumerate(chain.member_refs, start=1):
+            member = object_uris.get(member_ref) or rdflib.URIRef(stable_uri(base_uri, project_id, "concept", member_ref))
+            graph.add((chain_node, ns.hasMember, member))
+            graph.add((chain_node, rdflib.URIRef(f"{str(rdf)}_{index}"), member))
+        for evidence_id in chain.evidence_ids:
+            if evidence_id in evidence_uris:
+                graph.add((chain_node, ns.hasEvidence, evidence_uris[evidence_id]))
+
+    if record.analysis.formula_of_populism:
+        formula = record.analysis.formula_of_populism
+        formula_node = rdflib.URIRef(stable_uri(base_uri, project_id, "formula", f"{record.source_url}:formula-of-populism"))
+        graph.add((formula_node, rdf.type, ns.PopulismFormula))
+        graph.add((formula_node, dct.identifier, rdflib.Literal("formula_of_populism")))
+        graph.add((formula_node, ns.reviewState, rdflib.Literal(_review(str(formula.get("review_status") or record.review.status or "PROVISIONAL")))))
+        formula_provenance_id = str(formula.get("provenance_id") or "")
+        graph.add((formula_node, prov.wasGeneratedBy, prov_uris.get(formula_provenance_id, run)))
+        confidence = formula.get("confidence")
+        if isinstance(confidence, (int, float)) and not isinstance(confidence, bool):
+            graph.add((formula_node, ns.confidence, rdflib.Literal(float(confidence))))
+        uncertainty = formula.get("uncertainty")
+        if uncertainty:
+            graph.add((formula_node, ns.uncertainty, rdflib.Literal(str(uncertainty))))
+        evidence_ids = formula.get("evidence_ids") or []
+        if isinstance(evidence_ids, str):
+            evidence_ids = [evidence_ids]
+        for evidence_id in evidence_ids if isinstance(evidence_ids, list) else []:
+            if str(evidence_id) in evidence_uris:
+                graph.add((formula_node, ns.hasEvidence, evidence_uris[str(evidence_id)]))
+        metadata_keys = {"review_status", "provenance_id", "confidence", "uncertainty", "evidence_ids"}
+        for key, value in sorted(formula.items()):
+            if key in metadata_keys or value is None:
+                continue
+            component = rdflib.URIRef(stable_uri(base_uri, project_id, "formula-component", f"{record.source_url}:{key}"))
+            graph.add((component, rdf.type, ns.PopulismFormulaComponent))
+            graph.add((component, dct.type, rdflib.Literal(str(key))))
+            graph.add((component, prov.wasGeneratedBy, prov_uris.get(formula_provenance_id, run)))
+            if isinstance(value, (str, int, float, bool)):
+                graph.add((component, rdf.value, rdflib.Literal(value)))
+            else:
+                graph.add((component, rdf.value, rdflib.Literal(json.dumps(value, ensure_ascii=False, sort_keys=True))))
+            graph.add((formula_node, ns.hasComponent, component))
 
     relations = list(record.analysis.relations) + list(record.analysis.antagonisms) + list(record.analysis.actor_entity_relations)
     for relation in relations:
@@ -303,12 +364,33 @@ def validate_dataset(dataset, *, shapes_path: str | Path | None = None) -> Valid
                 issues.append(ValidationIssue(str(node), f"{LACLAUGPT}reviewState", "Articulation review state is required."))
             elif any(x not in {"PROVISIONAL", "ACCEPTED", "REJECTED", "REVISED", "CANONICAL", "SUPERSEDED"} for x in states):
                 issues.append(ValidationIssue(str(node), f"{LACLAUGPT}reviewState", "Invalid articulation review state."))
-        for rdf_type in (ns.EmptySignifier, ns.FloatingSignifier, ns.NodalPoint):
+        analytical_types = (
+            ns.EmptySignifier,
+            ns.FloatingSignifier,
+            ns.NodalPoint,
+            ns.Discourse,
+            ns.SociotechnicalImaginary,
+            ns.CollectiveSubject,
+            ns.OpposingSubject,
+            ns.DiscursiveFrontier,
+            ns.Affect,
+            ns.EquivalenceChain,
+            ns.DifferenceChain,
+            ns.PopulismFormula,
+        )
+        for rdf_type in analytical_types:
             for node in graph.subjects(rdflib.namespace.RDF.type, rdf_type):
                 if not any(graph.objects(node, prov.wasGeneratedBy)):
-                    issues.append(ValidationIssue(str(node), f"{PROV}wasGeneratedBy", "Theory-specific signifier-role claims must retain provenance."))
+                    issues.append(ValidationIssue(str(node), f"{PROV}wasGeneratedBy", "Phase 1 analytical claims must retain provenance."))
                 if not any(graph.objects(node, ns.reviewState)):
-                    issues.append(ValidationIssue(str(node), f"{LACLAUGPT}reviewState", "Theory-specific signifier-role claims must retain review state."))
+                    issues.append(ValidationIssue(str(node), f"{LACLAUGPT}reviewState", "Phase 1 analytical claims must retain review state."))
+        for rdf_type in (ns.EquivalenceChain, ns.DifferenceChain):
+            for node in graph.subjects(rdflib.namespace.RDF.type, rdf_type):
+                if len(set(graph.objects(node, ns.hasMember))) < 2:
+                    issues.append(ValidationIssue(str(node), f"{LACLAUGPT}hasMember", "A discourse chain must contain at least two members."))
+        for node in graph.subjects(rdflib.namespace.RDF.type, ns.PopulismFormula):
+            if not any(graph.objects(node, ns.hasComponent)):
+                issues.append(ValidationIssue(str(node), f"{LACLAUGPT}hasComponent", "A Formula of Populism must retain at least one component."))
     return ValidationReport(not issues, tuple(issues), "\n".join(x.message for x in issues))
 
 
