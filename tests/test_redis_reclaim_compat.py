@@ -147,6 +147,7 @@ def test_reclaim_falls_back_when_redis_raises_responserror() -> None:
     ``RedisError`` and is **not** a ``RuntimeError``/``TypeError``/
     ``AttributeError``. The fallback therefore never ran in production.
     """
+    pytest.importorskip("redis")  # optional dependency; CI installs only .[dev]
     from redis.exceptions import ResponseError
 
     class RealRedis60Client(Redis60Client):
@@ -170,6 +171,7 @@ def test_reclaim_falls_back_when_redis_raises_responserror() -> None:
 
 def test_responserror_is_not_a_runtimeerror() -> None:
     """Documents why the class-based guard was wrong."""
+    pytest.importorskip("redis")  # optional dependency; CI installs only .[dev]
     from redis.exceptions import RedisError, ResponseError
 
     assert issubclass(ResponseError, RedisError)
@@ -180,6 +182,7 @@ def test_responserror_is_not_a_runtimeerror() -> None:
 
 def test_non_compatibility_responserror_still_propagates() -> None:
     """A genuine Redis error must not be swallowed by the fallback."""
+    pytest.importorskip("redis")  # optional dependency; CI installs only .[dev]
     from redis.exceptions import ResponseError
 
     class BrokenClient:
