@@ -105,6 +105,17 @@ def _adapt_shared_parity_fixture(data: dict[str, Any]) -> dict[str, Any]:
                 normalized.append(value)
         analysis[key] = normalized
 
+    entities = []
+    for item in analysis.get("entities") or []:
+        if isinstance(item, Mapping):
+            value = dict(item)
+            if "type" in value and "entity_type" not in value:
+                value["entity_type"] = value.pop("type")
+            entities.append(value)
+        else:
+            entities.append(item)
+    analysis["entities"] = entities
+
     topics = []
     for index, item in enumerate(analysis.get("topics") or [], start=1):
         if isinstance(item, str):

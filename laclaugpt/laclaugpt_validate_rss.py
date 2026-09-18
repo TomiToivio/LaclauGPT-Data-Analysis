@@ -18,7 +18,6 @@ from typing import Any
 
 import feedparser
 import requests
-
 from ai26_rss import SOURCES
 from laclaugpt_collect_rss import _canonicalize_url, _entry_url
 
@@ -90,6 +89,29 @@ def validate_source(source: dict[str, Any], timeout: int = 20) -> tuple[bool, li
     duplicates = [url for url, count in Counter(canonical_urls).items() if count > 1]
     if duplicates:
         errors.append(f"{len(duplicates)} duplicate canonical item URL(s)")
+
+    # A source-level category filter must match something. A feed that passes every
+    # other check can still yield an empty corpus when its filter never matches:
+    # yle_ai declared category=Tekoäly against a general news feed that carries no
+    # such category, so it collected nothing while validation reported PASS.
+    wanted_categories = [str(c) for c in ((source.get("filters") or {}).get("category") or [])]
+    if wanted_categories:
+        matched = 0
+        for entry in parsed.entries:
+            terms = {
+                str(tag.get("term", ""))
+                for tag in (entry.get("tags") or [])
+                if isinstance(tag, dict)
+            }
+            category = entry.get("category")
+            if category:
+                terms.add(str(category))
+            if any(wanted in terms for wanted in wanted_categories):
+                matched += 1
+        if matched == 0:
+            errors.append(
+                f"category filter {wanted_categories} matches 0/{len(parsed.entries)} items"
+            )
 
     return not errors, errors
 
