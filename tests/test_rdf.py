@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -11,6 +12,7 @@ from laclaugpt_data_analysis.canonical import (
     Entity,
     Evidence,
     Relation,
+    RelationChain,
 )
 from laclaugpt_data_analysis.models import Provenance
 from laclaugpt_data_analysis.plugin_pipeline import PluginContext, PluginRegistry
@@ -269,3 +271,117 @@ def test_generic_plugin_runtime_contract():
     )
     assert output["project_id"] == "AI26"
     assert "turtle" in output["serializations"]
+
+
+def phase1_fixture() -> CanonicalRecord:
+    record = fixture()
+    common = {
+        "evidence_ids": ["e-1"],
+        "confidence": 0.74,
+        "uncertainty": "synthetic uncertainty",
+        "provenance_id": "prov-1",
+        "review_status": "ACCEPTED",
+    }
+    record.analysis.discourses.append(
+        DiscourseObject(object_id="discourse-ai-freedom", label="AI freedom discourse", kind="discourse", **common)
+    )
+    record.analysis.imaginaries.append(
+        DiscourseObject(object_id="imaginary-open-ai", label="Open AI future", kind="imaginary", **common)
+    )
+    record.analysis.us.append(
+        DiscourseObject(object_id="us-builders", label="builders", kind="collective_subject", **common)
+    )
+    record.analysis.them.append(
+        DiscourseObject(object_id="them-gatekeepers", label="gatekeepers", kind="opposing_subject", **common)
+    )
+    record.analysis.frontier.append(
+        DiscourseObject(object_id="frontier-open-closed", label="open versus closed", kind="frontier", **common)
+    )
+    record.analysis.affects.append(
+        DiscourseObject(object_id="affect-hope", label="hope", kind="affect", **common)
+    )
+    record.analysis.equivalence_chains.append(
+        RelationChain(
+            chain_id="equivalence:1",
+            chain_type="equivalence",
+            member_refs=["freedom", "openness"],
+            evidence_ids=["e-1"],
+            provenance_id="prov-1",
+            review_status="ACCEPTED",
+        )
+    )
+    record.analysis.difference_chains.append(
+        RelationChain(
+            chain_id="difference:1",
+            chain_type="difference",
+            member_refs=["us-builders", "them-gatekeepers"],
+            evidence_ids=["e-1"],
+            provenance_id="prov-1",
+            review_status="ACCEPTED",
+        )
+    )
+    record.analysis.formula_of_populism = {
+        "populist": True,
+        "us": ["builders"],
+        "frontier": "gatekeepers block openness",
+        "affects": ["hope"],
+        "evidence_ids": ["e-1"],
+        "provenance_id": "prov-1",
+        "review_status": "ACCEPTED",
+        "confidence": 0.82,
+        "uncertainty": "synthetic formula uncertainty",
+    }
+    # These remain canonical-only by design; see RDF_INTEROPERABILITY.md.
+    record.analysis.sentiments.append(
+        DiscourseObject(object_id="sentiment-positive", label="positive", kind="sentiment", **common)
+    )
+    record.analysis.stances.append(
+        DiscourseObject(object_id="stance-support", label="support", kind="stance", **common)
+    )
+    return record
+
+
+def test_ai26_phase1_semantics_survive_canonical_to_rdf_projection():
+    record = phase1_fixture()
+    dataset = materialize_record(record, project_id="AI26")
+    report = validate_dataset(dataset)
+    assert report.conforms is True
+    ttl = serialize_dataset(dataset, "turtle")
+
+    for rdf_class in (
+        "Discourse",
+        "SociotechnicalImaginary",
+        "CollectiveSubject",
+        "OpposingSubject",
+        "DiscursiveFrontier",
+        "Affect",
+        "EquivalenceChain",
+        "DifferenceChain",
+        "PopulismFormula",
+        "PopulismFormulaComponent",
+    ):
+        assert f"laclaugpt:{rdf_class}" in ttl
+
+    assert 'laclaugpt:reviewState "ACCEPTED"' in ttl
+    assert "laclaugpt:confidence" in ttl
+    assert "laclaugpt:uncertainty" in ttl
+    assert "laclaugpt:hasEvidence" in ttl
+    assert "prov:wasGeneratedBy" in ttl
+    assert "laclaugpt:hasMember" in ttl
+    assert "laclaugpt:hasComponent" in ttl
+    assert '"populist"' in ttl
+    assert '"frontier"' in ttl
+
+    # Topics/sentiment/stance are intentionally not part of the semantic RDF
+    # projection until their portable semantics are specified.
+    assert "sentiment-positive" not in ttl
+    assert "stance-support" not in ttl
+
+
+def test_phase1_shacl_file_covers_new_semantic_classes():
+    shapes = (Path(__file__).resolve().parents[1] / "schemas" / "laclaugpt-rdf.shacl.ttl").read_text(encoding="utf-8")
+    assert "Phase1ConceptShape" in shapes
+    assert "DiscourseChainShape" in shapes
+    assert "PopulismFormulaShape" in shapes
+    assert "laclaugpt:hasMember" in shapes
+    assert "laclaugpt:hasComponent" in shapes
