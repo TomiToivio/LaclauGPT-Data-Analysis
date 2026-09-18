@@ -58,10 +58,12 @@ def _adapt_shared_parity_fixture(data: dict[str, Any]) -> dict[str, Any]:
     media = []
     for item in content.get("media_references") or []:
         value = dict(item)
+        # Preserve the neutral names *and* populate the local aliases. Popping them
+        # lost the original value whenever only one spelling was present (#75).
         if "media_type" in value and "kind" not in value:
-            value["kind"] = value.pop("media_type")
+            value["kind"] = value["media_type"]
         if "ref" in value and "object_ref" not in value:
-            value["object_ref"] = value.pop("ref")
+            value["object_ref"] = value["ref"]
         value.setdefault("url", "")
         media.append(value)
     content["media_references"] = media
