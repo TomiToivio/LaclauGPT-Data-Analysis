@@ -137,7 +137,10 @@ def summarize_record(record: dict[str, Any], normalized_text: str) -> tuple[str,
 
     request_metadata["attempt_count"] = attempts
     request_metadata["empty_response_count"] = empty_responses
-    request_metadata["empty_retry_count"] = max(0, empty_responses - 1)
+    # "Retries" = calls after the first. Deriving this from empty_responses under-counts
+    # when a retry succeeds (empty, empty, good => 2 retries, not 1), which is exactly the
+    # case an operator wants to see when diagnosing a slow document (#234).
+    request_metadata["empty_retry_count"] = max(0, attempts - 1)
 
     try:
         parsed = json.loads(raw)
