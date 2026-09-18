@@ -537,12 +537,139 @@ def postprocess_record(record: CanonicalRecord, summary: SummaryResult, discours
 
 
 def build_discourse_graph(record: CanonicalRecord) -> dict[str, Any]:
-    nodes = [{"id": record.source_url, "type": "document", "label": record.content.title or record.source_url}]
+    """Project Phase 1 canonical discourse objects into a portable evidence graph.
+
+    The graph is deliberately a projection, not a second ontology. Canonical object
+    and relation IDs remain stable, while evidence is represented explicitly so
+    GraphML/GEXF exports can retain the audit topology.
+    """
+    nodes: list[dict[str, Any]] = [
+        {
+            "id": record.source_url,
+            "type": "document",
+            "label": record.content.title or record.source_url,
+        }
+    ]
     edges: list[dict[str, Any]] = []
-    for obj in record.analysis.signifiers + record.analysis.formations + record.analysis.imaginaries + record.analysis.nodal_points:
-        nodes.append({"id": obj.object_id, "type": obj.kind, "label": obj.label, "review_status": obj.review_status})
-        edges.append({"source": record.source_url, "target": obj.object_id, "type": "CANDIDATE_IN"})
-    return {"schema": "laclaugpt-discourse-graph-v1", "source_url": record.source_url, "nodes": nodes, "edges": edges}
+
+    for evidence in record.evidence:
+        nodes.append(
+            {
+                "id": evidence.evidence_id,
+                "type": "evidence",
+                "label": evidence.quote or evidence.ref or evidence.evidence_id,
+                "kind": evidence.kind,
+                "provenance_id": evidence.provenance_id,
+            }
+        )
+        edges.append(
+            {
+                "id": f"evidence-in:{evidence.evidence_id}",
+                "source": evidence.evidence_id,
+                "target": record.source_url,
+                "type": "EVIDENCE_IN",
+            }
+        )
+
+    object_groups = [
+        record.analysis.entities,
+        record.analysis.topics,
+        record.analysis.signifiers,
+        record.analysis.nodal_points,
+        record.analysis.floating_signifiers,
+        record.analysis.empty_signifier_candidates,
+        record.analysis.formations,
+        record.analysis.imaginaries,
+        record.analysis.frontier,
+        record.analysis.affects,
+    ]
+    for group in object_groups:
+        for obj in group:
+            object_id = getattr(obj, "object_id", None) or getattr(obj, "entity_id", None)
+            if object_id is None:
+                object_id = getattr(obj, "topic_id", None) or getattr(obj, "label", None)
+            if object_id is None:
+                continue
+            label = getattr(obj, "label", None) or getattr(obj, "name", None) or str(object_id)
+            kind = getattr(obj, "kind", None) or getattr(obj, "entity_type", None) or "topic"
+            review_status = getattr(obj, "review_status", "PROVISIONAL")
+            provenance_id = getattr(obj, "provenance_id", "")
+            nodes.append(
+                {
+                    "id": str(object_id),
+                    "type": str(kind),
+                    "label": str(label),
+                    "review_status": str(review_status),
+                    "provenance_id": str(provenance_id),
+                }
+            )
+            edges.append(
+                {
+                    "id": f"candidate-in:{object_id}",
+                    "source": record.source_url,
+                    "target": str(object_id),
+                    "type": "CANDIDATE_IN",
+                }
+            )
+            for evidence_id in getattr(obj, "evidence_ids", []):
+                edges.append(
+                    {
+                        "id": f"evidence-for:{evidence_id}:{object_id}",
+                        "source": str(evidence_id),
+                        "target": str(object_id),
+                        "type": "EVIDENCE_FOR",
+                    }
+                )
+
+    relations = (
+        list(record.analysis.relations)
+        + list(record.analysis.antagonisms)
+        + list(record.analysis.actor_entity_relations)
+    )
+    for relation in relations:
+        edges.append(
+            {
+                "id": relation.relation_id,
+                "source": relation.source_ref,
+                "target": relation.target_ref,
+                "type": relation.relation_type.upper(),
+                "review_status": relation.review_status,
+                "provenance_id": relation.provenance_id,
+                "evidence_ids": list(relation.evidence_ids),
+            }
+        )
+        for evidence_id in relation.evidence_ids:
+            edges.append(
+                {
+                    "id": f"evidence-for-relation:{evidence_id}:{relation.relation_id}",
+                    "source": evidence_id,
+                    "target": relation.relation_id,
+                    "type": "EVIDENCE_FOR_RELATION",
+                }
+            )
+
+    for chain in record.analysis.equivalence_chains + record.analysis.difference_chains:
+        relation_type = "EQUIVALENT_TO" if chain.chain_type == "equivalence" else "DIFFERENTIATED_FROM"
+        for left, right in zip(chain.member_refs, chain.member_refs[1:], strict=False):
+            edges.append(
+                {
+                    "id": f"{chain.chain_id}:{left}:{right}",
+                    "source": left,
+                    "target": right,
+                    "type": relation_type,
+                    "chain_id": chain.chain_id,
+                    "evidence_ids": list(chain.evidence_ids),
+                    "review_status": chain.review_status,
+                    "provenance_id": chain.provenance_id,
+                }
+            )
+
+    return {
+        "schema": "laclaugpt-discourse-graph-v1",
+        "source_url": record.source_url,
+        "nodes": nodes,
+        "edges": edges,
+    }
 
 
 def run_canonical_pipeline(record: CanonicalRecord, *, provider, context: PipelineContext | None = None, codebook_entries: list[CodebookEntry] | None = None, preprocessor: Preprocessor | None = None, graph_sink: GraphSink | None = None, vector_sink: VectorSink | None = None, model: str = "auto", project_profile: str = "generic", prompt_version: str = "canonical-pipeline-v1", allow_cloud_fallback: bool | None = None) -> CanonicalRecord:
