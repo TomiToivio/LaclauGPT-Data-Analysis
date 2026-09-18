@@ -41,9 +41,39 @@ The implementation follows the parent profile rather than defining a second onto
 | formations | `laclaugpt:DiscourseFormation` + `skos:Concept` |
 | signifiers | `laclaugpt:Signifier` + `skos:Concept` |
 | nodal/floating/empty signifiers | corresponding LaclauGPT theory-specific class + provenance/review state |
+| discourses | `laclaugpt:Discourse` + SKOS concept |
+| sociotechnical imaginaries | `laclaugpt:SociotechnicalImaginary` + SKOS concept |
+| Us / Them | `laclaugpt:CollectiveSubject` / `laclaugpt:OpposingSubject` |
+| frontier | `laclaugpt:DiscursiveFrontier` |
+| affects | `laclaugpt:Affect` |
+| equivalence / difference chains | ordered `laclaugpt:EquivalenceChain` / `laclaugpt:DifferenceChain` with `hasMember` plus RDF container-order predicates |
+| Formula of Populism | `laclaugpt:PopulismFormula` with typed component resources retaining canonical component names and values |
 | relations / antagonisms | explicit `laclaugpt:Articulation` resources |
 
-Analytical edges are reified as `laclaugpt:Articulation` resources so evidence, review state, relation type and generation provenance remain attachable without requiring RDF-star.
+Analytical edges are reified as `laclaugpt:Articulation` resources so evidence, review state, relation type and generation provenance remain attachable without requiring RDF-star. Phase 1 discourse objects also retain confidence, uncertainty, evidence links, review state and generation provenance when the canonical object carries them. Formula-of-Populism metadata keys (`evidence_ids`, `provenance_id`, `review_status`, `confidence`, `uncertainty`) are projected onto the formula resource; the remaining canonical keys become named component resources.
+
+### Phase 1 projection audit
+
+RDF is deliberately loss-aware rather than lossless. `CanonicalRecord` remains authoritative, and fields are only promoted into RDF when their semantics are stable enough to be portable across projects.
+
+| Phase 1 canonical field | RDF decision |
+| --- | --- |
+| formations, signifiers, nodal/floating/empty signifiers | mapped |
+| discourses | mapped |
+| imaginaries | mapped |
+| equivalence_chains / difference_chains | mapped, preserving explicit member order |
+| us / them / frontier | mapped |
+| affects | mapped |
+| formula_of_populism | mapped as formula + components |
+| entities | mapped; evidence/provenance/review state retained |
+| relations / antagonisms / actor_entity_relations | mapped as articulations |
+| topics / topic_assignments | **canonical-only for now**: topic-model identity, probability semantics and corpus scope are model/project dependent |
+| sentiments | **canonical-only for now**: label spaces and scoring semantics vary by classifier/codebook |
+| stances | **canonical-only for now**: target, label space and entailment semantics need an explicit portable profile first |
+| summary, uncertainty, abstentions | canonical analysis/reporting state, not promoted as first-class RDF analytical objects |
+| plugin results, embeddings, representations, model runs | implementation/runtime artifacts; remain canonical/plugin data unless a dedicated profile is defined |
+
+This omission policy is intentional: an absent RDF mapping must be documented here rather than silently interpreted as semantic equivalence or data loss from the canonical record.
 
 ## Deterministic identity and graph boundaries
 
@@ -58,7 +88,10 @@ Lexical strings, SKOS/discourse concepts and source occurrences are never equate
 - at least two endpoints for every articulation;
 - `prov:wasGeneratedBy` for articulations;
 - allowed review states;
-- generation provenance and review state for theory-specific signifier-role claims.
+- generation provenance and review state for theory-specific signifier-role claims;
+- generation provenance and review state for mapped Phase 1 discourse concepts;
+- at least two members for equivalence/difference chains;
+- at least one component for a Formula of Populism.
 
 Validation reports contain focus node, path, message and severity. Persistent store writes occur only after validation passes.
 
