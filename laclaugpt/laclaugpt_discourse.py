@@ -23,6 +23,17 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 PROMPT_VERSION = "ai26-phase0-discourse-v1"
+DEFAULT_DISCOURSE_MAX_CHARS = 24000
+DEFAULT_DISCOURSE_NUM_CTX = 8192
+DEFAULT_DISCOURSE_NUM_PREDICT = 2048
+
+
+class DiscourseParseError(ValueError):
+    """Raised when Ollama returns an unusable discourse payload."""
+
+    def __init__(self, message: str, *, raw_response: str) -> None:
+        super().__init__(message)
+        self.raw_response = raw_response
 
 
 class UsConstruct(BaseModel):
@@ -223,15 +234,47 @@ def _ollama():
     return ollama
 
 
+def _env_int(name: str, default: int) -> int:
+    try:
+        return max(1, int(os.getenv(name, str(default))))
+    except ValueError:
+        return default
+
+
+def _document_label(record: dict[str, Any]) -> str:
+    return str(
+        record.get("document_id")
+        or record.get("_id")
+        or record.get("source_url")
+        or "<unknown>"
+    )
+
+
 def analyze_discourse(
     record: dict[str, Any],
     normalized_text: str,
     summary: dict[str, Any],
 ) -> tuple[str, dict[str, Any]]:
     model = os.getenv("OLLAMA_MODEL", "gemma4:12b")
+    max_chars = _env_int("LACLAUGPT_DISCOURSE_MAX_CHARS", DEFAULT_DISCOURSE_MAX_CHARS)
+    num_ctx = _env_int("LACLAUGPT_DISCOURSE_NUM_CTX", DEFAULT_DISCOURSE_NUM_CTX)
+    num_predict = _env_int("LACLAUGPT_DISCOURSE_NUM_PREDICT", DEFAULT_DISCOURSE_NUM_PREDICT)
+
+    original_chars = len(normalized_text)
+    bounded_text = normalized_text[:max_chars]
+    truncated = original_chars > len(bounded_text)
+    truncation_note = ""
+    if truncated:
+        truncation_note = (
+            "\n\n### Input handling\n"
+            f"Document truncated for Phase 0 discourse analysis: "
+            f"{original_chars} -> {len(bounded_text)} characters."
+        )
+
     user_prompt = (
         "### Current document\n"
-        + normalized_text
+        + bounded_text
+        + truncation_note
         + "\n\n### Prior summary\n"
         + json.dumps(summary, ensure_ascii=False, default=str)
     )
@@ -242,11 +285,36 @@ def analyze_discourse(
             {"role": "user", "content": user_prompt},
         ],
         format="json",
-        options={"temperature": 0.0},
+        options={
+            "temperature": 0.0,
+            "num_ctx": num_ctx,
+            "num_predict": num_predict,
+        },
     )
     raw = response["message"]["content"]
-    parsed = json.loads(raw)
-    parsed["model_metadata"] = {"provider": "ollama", "model": model}
+
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, TypeError) as exc:
+        document = _document_label(record)
+        raise DiscourseParseError(
+            f"Discourse response parse failed for document {document} "
+            f"({original_chars} chars, sent {len(bounded_text)} chars): {exc}",
+            raw_response=raw or "",
+        ) from exc
+
+    parsed["model_metadata"] = {
+        "provider": "ollama",
+        "model": model,
+        "num_ctx": num_ctx,
+        "num_predict": num_predict,
+    }
+    parsed["input_metadata"] = {
+        "original_chars": original_chars,
+        "sent_chars": len(bounded_text),
+        "truncated": truncated,
+        "max_chars": max_chars,
+    }
     parsed["prompt_version"] = PROMPT_VERSION
     parsed["generated_at"] = datetime.now(timezone.utc).isoformat()
     return raw, parsed
