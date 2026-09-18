@@ -805,3 +805,29 @@ For RDF/property-graph export, prefer Schema.org/DCTERMS/FOAF/PROV-O for generic
 The RSS collector canonicalizes article URLs before hashing/upsert by removing URL fragments and common tracking parameters such as `utm_*`, `fbclid`, and `gclid`. Content hashes are stored separately, so later cleanup can detect same-content duplicates even when publishers expose multiple URLs.
 
 The seed list deliberately mixes arenas in one corpus and includes enabled and disabled candidates. Disabled candidates are placeholders for geographic coverage and must be validated before activation. Phase 0 should include representation from the dominant US AI core plus China, EU/Finland, India and Africa, while documenting that the corpus will still be English/US-heavy.
+
+
+## Validate AI26 RSS feeds before collection
+
+Issue #171 requires feed validation before activation. The validator is read-only: it does not connect to MongoDB or collect records.
+
+Validate active feeds:
+
+```bash
+cd laclaugpt
+python laclaugpt_validate_rss.py
+```
+
+Validate active feeds plus disabled geographic/source candidates:
+
+```bash
+python laclaugpt_validate_rss.py --all
+```
+
+Validate a single source:
+
+```bash
+python laclaugpt_validate_rss.py --all --source india_meity
+```
+
+The command exits non-zero if any selected source fails. It checks HTTP success, RSS/Atom parsing, at least one item, obviously future-dated items, duplicate canonical item URLs, and presence of canonical article URLs. Disabled candidates should remain `active: False` until they pass validation and have been reviewed for analytical relevance.
