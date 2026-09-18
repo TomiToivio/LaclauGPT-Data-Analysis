@@ -10,7 +10,7 @@ from laclaugpt_mongo import find_documents, record_stage_failure, update_documen
 from laclaugpt_ontology import export_discourse
 from laclaugpt_postprocess import validate_summary
 from laclaugpt_preprocess import preprocess_record
-from laclaugpt_summary import summarize_record
+from laclaugpt_summary import SummaryParseError, summarize_record
 
 STAGES = ("preprocess", "summary", "postprocess", "discourse")
 
@@ -61,6 +61,19 @@ def run_document(source: dict[str, Any], stage: str = "all", dry_run: bool = Fal
                     "phase0_summary": summary_data,
                     "phase0.summary": _status("ok"),
                 }, project_id=project_id)
+        except SummaryParseError as exc:
+            if not dry_run:
+                record_stage_failure(
+                    source,
+                    "summary",
+                    str(exc),
+                    extra_fields={
+                        "phase0_summary_raw": exc.raw_response,
+                        "phase0_summary_error_metadata": exc.metadata,
+                    },
+                    project_id=project_id,
+                )
+            return
         except Exception as exc:
             if not dry_run:
                 record_stage_failure(source, "summary", str(exc), project_id=project_id)
