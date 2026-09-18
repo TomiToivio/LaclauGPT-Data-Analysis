@@ -35,10 +35,15 @@ def _slug(value: str) -> str:
 
 
 def _db():
-    uri = os.getenv("MONGO_URI")
-    name = os.getenv("MONGO_DB_NAME")
-    if not uri or not name:
-        raise RuntimeError("MONGO_URI and MONGO_DB_NAME are required")
+    """Open the Phase 0 MongoDB using the shared environment contract.
+
+    Accepts both the legacy ``MONGO_URI``/``MONGO_DB_NAME`` pair and Collection's
+    ``LACLAUGPT_MONGODB_URI``/``LACLAUGPT_MONGODB_DATABASE`` pair, so one cron
+    environment configures Collection and every Phase 0 analysis entry point.
+    """
+    from laclaugpt_mongo import resolve_mongo_config
+
+    uri, name = resolve_mongo_config()
     return MongoClient(uri)[name]
 
 

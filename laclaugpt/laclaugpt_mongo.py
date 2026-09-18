@@ -8,15 +8,32 @@ from pymongo import DESCENDING, MongoClient
 
 DEFAULT_PROJECT_ID = os.getenv("LACLAUGPT_PROJECT_ID", "ai26")
 
+# Phase 0 runs Collection and Analysis from one cron/CLI environment, so both must
+# accept the same MongoDB configuration names. Collection's Settings use the
+# LACLAUGPT_ namespace; the legacy Phase 0 core used the bare MONGO_ names. Accept
+# both, with the legacy names winning for backward compatibility.
+MONGO_URI_ENV_VARS = ("MONGO_URI", "LACLAUGPT_MONGODB_URI")
+MONGO_DB_ENV_VARS = ("MONGO_DB_NAME", "LACLAUGPT_MONGODB_DATABASE")
+
+
+def resolve_mongo_config() -> tuple[str, str]:
+    """Return ``(uri, database)`` from either the legacy or Collection-style names.
+
+    Raises RuntimeError naming both accepted pairs so a misconfigured cron job says
+    what to set rather than failing obscurely.
+    """
+    uri = next((os.getenv(name) for name in MONGO_URI_ENV_VARS if os.getenv(name)), None)
+    database = next((os.getenv(name) for name in MONGO_DB_ENV_VARS if os.getenv(name)), None)
+    if not uri or not database:
+        pairs = " or ".join(
+            f"{u}/{d}" for u, d in zip(MONGO_URI_ENV_VARS, MONGO_DB_ENV_VARS)
+        )
+        raise RuntimeError(f"MongoDB configuration is required via {pairs}")
+    return uri, database
+
 
 def _collection(project_id: str | None = None):
-    mongo_uri = os.getenv("MONGO_URI") or os.getenv("LACLAUGPT_MONGODB_URI")
-    mongo_db_name = os.getenv("MONGO_DB_NAME") or os.getenv("LACLAUGPT_MONGODB_DATABASE")
-    if not mongo_uri or not mongo_db_name:
-        raise RuntimeError(
-            "MongoDB configuration is required via MONGO_URI/MONGO_DB_NAME "
-            "or LACLAUGPT_MONGODB_URI/LACLAUGPT_MONGODB_DATABASE"
-        )
+    mongo_uri, mongo_db_name = resolve_mongo_config()
     client = MongoClient(mongo_uri)
     db = client[mongo_db_name]
     project = project_id or DEFAULT_PROJECT_ID
