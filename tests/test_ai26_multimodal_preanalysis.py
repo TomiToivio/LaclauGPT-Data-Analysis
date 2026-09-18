@@ -95,7 +95,7 @@ def test_ai26_stage_selection_separates_multimodal_and_discourse_prompts() -> No
     )
     assert prompt_ids_for_stage("ep24", "frame") == (
         "laclau.system",
-        "laclau.frame_analysis",
+        "ep24.frame_analysis",
     )
 
 
