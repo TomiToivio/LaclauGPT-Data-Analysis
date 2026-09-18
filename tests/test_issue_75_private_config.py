@@ -123,7 +123,10 @@ def test_worker_publishes_frozen_private_config_to_pipeline_context(
     assert context.codebook_revision == binding.manifest.codebook_sha256
     assert context.provenance["private_config_sha256"] == [binding.manifest.config_sha256]
     assert context.provenance["codebook_sha256"] == [binding.manifest.codebook_sha256]
-    assert captured["provider_args"] == {"host": None, "min_vram_gb": None}
+    assert captured["provider_args"] == {
+        "host": __import__("laclaugpt_data_analysis.distributed_worker", fromlist=["resolve_llm_host"]).resolve_llm_host() or None,
+        "min_vram_gb": None,
+    }
     assert captured["provider"] is handler.provider
     assert captured["codebook_entries"] == handler.codebook.entries
     assert captured["model"] == AI26_MODEL
