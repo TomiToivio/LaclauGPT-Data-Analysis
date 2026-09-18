@@ -23,6 +23,15 @@ class SummaryParseError(ValueError):
         self.metadata = metadata
 
 
+# Input/context bounds for the summary call. This stage runs *before* every other LLM
+# stage, so an unbounded document here blocks the whole document. Real AI26 sources
+# reach ~130k characters (~32k tokens), far beyond gemma4:12b's window, which produced
+# empty responses and a bare "Expecting value: line 1 column 1 (char 0)" (#225). Mirrors
+# the discourse stage's bounds.
+SUMMARY_MAX_CHARS = int(os.getenv("LACLAUGPT_SUMMARY_MAX_CHARS", "24000"))
+SUMMARY_NUM_CTX = int(os.getenv("LACLAUGPT_SUMMARY_NUM_CTX", "8192"))
+SUMMARY_NUM_PREDICT = int(os.getenv("LACLAUGPT_SUMMARY_NUM_PREDICT", "2048"))
+
 SYSTEM_PROMPT = """You are LaclauGPT, a social-science research assistant.
 Analyze one AI26 RSS/article document conservatively and transparently.
 Return JSON only with keys: summary, claims, actors, entities, topics, signifiers,
@@ -81,6 +90,23 @@ def summarize_record(record: dict[str, Any], normalized_text: str) -> tuple[str,
         else ""
     )
     metadata = record.get("metadata") or {}
+    bounded_text, truncated = _bounded_text(normalized_text)
+    request_metadata = {
+        "document_id": _document_label(record),
+        "input_chars": len(normalized_text),
+        "sent_chars": len(bounded_text),
+        "truncated": truncated,
+        "max_chars": SUMMARY_MAX_CHARS,
+        "num_ctx": SUMMARY_NUM_CTX,
+        "num_predict": SUMMARY_NUM_PREDICT,
+    }
+    truncation_note = (
+        "\n\n### Input handling\n"
+        f"Document was truncated from {len(normalized_text)} to {len(bounded_text)} characters "
+        "to stay within the Phase 0 summary context budget."
+        if truncated
+        else ""
+    )
     user_prompt = (
         "### Source metadata\n"
         + json.dumps(metadata, ensure_ascii=False, default=str)
@@ -124,4 +150,9 @@ def summarize_record(record: dict[str, Any], normalized_text: str) -> tuple[str,
     parsed["input_metadata"] = request_metadata
     parsed["prompt_version"] = PROMPT_VERSION
     parsed["generated_at"] = datetime.now(timezone.utc).isoformat()
+    parsed["input_metadata"] = {
+        "original_chars": len(normalized_text),
+        "sent_chars": len(bounded_text),
+        "truncated": truncated,
+    }
     return raw, parsed
