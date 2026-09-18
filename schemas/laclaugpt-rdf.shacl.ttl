@@ -42,3 +42,77 @@ laclaugpt:SignifierRoleShape a sh:NodeShape ;
         sh:minCount 1 ;
         sh:datatype xsd:string
     ] .
+
+# --- Phase 1 analytical objects (issue #144) ---------------------------------
+# The default Phase 1 pipeline emits these objects. Like the theory-specific
+# signifier roles above, they are interpretive candidates, so they must retain
+# review state and generation provenance.
+
+laclaugpt:Phase1DiscourseObjectShape a sh:NodeShape ;
+    sh:targetClass
+        laclaugpt:Discourse,
+        laclaugpt:SociotechnicalImaginary,
+        laclaugpt:CollectiveSubject,
+        laclaugpt:Other,
+        laclaugpt:Affect,
+        laclaugpt:DiscourseFormation,
+        laclaugpt:Signifier,
+        laclaugpt:DiscursiveFrontier ;
+    sh:property [
+        sh:path prov:wasGeneratedBy ;
+        sh:minCount 1 ;
+        sh:message "A Phase 1 discourse-theoretical object must retain generation provenance."@en
+    ] ;
+    sh:property [
+        sh:path laclaugpt:reviewState ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string ;
+        sh:in ("PROVISIONAL" "ACCEPTED" "REJECTED" "REVISED" "CANONICAL" "SUPERSEDED")
+    ] .
+
+laclaugpt:RelationChainShape a sh:NodeShape ;
+    sh:targetClass laclaugpt:RelationChain ;
+    sh:property [
+        sh:path laclaugpt:hasMember ;
+        sh:minCount 2 ;
+        sh:message "An equivalence/difference chain must retain at least two members."@en
+    ] ;
+    sh:property [
+        sh:path prov:wasGeneratedBy ;
+        sh:minCount 1 ;
+        sh:message "A relation chain must retain generation provenance."@en
+    ] ;
+    sh:property [
+        sh:path laclaugpt:reviewState ;
+        sh:minCount 1 ;
+        sh:datatype xsd:string
+    ] .
+
+laclaugpt:FormulaOfPopulismShape a sh:NodeShape ;
+    sh:targetClass laclaugpt:FormulaOfPopulism ;
+    sh:property [
+        sh:path prov:wasGeneratedBy ;
+        sh:minCount 1 ;
+        sh:message "The Formula of Populism projection must retain generation provenance."@en
+    ] .
+
+# Descriptive observations (topics, sentiments, stances, themes) are explicitly
+# NOT discourse-theoretical claims. The shape pins that typing so a consumer
+# cannot mistake polarity for affective investment.
+laclaugpt:DescriptiveObservationShape a sh:NodeShape ;
+    sh:targetClass laclaugpt:DescriptiveObservation ;
+    sh:property [
+        sh:path laclaugpt:descriptive ;
+        sh:minCount 1 ;
+        sh:hasValue true ;
+        sh:message "A descriptive observation must be explicitly marked descriptive."@en
+    ] .
+
+laclaugpt:TopicShape a sh:NodeShape ;
+    sh:targetClass laclaugpt:Topic ;
+    sh:property [
+        sh:path laclaugpt:descriptive ;
+        sh:minCount 1 ;
+        sh:hasValue true ;
+        sh:message "A topic is descriptive computation, not a discourse-theoretical category."@en
+    ] .
