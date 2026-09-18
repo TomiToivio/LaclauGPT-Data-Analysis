@@ -105,7 +105,16 @@ def _read_networkx_exchange_graph(graph, format_name: str):
     if not raw_projection:
         raise ValueError(f"{format_name} lacks laclaugpt_projection construction semantics")
     projection = GraphProjection.model_validate(json.loads(raw_projection))
-    nodes = [{"id": str(node_id), **dict(attrs)} for node_id, attrs in graph.nodes(data=True)]
+    relation_edge_ids = {
+        str(attrs.get("laclaugpt_edge_id"))
+        for _, _, attrs in graph.edges(data=True)
+        if attrs.get("laclaugpt_edge_id")
+    }
+    nodes = [
+        {"id": str(node_id), **dict(attrs)}
+        for node_id, attrs in graph.nodes(data=True)
+        if str(node_id) not in relation_edge_ids
+    ]
     edges = [
         {"source": str(source), "target": str(target), **dict(attrs)}
         for source, target, attrs in graph.edges(data=True)
