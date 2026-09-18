@@ -22,7 +22,19 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-PROMPT_VERSION = "ai26-phase0-discourse-v1"
+PROMPT_VERSION = "ai26-phase0-discourse-v2"
+DISCOURSE_MAX_CHARS = int(os.getenv("LACLAUGPT_DISCOURSE_MAX_CHARS", "24000"))
+DISCOURSE_NUM_CTX = int(os.getenv("LACLAUGPT_DISCOURSE_NUM_CTX", "8192"))
+DISCOURSE_NUM_PREDICT = int(os.getenv("LACLAUGPT_DISCOURSE_NUM_PREDICT", "2048"))
+
+
+class DiscourseParseError(ValueError):
+    """Raised when Ollama returned text that is not valid discourse JSON."""
+
+    def __init__(self, message: str, *, raw_response: str, metadata: dict[str, Any]) -> None:
+        super().__init__(message)
+        self.raw_response = raw_response
+        self.metadata = metadata
 
 
 class UsConstruct(BaseModel):
@@ -218,9 +230,25 @@ def to_graph_observations(
 
 CANDIDATE_STRUCTURES_PROMPT = SYSTEM_PROMPT
 
+
 def _ollama():
     import ollama
     return ollama
+
+
+def _document_label(record: dict[str, Any]) -> str:
+    return str(
+        record.get("document_id")
+        or (record.get("metadata") or {}).get("url")
+        or record.get("url")
+        or "<unknown>"
+    )
+
+
+def _bounded_text(text: str) -> tuple[str, bool]:
+    if len(text) <= DISCOURSE_MAX_CHARS:
+        return text, False
+    return text[:DISCOURSE_MAX_CHARS], True
 
 
 def analyze_discourse(
@@ -229,9 +257,27 @@ def analyze_discourse(
     summary: dict[str, Any],
 ) -> tuple[str, dict[str, Any]]:
     model = os.getenv("OLLAMA_MODEL", "gemma4:12b")
+    bounded_text, truncated = _bounded_text(normalized_text)
+    request_metadata = {
+        "document_id": _document_label(record),
+        "input_chars": len(normalized_text),
+        "sent_chars": len(bounded_text),
+        "truncated": truncated,
+        "max_chars": DISCOURSE_MAX_CHARS,
+        "num_ctx": DISCOURSE_NUM_CTX,
+        "num_predict": DISCOURSE_NUM_PREDICT,
+    }
+    truncation_note = (
+        "\n\n### Input handling\n"
+        f"Document was truncated from {len(normalized_text)} to {len(bounded_text)} characters "
+        "to stay within the Phase 0 discourse context budget."
+        if truncated
+        else ""
+    )
     user_prompt = (
         "### Current document\n"
-        + normalized_text
+        + bounded_text
+        + truncation_note
         + "\n\n### Prior summary\n"
         + json.dumps(summary, ensure_ascii=False, default=str)
     )
@@ -242,11 +288,33 @@ def analyze_discourse(
             {"role": "user", "content": user_prompt},
         ],
         format="json",
-        options={"temperature": 0.0},
+        options={
+            "temperature": 0.0,
+            "num_ctx": DISCOURSE_NUM_CTX,
+            "num_predict": DISCOURSE_NUM_PREDICT,
+        },
     )
     raw = response["message"]["content"]
-    parsed = json.loads(raw)
-    parsed["model_metadata"] = {"provider": "ollama", "model": model}
+
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        label = request_metadata["document_id"]
+        raise DiscourseParseError(
+            "Discourse JSON parse failed for "
+            f"{label} ({len(normalized_text)} chars; sent {len(bounded_text)} chars; "
+            f"truncated={truncated}): {exc}",
+            raw_response=raw,
+            metadata=request_metadata,
+        ) from exc
+
+    parsed["model_metadata"] = {
+        "provider": "ollama",
+        "model": model,
+        "num_ctx": DISCOURSE_NUM_CTX,
+        "num_predict": DISCOURSE_NUM_PREDICT,
+    }
+    parsed["input_metadata"] = request_metadata
     parsed["prompt_version"] = PROMPT_VERSION
     parsed["generated_at"] = datetime.now(timezone.utc).isoformat()
     return raw, parsed
