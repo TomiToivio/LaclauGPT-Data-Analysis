@@ -589,11 +589,11 @@ def redis_queue_from_settings(
     namespace = settings.distributed_namespace
     return RedisStreamQueue(
         settings.redis_url,
-        stream=namespace.redis_stream("analysis", run_id),
-        group=namespace.redis_group("analysis", run_id),
+        stream=namespace.stream_key(f"analysis:{run_id}:tasks"),
+        group=namespace.redis_key("group", "analysis", run_id),
         consumer=worker_id,
-        dead_letter_stream=namespace.redis_stream("analysis-dead", run_id),
-        heartbeat_key=namespace.redis_heartbeat("analysis", run_id, worker_id),
+        dead_letter_stream=namespace.stream_key(f"analysis:{run_id}:dead"),
+        heartbeat_key=namespace.worker_key("analysis", worker_id),
     )
 
 
