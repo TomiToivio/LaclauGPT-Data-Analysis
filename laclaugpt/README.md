@@ -788,3 +788,20 @@ Example cron configuration:
 RSS collection uses an upsert keyed by `source_url`, and the processor tracks stage status under `phase0.*`, so repeated cron execution does not blindly create duplicate records.
 
 Phase 1 features should be restored around this working core one feature at a time.
+
+
+---
+
+# AI26 RSS corpus metadata contract
+
+Phase 0 uses one MongoDB corpus for all AI26 RSS records. `arena`, `ai_formation` and `political_formation` are metadata fields for filtering and comparison, not database partitions or separate analytical pipelines.
+
+The canonical cross-platform identity is `actor_name`. A single actor may later have multiple source accounts such as RSS, X, YouTube or newsletters, but Phase 0 only requires RSS/Atom. Source metadata supports `description` for stable collection rationale and `notes` for later researcher annotations. Directly AI-related actors may also carry `wikipedia_url`, `wikidata_id` and `homepage_url` for entity resolution and graph seeding.
+
+Canonical AI formation hints are: `existential_risk`, `accelerationist`, `left_accelerationist`, `ai_safety`, `critical_ai`, `anti_ai`, `other`, and `unknown`. Canonical political formation hints are: `far_left`, `centre_left`, `centre`, `centre_right`, `far_right`, and `unknown`. Both dimensions are provisional research hints and should not be treated as analytical ground truth.
+
+For RDF/property-graph export, prefer Schema.org/DCTERMS/FOAF/PROV-O for generic identity, source and provenance fields, SKOS-like concepts for controlled vocabularies, and the project namespace for LaclauGPT-specific properties such as `laclaugpt:arena`, `laclaugpt:aiFormation`, `laclaugpt:politicalFormation`, `laclaugpt:researchNote`, and `laclaugpt:collectionRationale`.
+
+The RSS collector canonicalizes article URLs before hashing/upsert by removing URL fragments and common tracking parameters such as `utm_*`, `fbclid`, and `gclid`. Content hashes are stored separately, so later cleanup can detect same-content duplicates even when publishers expose multiple URLs.
+
+The seed list deliberately mixes arenas in one corpus and includes enabled and disabled candidates. Disabled candidates are placeholders for geographic coverage and must be validated before activation. Phase 0 should include representation from the dominant US AI core plus China, EU/Finland, India and Africa, while documenting that the corpus will still be English/US-heavy.
