@@ -83,6 +83,7 @@ def test_unchanged_collected_content_preserves_phase0_results(monkeypatch):
         "https://example.com/doc",
         {"content_hash": "same", "source_text": "same text"},
         project_id="ai26",
+        reset_phase0_on_content_change=True,
     )
 
     _, update, upsert = collection.updates[-1]
@@ -100,6 +101,7 @@ def test_changed_collected_content_invalidates_phase0_results(monkeypatch):
         "https://example.com/doc",
         {"content_hash": "new", "source_text": "revised text"},
         project_id="ai26",
+        reset_phase0_on_content_change=True,
     )
 
     _, update, upsert = collection.updates[-1]
@@ -114,14 +116,17 @@ def test_analysis_updates_do_not_trigger_content_invalidation(monkeypatch):
 
     laclaugpt_mongo.update_document(
         {"source_url": "https://example.com/doc"},
-        {"phase0.summary": {"status": "ok"}},
+        {
+            "content_hash": "normalized-hash",
+            "phase0.preprocess": {"status": "ok"},
+        },
         project_id="ai26",
     )
 
     assert len(collection.updates) == 1
     _, update, _ = collection.updates[0]
     assert "$unset" not in update
-    assert update["$set"]["phase0.summary"]["status"] == "ok"
+    assert update["$set"]["phase0.preprocess"]["status"] == "ok"
 
 
 def test_record_stage_failure_increments_attempts_and_sets_failure_times(monkeypatch):
