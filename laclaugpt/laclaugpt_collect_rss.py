@@ -195,6 +195,7 @@ def main() -> None:
             raise SystemExit(f"Unknown source id: {args.source}")
 
     total = 0
+    failures = 0
     for source in sources:
         try:
             count = collect_source(
@@ -206,8 +207,11 @@ def main() -> None:
             print(f"{source['id']}: {count} entries upserted")
             total += count
         except Exception as exc:
+            failures += 1
             print(f"{source['id']}: ERROR {exc}")
     print(f"Total: {total} entries upserted")
+    if failures:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":
