@@ -13,13 +13,15 @@ def test_issue99_orchestrator_supports_dry_pilot_full_and_audits() -> None:
     assert "private_pipeline/ep24_mm_pipeline.py" in runner
 
 
-def test_roihu_batch_uses_issue99_orchestrator() -> None:
+def test_issue245_roihu_batch_supersedes_issue99_bridge() -> None:
     root = Path(__file__).resolve().parents[1]
     batch = (root / "scripts/ep24/ep24_roihu_reprocess.sbatch").read_text(encoding="utf-8")
 
-    assert "run_country_reprocess_v2.sh" in batch
-    assert "EP24_RUN_MODE=${EP24_RUN_MODE:-pilot}" in batch
+    assert "laclaugpt_data_analysis.ep24_roihu" in batch
+    assert "MODE=${EP24_RUN_MODE:-pilot}" in batch
     assert "LLM_ALLOW_CLOUD_FALLBACK=0" in batch
+    assert "run_country_reprocess_v2.sh" not in batch
+    assert "EP24_PIPELINE_SCRIPT" not in batch
 
 
 def test_issue99_runbook_points_to_canonical_private_repo() -> None:
