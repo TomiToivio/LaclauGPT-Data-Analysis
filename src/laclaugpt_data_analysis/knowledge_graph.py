@@ -770,6 +770,8 @@ class CSVGraphStore:
             for row in csv.DictReader(handle):
                 row["properties"] = json.loads(row["properties"])
                 row["provenance"] = json.loads(row["provenance"])
+                for key in ("valid_from", "valid_to", "snapshot_id"):
+                    row[key] = row[key] or None
                 nodes.append(GraphNode.model_validate(row))
         with (self.directory / "edges.csv").open(encoding="utf-8", newline="") as handle:
             for row in csv.DictReader(handle):
@@ -777,6 +779,8 @@ class CSVGraphStore:
                 row["provenance"] = json.loads(row["provenance"])
                 row["directed"] = row["directed"].lower() == "true"
                 row["weight"] = float(row["weight"]) if row["weight"] else None
+                for key in ("valid_from", "valid_to", "snapshot_id"):
+                    row[key] = row[key] or None
                 edges.append(GraphEdge.model_validate(row))
         return AnalyticalGraph(
             schema_version=manifest["schema_version"],
