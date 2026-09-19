@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from urllib.parse import urlparse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -55,11 +56,29 @@ def validate_environment(profile: DeploymentProfile) -> dict[str, object]:
     }
 
 
+def _local_ollama_endpoint(endpoint: str) -> str | None:
+    """Return a normalized local Ollama endpoint, rejecting remote probe targets."""
+    value = endpoint.strip()
+    parsed = urlparse(value if "://" in value else f"http://{value}")
+    if parsed.scheme not in {"http", "https"}:
+        return None
+    if (parsed.hostname or "").casefold() not in {"127.0.0.1", "localhost", "::1"}:
+        return None
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        return None
+    if parsed.path not in {"", "/"}:
+        return None
+    return value.rstrip("/")
+
+
 def discover_ollama_models(endpoint: str = "http://127.0.0.1:11434") -> list[str]:
-    """Explicit runtime probe. Never called at import time or by dry-run planning."""
+    """Probe a local Ollama runtime without allowing arbitrary network targets."""
+    local_endpoint = _local_ollama_endpoint(endpoint)
+    if local_endpoint is None:
+        return []
     try:
         result = subprocess.run(
-            ["curl", "-fsS", f"{endpoint.rstrip('/')}/api/tags"],
+            ["curl", "-fsS", f"{local_endpoint}/api/tags"],
             capture_output=True,
             text=True,
             timeout=5,
