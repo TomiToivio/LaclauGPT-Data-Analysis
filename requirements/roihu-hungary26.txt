@@ -1,10 +1,10 @@
-# Hungary26 reprocessing on CSC Roihu (ARM64/GH200)
-# Install the package itself with: pip install -e .
-# System dependencies such as ffmpeg and Ollama are intentionally not pip packages.
+# Hungary26 SQLite/CSV multimodal tests on CSC Roihu (ARM64/GH200)
+# System dependencies: CSC python-pytorch module, ffmpeg/ffprobe, local Ollama.
 openpyxl>=3.1,<4
 PyYAML>=6.0,<7
 pydantic>=2.7,<3
 numpy>=1.26,<3
+pandas>=2.2,<3
 ollama>=0.6,<1
-# Validation requested by the runbook
+boto3>=1.35,<2
 pytest>=8.3,<9
