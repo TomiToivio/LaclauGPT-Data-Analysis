@@ -154,6 +154,15 @@ def summarize_record(record: dict[str, Any], normalized_text: str) -> tuple[str,
             metadata=request_metadata,
         ) from exc
 
+    if not isinstance(parsed, dict):
+        label = request_metadata["document_id"]
+        raise SummaryParseError(
+            "Summary JSON must be an object for "
+            f"{label}; got {type(parsed).__name__}",
+            raw_response=raw,
+            metadata=request_metadata,
+        )
+
     parsed["model_metadata"] = {
         "provider": "ollama",
         "model": model,

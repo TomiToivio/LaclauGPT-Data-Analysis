@@ -166,3 +166,18 @@ def test_process_persists_raw_response_on_summary_parse_failure(monkeypatch):
     assert writes[-1]["phase0_summary_error_metadata"]["attempt_count"] == 3
     assert writes[-1]["phase0.summary"]["status"] == "error"
     assert "doc-1" in writes[-1]["phase0.summary"]["error"]
+
+
+def test_summary_rejects_valid_non_object_json_with_diagnostics(monkeypatch):
+    fake = FakeOllama("[]")
+    monkeypatch.setattr(laclaugpt_summary.ollama, "chat", fake.chat)
+
+    with pytest.raises(laclaugpt_summary.SummaryParseError) as caught:
+        laclaugpt_summary.summarize_record(
+            {"document_id": "doc-array", "metadata": {}},
+            "text",
+        )
+
+    assert caught.value.raw_response == "[]"
+    assert caught.value.metadata["document_id"] == "doc-array"
+    assert "must be an object" in str(caught.value)

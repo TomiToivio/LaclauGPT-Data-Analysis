@@ -321,6 +321,15 @@ def analyze_discourse(
             metadata=request_metadata,
         ) from exc
 
+    if not isinstance(parsed, dict):
+        label = request_metadata["document_id"]
+        raise DiscourseParseError(
+            "Discourse JSON must be an object for "
+            f"{label}; got {type(parsed).__name__}",
+            raw_response=raw,
+            metadata=request_metadata,
+        )
+
     parsed["model_metadata"] = {
         "provider": "ollama",
         "model": model,
