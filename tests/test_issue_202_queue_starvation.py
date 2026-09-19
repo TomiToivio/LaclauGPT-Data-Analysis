@@ -27,14 +27,18 @@ class FakeCursor:
 
 
 class FakeCollection:
-    def __init__(self):
+    def __init__(self, existing=None):
         self.find_query = None
         self.cursor = FakeCursor()
         self.updates = []
+        self.existing = existing
 
     def find(self, query):
         self.find_query = query
         return self.cursor
+
+    def find_one(self, query, projection=None):
+        return self.existing
 
     def update_one(self, query, update, upsert=False):
         self.updates.append((query, update, upsert))
@@ -46,7 +50,12 @@ def test_default_find_documents_excludes_error_documents(monkeypatch):
 
     laclaugpt_mongo.find_documents(limit=5, project_id="ai26")
 
-    assert collection.find_query == {"phase0.discourse.status": {"$exists": False}}
+    assert collection.find_query == {
+        "phase0.discourse.status": {"$exists": False},
+        "phase0.preprocess.status": {"$ne": "error"},
+        "phase0.summary.status": {"$ne": "error"},
+        "phase0.postprocess.status": {"$ne": "error"},
+    }
     assert collection.cursor.limit_value == 5
 
 
@@ -64,6 +73,55 @@ def test_retry_errors_explicitly_selects_failed_documents(monkeypatch):
             {"phase0.discourse.status": "error"},
         ]
     }
+
+
+def test_unchanged_collected_content_preserves_phase0_results(monkeypatch):
+    collection = FakeCollection(existing={"content_hash": "same"})
+    monkeypatch.setattr(laclaugpt_mongo, "_collection", lambda project_id=None: collection)
+
+    laclaugpt_mongo.upsert_document(
+        "https://example.com/doc",
+        {"content_hash": "same", "source_text": "same text"},
+        project_id="ai26",
+    )
+
+    _, update, upsert = collection.updates[-1]
+    assert update == {
+        "$set": {"content_hash": "same", "source_text": "same text"}
+    }
+    assert upsert is True
+
+
+def test_changed_collected_content_invalidates_phase0_results(monkeypatch):
+    collection = FakeCollection(existing={"content_hash": "old"})
+    monkeypatch.setattr(laclaugpt_mongo, "_collection", lambda project_id=None: collection)
+
+    laclaugpt_mongo.upsert_document(
+        "https://example.com/doc",
+        {"content_hash": "new", "source_text": "revised text"},
+        project_id="ai26",
+    )
+
+    _, update, upsert = collection.updates[-1]
+    assert update["$set"]["content_hash"] == "new"
+    assert set(update["$unset"]) == set(laclaugpt_mongo._PHASE0_DERIVED_FIELDS)
+    assert upsert is True
+
+
+def test_analysis_updates_do_not_trigger_content_invalidation(monkeypatch):
+    collection = FakeCollection(existing={"content_hash": "old"})
+    monkeypatch.setattr(laclaugpt_mongo, "_collection", lambda project_id=None: collection)
+
+    laclaugpt_mongo.update_document(
+        {"source_url": "https://example.com/doc"},
+        {"phase0.summary": {"status": "ok"}},
+        project_id="ai26",
+    )
+
+    assert len(collection.updates) == 1
+    _, update, _ = collection.updates[0]
+    assert "$unset" not in update
+    assert update["$set"]["phase0.summary"]["status"] == "ok"
 
 
 def test_record_stage_failure_increments_attempts_and_sets_failure_times(monkeypatch):
