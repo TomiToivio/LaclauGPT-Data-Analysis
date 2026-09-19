@@ -197,6 +197,8 @@ Optional extras:
 pip install -e '.[analysis]'
 pip install -e '.[nlp]'
 pip install -e '.[topics]'
+# Phase 1 research baselines only; not part of Phase 0/default runtime
+pip install -e '.[phase1-nlp]'
 pip install -e '.[ollama]'
 pip install -e '.[remote]'
 ```
@@ -220,7 +222,7 @@ ruff check .
 pytest --cov=laclaugpt_data_analysis --cov-report=term-missing
 ```
 
-See `AGENTS.md`, `PRIVACY.md`, `docs/RUNTIME_DATA.md`, `docs/ANALYSIS_RUNTIME.md`, and `docs/PLUGIN_PIPELINE.md` for the repository contract.
+See `AGENTS.md`, `PRIVACY.md`, `docs/RUNTIME_DATA.md`, `docs/ANALYSIS_RUNTIME.md`, `docs/PLUGIN_PIPELINE.md`, and `docs/PHASE1_OPEN_SOURCE_LIBRARIES.md` for the repository contract and the dormant Phase 1 open-source library layer.
 
 ## License
 
