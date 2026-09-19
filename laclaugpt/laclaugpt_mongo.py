@@ -42,14 +42,54 @@ def find_documents(
             {"phase0.discourse.status": "error"},
         ]
     else:
-        query["phase0.discourse.status"] = {"$exists": False}
+        # Normal cron processing must not immediately retry documents that already
+        # failed an earlier stage. Those records are handled only by --retry-errors.
+        # Merely checking for a missing discourse status is insufficient because a
+        # preprocess/summary/postprocess failure also leaves discourse absent.
+        query.update(
+            {
+                "phase0.discourse.status": {"$exists": False},
+                "phase0.preprocess.status": {"$ne": "error"},
+                "phase0.summary.status": {"$ne": "error"},
+                "phase0.postprocess.status": {"$ne": "error"},
+            }
+        )
     return list(_collection(project_id).find(query).sort("source_date", DESCENDING).limit(limit))
+
+
+_PHASE0_DERIVED_FIELDS = (
+    "phase0",
+    "phase0_summary_raw",
+    "phase0_summary",
+    "phase0_summary_error_metadata",
+    "phase0_summary_validated",
+    "phase0_summary_validation_error",
+    "phase0_discourse_raw",
+    "phase0_discourse",
+    "phase0_discourse_error_metadata",
+    "phase0_ontology",
+)
 
 
 def upsert_document(source_url: str, fields: dict[str, Any], *, project_id: str | None = None) -> None:
     if not source_url:
         raise ValueError("source_url is required for Phase 0 upsert")
-    _collection(project_id).update_one({"source_url": source_url}, {"$set": fields}, upsert=True)
+
+    collection = _collection(project_id)
+    content_hash = fields.get("content_hash")
+    existing = None
+    if content_hash:
+        existing = collection.find_one({"source_url": source_url}, {"content_hash": 1})
+
+    update: dict[str, Any] = {"$set": fields}
+    existing_hash = existing.get("content_hash") if existing else None
+    if existing_hash and content_hash and existing_hash != content_hash:
+        # The source URL is stable identity, but publishers can edit an article in
+        # place. Any analysis derived from the old content must be invalidated so
+        # the normal Phase 0 queue processes the revised text again.
+        update["$unset"] = {field: "" for field in _PHASE0_DERIVED_FIELDS}
+
+    collection.update_one({"source_url": source_url}, update, upsert=True)
 
 
 def update_document(record: dict[str, Any], fields: dict[str, Any], *, project_id: str | None = None) -> None:
