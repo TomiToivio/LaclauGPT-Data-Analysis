@@ -1,35 +1,27 @@
 from pathlib import Path
 
 
-def test_public_ep24_harness_contains_no_private_project_constants() -> None:
-    root = Path(__file__).resolve().parents[1]
-    batch = (root / "scripts/ep24/ep24_roihu_reprocess.sbatch").read_text(encoding="utf-8")
-    runner = (root / "scripts/ep24/run_country_reprocess.sh").read_text(encoding="utf-8")
-    text = batch + runner
-
-    assert "project_2009497" not in text
-    assert "/scratch/project_" not in text
-    assert "LaclauGPT-Discourse-Analysis-Private" not in text
-    assert "KEEP_PRIVATE" not in text
-    assert "private_only" not in text
-
-
-def test_public_ep24_harness_requires_private_inputs_at_runtime() -> None:
-    root = Path(__file__).resolve().parents[1]
-    runner = (root / "scripts/ep24/run_country_reprocess.sh").read_text(encoding="utf-8")
-
-    assert "EP24_PIPELINE_SCRIPT" in runner
-    assert "EP24_REQUIRE_HUMAN_CODEBOOK=1" in runner
-    assert "private_codebooks" in runner
-    assert "run_configs" in runner
-    assert "LACLAUGPT_DATA_DIR" in runner
-
-
-def test_roihu_harness_forces_local_llm_mode() -> None:
+def test_roihu_harness_matches_issue_245_deployment_contract() -> None:
     root = Path(__file__).resolve().parents[1]
     batch = (root / "scripts/ep24/ep24_roihu_reprocess.sbatch").read_text(encoding="utf-8")
 
+    assert "#SBATCH --account=project_2009497" in batch
+    assert "/scratch/project_2009497/LaclauGPT-Private/analysis/ep24/logs/" in batch
+    assert "gemma4:12b" in batch
     assert "LLM_MODE=local" in batch
     assert "LLM_ALLOW_CLOUD_FALLBACK=0" in batch
-    assert "gemma4:26b" in batch
-    assert "translategemma:27b" in batch
+    assert "SLURM_JOB_ID % 20000" in batch
+    assert "unset PYTHONPATH" in batch
+    assert "unset PYTHONHOME" in batch
+    assert "python -m laclaugpt_data_analysis.ep24_roihu" in batch
+    assert "srun --ntasks=1" in batch
+
+
+def test_roihu_harness_uses_private_canonical_root() -> None:
+    root = Path(__file__).resolve().parents[1]
+    batch = (root / "scripts/ep24/ep24_roihu_reprocess.sbatch").read_text(encoding="utf-8")
+
+    assert "LACLAUGPT_EP24_PRIVATE_ROOT" in batch
+    assert "LaclauGPT-Private/analysis/ep24" in batch
+    assert "LaclauGPT-Discourse-Analysis-Private" not in batch
+    assert "EP24_PIPELINE_SCRIPT" not in batch
