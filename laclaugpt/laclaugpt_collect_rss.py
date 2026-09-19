@@ -171,7 +171,12 @@ def collect_source(
             "homepage_url": source.get("homepage_url", ""),
             "collected_at": datetime.now(timezone.utc).isoformat(),
         }
-        upsert_document(source_url, fields, project_id=project_id)
+        upsert_document(
+            source_url,
+            fields,
+            project_id=project_id,
+            reset_phase0_on_content_change=True,
+        )
         written += 1
     return written
 
