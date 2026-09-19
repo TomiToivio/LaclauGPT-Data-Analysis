@@ -16,7 +16,7 @@ import os
 import sqlite3
 import subprocess
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -510,6 +510,76 @@ def preflight(root: Path, model: str) -> dict[str, Any]:
     }
 
 
+def _git_sha(path: Path) -> str:
+    try:
+        return subprocess.run(
+            ["git", "-C", str(path), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except Exception:
+        return "unknown"
+
+
+def write_validation_report(
+    *,
+    paths: dict[str, Path],
+    state: Hungary26State,
+    mode: str,
+    selected: list[WorkbookRecord],
+    csvs: dict[str, str],
+    model: str,
+) -> Path:
+    rows = state.rows()
+    counts: dict[str, dict[str, int]] = {}
+    for stage in STAGES:
+        counts[stage] = {
+            "ok": sum(row.get(f"{stage}_status") == "ok" for row in rows),
+            "error": sum(row.get(f"{stage}_status") == "error" for row in rows),
+        }
+    job_id = os.getenv("SLURM_JOB_ID", "local")
+    public_root = Path(__file__).resolve().parents[2]
+    private_repo = paths["root"].parents[1]
+    lines = [
+        f"# Hungary26 Roihu validation {job_id}",
+        "",
+        f"- Mode: {mode}",
+        f"- Model: {model}",
+        f"- Slurm job ID: {job_id}",
+        f"- Public Git SHA: {_git_sha(public_root)}",
+        f"- Private Git SHA: {_git_sha(private_repo)}",
+        f"- SQLite: {paths['db']}",
+        f"- Records selected: {len(selected)}",
+        "",
+        "## Stage counts",
+        "",
+        "| Stage | OK | Error |",
+        "| --- | ---: | ---: |",
+        *[
+            f"| {stage} | {counts[stage]['ok']} | {counts[stage]['error']} |"
+            for stage in STAGES
+        ],
+        "",
+        "## CSV outputs",
+        "",
+        *[f"- {name}: {path}" for name, path in sorted(csvs.items())],
+        "",
+        "## Selected records",
+        "",
+        *[
+            f"- {record.document_id} ({record.platform}; {record.workbook}:{record.sheet}:{record.row_number})"
+            for record in selected
+        ],
+        "",
+        "Phase 0 isolation is checked by the Slurm launcher before this runner starts.",
+        "No source text is reproduced in this report.",
+    ]
+    target = paths["outputs"] / f"roihu-test-{job_id}.md"
+    target.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return target
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="laclaugpt-hungary26-roihu")
     parser.add_argument("mode", choices=("preflight", "smoke", "pilot", "full", "resume"), nargs="?", default="smoke")
@@ -544,7 +614,21 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     csvs = export_csvs(state, paths)
-    result = {**report, "mode": args.mode, "records_selected": len(records), "csvs": csvs}
+    markdown_report = write_validation_report(
+        paths=paths,
+        state=state,
+        mode=args.mode,
+        selected=records,
+        csvs=csvs,
+        model=DEFAULT_MODEL,
+    )
+    result = {
+        **report,
+        "mode": args.mode,
+        "records_selected": len(records),
+        "csvs": csvs,
+        "validation_report": str(markdown_report),
+    }
     target = paths["outputs"] / f"roihu-test-{os.getenv('SLURM_JOB_ID', 'local')}.json"
     target.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False, indent=2))
