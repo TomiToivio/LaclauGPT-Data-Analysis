@@ -1,6 +1,7 @@
-from laclaugpt.laclaugpt_mongo import insert_to_mongo, update_mongo, mongo_find_one, query_mongo, check_if_in_dashboard, insert_to_network, insert_to_dashboard, insert_to_map, insert_to_entities, insert_to_sentiments, insert_to_timeline, insert_to_topics
-import geocoder
+import ast
 import logging
+
+import geocoder
 from logging.handlers import RotatingFileHandler
 import dotenv
 dotenv.load_dotenv()
@@ -77,10 +78,10 @@ def geocode_events():
             negative_sentiments = negative_sentiments.split(",") if negative_sentiments else []
             laclaugpt_events = message.get("laclaugpt_events")
             if not isinstance(laclaugpt_events, list):
-                laclaugpt_events = eval(laclaugpt_events) if laclaugpt_events else []
+                laclaugpt_events = ast.literal_eval(laclaugpt_events) if laclaugpt_events else []
             laclaugpt_network = message.get("laclaugpt_network")
             if not isinstance(laclaugpt_network, list):
-                laclaugpt_network = eval(laclaugpt_network) if laclaugpt_network else []
+                laclaugpt_network = ast.literal_eval(laclaugpt_network) if laclaugpt_network else []
             print(f"Processing message: {source_url}")
             logger.info(f"Processing message: {source_url}")
             # Check if in dashboard
