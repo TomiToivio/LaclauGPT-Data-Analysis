@@ -50,6 +50,15 @@ topics = [
   "bertopic>=0.16",
   "gensim>=4.3",
 ]
+phase1-nlp = [
+  "textacy>=0.13,<1",
+  "yake>=0.4,<1",
+  "keybert>=0.9,<1",
+  "hdbscan>=0.8.40,<1",
+  "umap-learn>=0.5.7,<1",
+  "scikit-network>=0.33,<1",
+  "ruptures>=1.1.9,<2",
+]
 ollama = [
   "ollama>=0.6,<1",
 ]
