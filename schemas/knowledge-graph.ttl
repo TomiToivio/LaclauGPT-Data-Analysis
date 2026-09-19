@@ -1,0 +1,45 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix lg: <https://w3id.org/laclaugpt/> .
+
+<https://w3id.org/laclaugpt/>
+    a owl:Ontology ;
+    owl:versionInfo "1.0.0" ;
+    rdfs:label "LaclauGPT analytical knowledge graph vocabulary" .
+
+lg:GraphRelation a owl:Class ;
+    rdfs:label "Graph relation" ;
+    rdfs:comment "Reified relation used by the storage-neutral analytical graph contract." .
+
+lg:source a owl:ObjectProperty ;
+    rdfs:domain lg:GraphRelation ;
+    rdfs:label "source" .
+
+lg:target a owl:ObjectProperty ;
+    rdfs:domain lg:GraphRelation ;
+    rdfs:label "target" .
+
+lg:relationType a owl:DatatypeProperty ;
+    rdfs:domain lg:GraphRelation ;
+    rdfs:range xsd:string .
+
+lg:layer a owl:DatatypeProperty ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Analytical layer: source, laclau, dna, sna, or cross-layer." .
+
+lg:assertionKind a owl:DatatypeProperty ;
+    rdfs:range xsd:string ;
+    rdfs:comment "Epistemic/provenance class: empirical, coded, model-derived, or graph-statistical." .
+
+lg:directed a owl:DatatypeProperty ;
+    rdfs:domain lg:GraphRelation ;
+    rdfs:range xsd:boolean .
+
+lg:weight a owl:DatatypeProperty ;
+    rdfs:domain lg:GraphRelation ;
+    rdfs:range xsd:double .
+
+lg:hasEvidence a owl:ObjectProperty ;
+    rdfs:label "has evidence" .
