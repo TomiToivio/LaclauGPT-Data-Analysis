@@ -71,19 +71,30 @@ _PHASE0_DERIVED_FIELDS = (
 )
 
 
-def upsert_document(source_url: str, fields: dict[str, Any], *, project_id: str | None = None) -> None:
+def upsert_document(
+    source_url: str,
+    fields: dict[str, Any],
+    *,
+    project_id: str | None = None,
+    reset_phase0_on_content_change: bool = False,
+) -> None:
     if not source_url:
         raise ValueError("source_url is required for Phase 0 upsert")
 
     collection = _collection(project_id)
     content_hash = fields.get("content_hash")
     existing = None
-    if content_hash:
+    if reset_phase0_on_content_change and content_hash:
         existing = collection.find_one({"source_url": source_url}, {"content_hash": 1})
 
     update: dict[str, Any] = {"$set": fields}
     existing_hash = existing.get("content_hash") if existing else None
-    if existing_hash and content_hash and existing_hash != content_hash:
+    if (
+        reset_phase0_on_content_change
+        and existing_hash
+        and content_hash
+        and existing_hash != content_hash
+    ):
         # The source URL is stable identity, but publishers can edit an article in
         # place. Any analysis derived from the old content must be invalidated so
         # the normal Phase 0 queue processes the revised text again.
