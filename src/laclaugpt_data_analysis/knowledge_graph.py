@@ -13,7 +13,7 @@ import sqlite3
 import urllib.parse
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Iterable, Literal, Protocol, Sequence
+from typing import Any, Literal, Protocol, Sequence
 
 from pydantic import Field
 
