@@ -34,7 +34,16 @@ PLATFORM_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
     "caption": ("caption", "text", "description", "post_text", "title"),
     "created_at": ("created_at", "post_date", "date", "timestamp", "published_at"),
     "collected_at": ("collected_at", "collection_date", "scraped_at", "recording_date"),
-    "media_ref": ("video_file", "video_filename", "media", "filename", "local_path"),
+    "media_ref": (
+        "video_file",
+        "video_filename",
+        "media",
+        "filename",
+        "local_path",
+        "allas_filename",
+        "allas_file",
+        "object_ref",
+    ),
 }
 
 

@@ -192,3 +192,81 @@ Hungary prompt guardrails live under `src/laclaugpt_data_analysis/prompts/hungar
 ## 12. Output and privacy
 
 Keep runtime logs, checkpoints, audits, comparisons and researcher exports outside the public checkout, preferably under private project storage/scratch with explicit retention. Public Git may contain synthetic fixtures, algorithms, schemas and documentation only. Never commit workbook rows, private handles, restricted source identifiers, researcher notes, CSC account IDs, cookies/tokens or private storage paths.
+
+
+---
+
+## Issue #243: local SQLite/CSV Roihu validation path
+
+For the concrete CSC deployment under `/scratch/project_2009497`, Hungary26 now also has a
+minimal local test/reprocessing path that deliberately does **not** require MongoDB or Redis.
+
+The public launcher is:
+
+```text
+scripts/hungary26/hungary26_roihu_test.sbatch
+```
+
+The runner is:
+
+```text
+python -m laclaugpt_data_analysis.hungary26_roihu
+```
+
+It is pinned to local Ollama **`gemma4:12b`**. The runner materializes Allas video locally,
+extracts deterministic ffmpeg keyframes, sends actual frame image files to the multimodal
+model, then performs a conservative item synthesis and Laclau/Mouffe/Palonen discourse pass.
+Per-stage state is stored in private SQLite and projected to private Pandas CSV files.
+
+The default private root is:
+
+```text
+/scratch/project_2009497/LaclauGPT-Private/analysis/hungary26
+```
+
+After the one-time ARM64 venv and private runtime have been built, the normal workflow is:
+
+```bash
+cd /scratch/project_2009497/LaclauGPT-Data-Analysis
+git pull --ff-only
+
+cd /scratch/project_2009497/LaclauGPT-Private
+git pull --ff-only
+
+cd /scratch/project_2009497/LaclauGPT-Data-Analysis
+sbatch scripts/hungary26/hungary26_roihu_test.sbatch
+```
+
+The default mode is a deterministic two-record smoke test (one Instagram and one TikTok
+record when both platforms are present). Other modes:
+
+```bash
+sbatch --export=ALL,MODE=preflight scripts/hungary26/hungary26_roihu_test.sbatch
+sbatch --export=ALL,MODE=smoke scripts/hungary26/hungary26_roihu_test.sbatch
+sbatch --export=ALL,MODE=pilot scripts/hungary26/hungary26_roihu_test.sbatch
+sbatch --export=ALL,MODE=full scripts/hungary26/hungary26_roihu_test.sbatch
+sbatch --export=ALL,MODE=resume scripts/hungary26/hungary26_roihu_test.sbatch
+```
+
+The runtime writes:
+
+```text
+data/hungary26.sqlite3
+data/instagram.csv
+data/tiktok.csv
+data/combined.csv
+data/failures.csv
+media/
+keyframes/
+logs/
+outputs/roihu-test-<job-id>.json
+```
+
+under the private Hungary26 root.
+
+### Phase 0 isolation
+
+This path is additive. It does not change `laclaugpt/requirements.txt`, does not add Allas,
+Pandas, ffmpeg, vision or SQLite state to the minimal text-first Phase 0 core, and does not
+change the Phase 0 Mongo queue. The Slurm launcher executes a Phase 0 import smoke test before
+running Hungary26 inference, and public CI contains a dependency-isolation regression check.
