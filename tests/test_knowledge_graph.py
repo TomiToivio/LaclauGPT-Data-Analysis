@@ -174,7 +174,14 @@ def test_csv_and_sqlite_round_trip(tmp_path):
     sqlite_store = SQLiteGraphStore(tmp_path / "kg.sqlite3")
     sqlite_store.write(graph)
     sqlite_reloaded = sqlite_store.read("AI26")
-    assert sqlite_reloaded.model_dump(mode="json") == graph.model_dump(mode="json")
+    assert sqlite_reloaded.project_id == graph.project_id
+    assert sqlite_reloaded.base_uri == graph.base_uri
+    assert {node.id: node.model_dump(mode="json") for node in sqlite_reloaded.nodes} == {
+        node.id: node.model_dump(mode="json") for node in graph.nodes
+    }
+    assert {edge.id: edge.model_dump(mode="json") for edge in sqlite_reloaded.edges} == {
+        edge.id: edge.model_dump(mode="json") for edge in graph.edges
+    }
 
 
 def test_common_graph_serializes_to_rdf_jsonld():
