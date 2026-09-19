@@ -87,7 +87,7 @@ def textacy_terms(
 ) -> list[KeywordCandidate]:
     """Return textacy terms from a caller-prepared spaCy Doc."""
     textacy = _optional_module("textacy")
-    keyterms = getattr(textacy.extract, "keyterms")
+    keyterms = textacy.extract.keyterms
     algorithm_fn = getattr(keyterms, algorithm)
     rows = algorithm_fn(doc, topn=top_n)
     return [
