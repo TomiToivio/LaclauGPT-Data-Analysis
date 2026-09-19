@@ -177,6 +177,94 @@ def from_mongo_document(document: Mapping[str, Any]) -> CanonicalRecord:
     return ensure_research_layers(normalize_schema_version(payload))
 
 
+
+def from_phase0_mongo_document(document: Mapping[str, Any]) -> CanonicalRecord:
+    """Adapt the stable Phase 0 Mongo document shape without running Phase 1 analysis.
+
+    The adapter is intentionally lossless and one-way: Phase 0 remains the production
+    record, while this function creates a canonical shadow record. All Phase 0 fields
+    are retained in the namespaced legacy phase0 mapping and stage-level products are
+    mirrored into intermediate.stage_outputs for convenient inspection.
+    """
+    raw = {str(key): value for key, value in document.items() if key != "_id"}
+    metadata_value = document.get("metadata")
+    metadata = dict(metadata_value) if isinstance(metadata_value, Mapping) else {}
+
+    document_id = _scalar(document.get("document_id"))
+    source_url = _scalar(document.get("source_url") or metadata.get("source_url"))
+    if not source_url:
+        if not document_id:
+            raise ValueError("Phase 0 document requires source_url or document_id")
+        source_url = f"phase0:{document_id}"
+
+    normalized_text = _scalar(document.get("normalized_text"))
+    if not normalized_text:
+        for key in ("source_text", "article_text", "content", "text", "description", "summary"):
+            normalized_text = _scalar(document.get(key))
+            if normalized_text:
+                break
+    if not normalized_text:
+        raise ValueError("Phase 0 document has no usable text")
+
+    native_ids: dict[str, str] = {}
+    if document_id:
+        native_ids["document_id"] = document_id
+
+    phase0_outputs = {
+        key: raw.get(key)
+        for key in (
+            "phase0",
+            "phase0_summary",
+            "phase0_summary_raw",
+            "phase0_summary_validated",
+            "phase0_summary_error_metadata",
+            "phase0_summary_validation_error",
+            "phase0_discourse",
+            "phase0_discourse_raw",
+            "phase0_discourse_error_metadata",
+            "phase0_ontology",
+        )
+        if key in raw
+    }
+
+    canonical = CanonicalRecord(
+        source_url=source_url,
+        source_native_ids=native_ids,
+        raw_capture=RawCaptureSection(
+            payload=raw,
+            content_type="application/vnd.laclaugpt.phase0+json",
+            metadata={"preservation": "phase0-mongo-shadow", "read_only": True},
+        ),
+        source=SourceSection(
+            platform=_scalar(document.get("platform") or metadata.get("platform")),
+            source_type=_scalar(document.get("source_type") or metadata.get("source_type")),
+            author=_scalar(document.get("actor_name") or metadata.get("actor_name")),
+            language=_scalar(document.get("language") or metadata.get("language")),
+            raw_metadata=metadata,
+        ),
+        content=ContentSection(
+            text=normalized_text,
+            title=_none_if_blank(document.get("title") or metadata.get("title")),
+            language=_none_if_blank(document.get("language") or metadata.get("language")),
+        ),
+        legacy={"phase0": raw},
+    )
+    canonical.intermediate.stage_outputs["phase0"] = phase0_outputs
+
+    summary_value = document.get("phase0_summary")
+    if isinstance(summary_value, Mapping):
+        summary_text = _scalar(summary_value.get("summary"))
+    else:
+        summary_text = _scalar(summary_value)
+    if summary_text:
+        canonical.analysis.summary = summary_text
+        canonical.human_readable.summary = summary_text
+
+    if phase0_outputs:
+        canonical.analysis.status = "phase0-shadow-imported"
+    return ensure_research_layers(canonical)
+
+
 def _collection_provenance(values: Any) -> list[Provenance]:
     result: list[Provenance] = []
     for item in values or []:
