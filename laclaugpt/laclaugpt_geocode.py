@@ -2,9 +2,9 @@ from laclaugpt.laclaugpt_mongo import insert_to_mongo, update_mongo, mongo_find_
 import geocoder
 import logging
 from logging.handlers import RotatingFileHandler
-import dotenv
-dotenv.load_dotenv()
-MAPBOX_API_KEY = dotenv.get_key(dotenv.find_dotenv(), "MAPBOX_API_KEY")
+import os
+
+MAPBOX_API_KEY = os.getenv("LACLAUGPT_MAPBOX_API_KEY") or os.getenv("MAPBOX_API_KEY")
 
 # Create logger
 logger = logging.getLogger(__name__)

@@ -61,3 +61,16 @@ def test_public_codebooks_declare_synthetic_or_public_grounding():
         assert ("paper" in text or "synthetic" in text or "exploratory" in text), (
             f"{codebook.name} does not declare its grounding"
         )
+
+def test_no_hard_coded_mapbox_token_in_tracked_python():
+    """Mapbox credentials must come from environment/private configuration only."""
+    token_prefixes = ("pk.", "sk.")
+    for path in REPO_ROOT.rglob("*.py"):
+        if any(part in {".git", ".venv", "venv"} for part in path.parts):
+            continue
+        text = path.read_text(encoding="utf-8", errors="ignore")
+        lowered = text.lower()
+        if "mapbox" not in lowered:
+            continue
+        for prefix in token_prefixes:
+            assert prefix not in text, f"{path.relative_to(REPO_ROOT)} appears to contain a hard-coded Mapbox token"
