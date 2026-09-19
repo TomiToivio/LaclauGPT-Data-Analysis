@@ -14,6 +14,7 @@ from laclaugpt_data_analysis.deployment import (
     roihu,
 )
 from laclaugpt_data_analysis.integrations.hermes import (
+    discover_ollama_models,
     export_results,
     inspect_effective_profile,
     launch_analysis,
@@ -150,3 +151,17 @@ def test_runtime_defaults_remain_under_data_contract() -> None:
     for profile in (laptop_local(), laptop_cloud(), roihu(), linux_server()):
         assert profile.data_dir == Path("data")
         assert "data" in profile.data_dir.parts
+
+
+def test_discover_ollama_models_rejects_remote_endpoint(monkeypatch) -> None:
+    called = False
+
+    def fake_run(*args, **kwargs):
+        nonlocal called
+        called = True
+        raise AssertionError("subprocess must not run for remote endpoints")
+
+    monkeypatch.setattr("laclaugpt_data_analysis.integrations.hermes.subprocess.run", fake_run)
+    assert discover_ollama_models("https://example.invalid:11434") == []
+    assert discover_ollama_models("http://169.254.169.254/latest/meta-data") == []
+    assert called is False
