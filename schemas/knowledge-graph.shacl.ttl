@@ -1,0 +1,48 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix dcterms: <http://purl.org/dc/terms/> .
+@prefix lg: <https://w3id.org/laclaugpt/> .
+
+lg:GraphRelationShape
+    a sh:NodeShape ;
+    sh:targetClass lg:GraphRelation ;
+    sh:property [
+        sh:path dcterms:identifier ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path lg:source ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path lg:target ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:nodeKind sh:IRI ;
+    ] ;
+    sh:property [
+        sh:path lg:relationType ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path lg:layer ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "source" "laclau" "dna" "sna" "cross-layer" ) ;
+    ] ;
+    sh:property [
+        sh:path lg:assertionKind ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "empirical" "coded" "model-derived" "graph-statistical" ) ;
+    ] ;
+    sh:property [
+        sh:path lg:directed ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#boolean> ;
+    ] .
