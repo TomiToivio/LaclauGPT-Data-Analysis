@@ -1,0 +1,58 @@
+schema_version: "1"
+phase: phase-1
+codebook_id: phase1-public-v1
+revision: "1"
+description: Public methodological vocabulary for the Phase 1 evidence-to-discourse contract.
+
+evidence_modalities:
+  - {id: modality.text, label: Text, state: authoritative, provenance: theory}
+  - {id: modality.image, label: Image, state: authoritative, provenance: theory}
+  - {id: modality.video, label: Video, state: authoritative, provenance: theory}
+  - {id: modality.audio, label: Audio, state: authoritative, provenance: theory}
+  - {id: modality.asr, label: ASR transcript, state: authoritative, provenance: theory}
+  - {id: modality.ocr, label: OCR text, state: authoritative, provenance: theory}
+
+social_semiotic:
+  - {id: semiotic.observation, label: Descriptive observation, state: authoritative, provenance: theory}
+  - {id: semiotic.composition, label: Composition, state: authoritative, provenance: theory}
+  - {id: semiotic.salience, label: Salience, state: authoritative, provenance: theory}
+
+actors:
+  - {id: actor.candidate, label: Actor candidate, state: authoritative, provenance: theory}
+topics:
+  - {id: topic.candidate, label: Topic candidate, state: authoritative, provenance: theory}
+demands:
+  - {id: demand.candidate, label: Demand or claim candidate, state: authoritative, provenance: theory}
+signifiers:
+  - {id: signifier.candidate, label: Signifier candidate, state: authoritative, provenance: theory}
+  - {id: signifier.nodal, label: Nodal-point candidate, state: authoritative, provenance: theory}
+  - {id: signifier.floating, label: Floating-signifier candidate, state: authoritative, provenance: theory}
+  - {id: signifier.empty, label: Empty-signifier candidate, state: authoritative, provenance: theory}
+chains:
+  - {id: chain.equivalence, label: Chain of equivalence, state: authoritative, provenance: theory}
+  - {id: chain.difference, label: Chain of difference, state: authoritative, provenance: theory}
+frontiers:
+  - {id: frontier.antagonistic, label: Antagonistic frontier, state: authoritative, provenance: theory}
+collective_subjects:
+  - {id: subject.collective, label: Collective subject, state: authoritative, provenance: theory}
+affects:
+  - {id: affect.candidate, label: Affect candidate, state: authoritative, provenance: theory}
+formations:
+  - {id: formation.researcher_defined, label: Researcher-defined formation, state: authoritative, provenance: researcher}
+arenas:
+  - {id: arena.elite, label: Elite, state: authoritative, provenance: researcher}
+  - {id: arena.grassroots, label: Grassroots, state: authoritative, provenance: researcher}
+  - {id: arena.parliamentary, label: Parliamentary, state: authoritative, provenance: researcher}
+languages:
+  - {id: language.unspecified, label: Unspecified language, state: authoritative, provenance: synthetic}
+regions:
+  - {id: region.unspecified, label: Unspecified region, state: authoritative, provenance: synthetic}
+platforms:
+  - {id: platform.unspecified, label: Unspecified platform, state: authoritative, provenance: synthetic}
+uncertainty:
+  - {id: uncertainty.explicit, label: Explicit uncertainty, state: authoritative, provenance: theory}
+provenance:
+  - {id: provenance.source, label: Source evidence anchor, state: authoritative, provenance: theory}
+  - {id: provenance.researcher, label: Researcher-authored entry, state: authoritative, provenance: theory}
+  - {id: provenance.model_candidate, label: Model-discovered candidate, state: discovered, provenance: model}
+  - {id: provenance.derived, label: Derived analytical output, state: derived, provenance: derived}
