@@ -71,7 +71,7 @@ def test_ep24_frame_slice_is_disabled_by_default() -> None:
     )
 
     assert len(provider.requests) == 2
-    assert result.intermediate.frame_analysis == []
+    assert not any(run.get("stage") == "frame" for run in result.analysis.model_runs)
     assert result.intermediate.stage_outputs["frame_analysis_skipped"][-1]["reason"] == (
         "multimodal_disabled"
     )
@@ -167,7 +167,7 @@ def test_ai26_with_frames_remains_text_first_without_explicit_multimodal_activat
     )
 
     assert len(provider.requests) == 2
-    assert result.intermediate.frame_analysis == []
+    assert not any(run.get("stage") == "multimodal_frame" for run in result.analysis.model_runs)
     assert result.intermediate.stage_outputs["frame_analysis_skipped"][-1]["reason"] == (
         "multimodal_disabled"
     )
