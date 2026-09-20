@@ -96,7 +96,7 @@ def select_relevant_codebook_entries(
     if limit <= 0:
         return []
     source = " ".join(
-        value for value in (record.title, record.content.text) if value
+        value for value in (record.content.title, record.content.text) if value
     )
     selected: list[CodebookEntry] = []
     for entry in entries:
@@ -200,6 +200,13 @@ def run_phase1_text_record(
     # Phase 1 remains text-first by default. Frame analysis is an explicit
     # EP24-only opt-in; it never activates AI26 multimodal dependencies.
     if cfg.ep24_frame_analysis_enabled and cfg.project_profile.casefold() == "ep24":
+        # The explicit EP24 flag is itself the multimodal opt-in for this
+        # compatibility runtime. Mirror it into the canonical capability gate.
+        project_config = dict(ctx.project_config)
+        analysis = dict(project_config.get("analysis") or {})
+        analysis["multimodal"] = True
+        project_config["analysis"] = analysis
+        ctx = ctx.model_copy(update={"project_config": project_config})
         analyze_frames(
             record, provider=provider, context=ctx, codebook_entries=[],
             model=cfg.model, prompt_version=f"{cfg.prompt_version}:frame",
