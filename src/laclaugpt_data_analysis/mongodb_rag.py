@@ -13,7 +13,7 @@ from collections import deque
 from datetime import UTC, datetime
 from typing import Any, Iterable, Mapping, Sequence
 
-from .canonical import CanonicalRecord, SCHEMA_VERSION
+from .canonical import SCHEMA_VERSION, CanonicalRecord
 from .rag import (
     RAG_INDEX_VERSION,
     RAG_MODES,
@@ -319,7 +319,13 @@ class MongoRetrievalBackend:
             context = _context(self.graph_search(query, filters, top_k=top_k, depth=depth), method="graph", filters=filters, embedding_model=self.embedding_model)
         else:
             context = _context(self.hybrid_search(query, filters, top_k=top_k, depth=depth), method="hybrid", filters=filters, embedding_model=self.embedding_model)
-        self.audits.insert_one(context.audit.to_dict())
+        audit = context.audit.to_dict()
+        if hasattr(self.audits, "insert_one"):
+            self.audits.insert_one(audit)
+        else:
+            # Keep the injected lightweight collection contract used by tests
+            # and offline adapters compatible without weakening production Mongo.
+            self.audits.insert_many([audit])
         return context
 
     def rebuild(self, records: Iterable[CanonicalRecord]) -> int:

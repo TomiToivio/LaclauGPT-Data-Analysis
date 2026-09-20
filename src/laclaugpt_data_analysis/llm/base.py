@@ -70,6 +70,11 @@ class ChatRequest:
     allow_cloud_fallback: bool | None = None
     images: tuple[str, ...] = ()
 
+    @property
+    def user_prompt(self) -> str:
+        """Backward-compatible view of the historical user-prompt contract."""
+        return self.user.replace("[CONTEXT MEMORY]", "[MEMORY CONTEXT]")
+
 
 class ProviderError(RuntimeError):
     """Raised when a provider cannot complete a call."""
