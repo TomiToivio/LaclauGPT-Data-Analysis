@@ -72,8 +72,8 @@ class ChatRequest:
 
     @property
     def user_prompt(self) -> str:
-        """Backward-compatible alias for the provider-neutral user field."""
-        return self.user
+        """Backward-compatible view of the historical user-prompt contract."""
+        return self.user.replace("[CONTEXT MEMORY]", "[MEMORY CONTEXT]")
 
 
 class ProviderError(RuntimeError):
