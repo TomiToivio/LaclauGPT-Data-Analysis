@@ -108,6 +108,9 @@ class PromptResource:
         return {
             "prompt_id": self.id,
             "prompt_version": self.version,
+            # Backward-compatible alias retained for persisted Phase 1
+            # provenance consumers and reproducibility tests.
+            "version": self.version,
             "prompt_sha256": self.sha256,
             "prompt_path": self.path,
         }
