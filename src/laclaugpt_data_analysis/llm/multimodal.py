@@ -120,7 +120,9 @@ class FrameAwareProvider:
     def chat(self, request: ChatRequest) -> LLMResponse:
         selected: tuple[str, str] | None = None
         for frame_id, image in self._frames.items():
-            if f"Analyse frame {frame_id} at " in request.user:
+            generic_marker = f"Analyse frame {frame_id} at "
+            ep24_marker = f"Frame: {frame_id}\n"
+            if generic_marker in request.user or ep24_marker in request.user:
                 selected = (frame_id, image)
                 break
         if selected is None:
