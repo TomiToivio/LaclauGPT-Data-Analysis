@@ -28,6 +28,7 @@ from .llm.ollama import (
     configured_llm_modes,
     resolve_llm_host,
 )
+from .phase1_laskin_runtime import load_ai26_runtime_policy
 from .staging import (
     MediaStager,
     ObjectUnavailableError,
@@ -46,7 +47,6 @@ from .task_queue import (
 logger = logging.getLogger(__name__)
 
 AI26_MODEL = "gemma4:12b"
-AI26_NOT_BEFORE = "2026-09-01T00:00:00+00:00"
 
 
 def _sha256(path: Path) -> str:
@@ -329,8 +329,24 @@ def build_media_stager(settings: Settings) -> MediaStager | None:
     )
 
 
+def ready_handoff_query(*, project_id: str, run_id: str, not_before: str | None) -> dict[str, Any]:
+    """Build the canonical Collection -> Analysis handoff query.
+
+    Study date boundaries come from the Phase 1 protocol profile. Keeping this
+    helper pure makes the boundary contract testable without a live MongoDB.
+    """
+    query: dict[str, Any] = {
+        "project_id": project_id,
+        "handoff.status": "ready",
+        "handoff.run_id": run_id,
+    }
+    if not_before:
+        query["handoff.published_at"] = {"$gt": not_before}
+    return query
+
+
 class MongoCollectionHandoff:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, *, not_before: str | None = None):
         if not settings.mongo_url:
             raise ValueError("MongoDB is required for the AI26 distributed worker")
         try:
@@ -341,6 +357,7 @@ class MongoCollectionHandoff:
             collection_records_name(settings)
         ]
         self.project_id = settings.project_id
+        self.not_before = not_before
 
     def resolve(self, source_url: str) -> CanonicalRecord:
         row = self.collection.find_one({"project_id": self.project_id, "source_url": source_url})
@@ -353,12 +370,11 @@ class MongoCollectionHandoff:
         if limit < 1:
             return []
         cursor = self.collection.find(
-            {
-                "project_id": self.project_id,
-                "handoff.status": "ready",
-                "handoff.run_id": run_id,
-                "handoff.published_at": {"$gte": AI26_NOT_BEFORE},
-            },
+            ready_handoff_query(
+                project_id=self.project_id,
+                run_id=run_id,
+                not_before=self.not_before,
+            ),
             {"handoff": 1, "_id": 0},
         ).sort(
             [
@@ -557,21 +573,25 @@ def seed_ready_tasks(
 def build_worker(binding: WorkerBinding, settings: Settings) -> tuple[TaskWorker, MongoCollectionHandoff]:
     binding.validate_runtime_code()
     enforce_local_model(binding.manifest)
+    policy = load_ai26_runtime_policy()
     if settings.project_id != binding.manifest.project_id:
         raise ValueError("settings project_id does not match frozen run manifest")
+    if settings.project_id != policy.study_id:
+        raise ValueError("settings project_id does not match canonical Phase 1 AI26 profile")
     queue = redis_queue_from_settings(
         settings,
         run_id=binding.manifest.run_id,
         worker_id=binding.worker_id,
     )
     durable = durable_store_from_settings(settings, run_id=binding.manifest.run_id)
-    handoff = MongoCollectionHandoff(settings)
+    handoff = MongoCollectionHandoff(settings, not_before=policy.date_after)
+    worker_provenance = {**binding.provenance(), **policy.provenance()}
     worker = AI26TaskWorker(
         queue=queue,
         durable_store=durable,
         handler=AI26Handler(binding, settings, handoff),
         worker_id=binding.worker_id,
-        provenance=binding.provenance(),
+        provenance=worker_provenance,
         validator=binding.validate_task,
     )
     return worker, handoff

@@ -7,15 +7,16 @@
 # cron drains the queue on an interval. Do not wrap this in a perpetual
 # scheduler and do not add a second long-lived worker process.
 #
-# Cadence: every 5 minutes (operator decision 2026-09-17). The offsets start at
-# :02 so the analysis drain does not collide with the Collection jobs that run
-# at :10 (collect) and :30 (media) on the same host.
+# Cadence: hourly at :05, matching config/execution/laskin-cron.yaml. The
+# worker is intentionally staggered from Collection jobs at :10 and :30.
+# The wrapper also upserts the latest completed 24h Phase 1 periodic reports
+# after a successful analysis cycle.
 #
 # The wrapper loads the private environment file itself, because cron does not
 # inherit an interactive shell.
 
-# AI26 distributed analysis — bounded drain every 5 minutes
-2-59/5 * * * * /bin/bash <repo>/scripts/run_ai26_laskin.sh >> <private-root>/analysis/ai26/logs/ai26-laskin-analysis.log 2>&1
+# AI26 distributed analysis — bounded hourly drain + idempotent 24h reports
+5 * * * * /bin/bash <repo>/scripts/run_ai26_laskin.sh >> <private-root>/analysis/ai26/logs/ai26-laskin-analysis.log 2>&1
 
 # Optional: a manual-trigger line kept commented for on-demand bring-up.
 # /bin/bash <repo>/scripts/run_ai26_laskin.sh --debug --once
