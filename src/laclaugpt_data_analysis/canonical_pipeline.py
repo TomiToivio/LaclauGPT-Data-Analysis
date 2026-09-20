@@ -26,7 +26,11 @@ from .codebooks import CodebookEntry
 from .context_envelope import PromptEnvelope, build_prompt_envelope
 from .llm.structured_output import chat_structured
 from .models import Topic
-from .modality_routing import build_modality_plan, legacy_multimodal_projection
+from .modality_routing import (
+    build_modality_plan,
+    ensure_still_image_frames,
+    legacy_multimodal_projection,
+)
 from .prompt_library import load_prompt, prompt_provenance
 from .research_record import ensure_research_layers
 from .social_semiotic import (
@@ -345,17 +349,8 @@ def analyze_frames(record: CanonicalRecord, *, provider, context: PipelineContex
             "reason": "text_only_or_no_extracted_frames",
         })
         return record
-    # Multimodal/frame analysis is an explicitly activated slice for every
-    # project profile.  In particular, AI26 stays text-first by default and
-    # EP24/video-heavy studies opt in through project_config.analysis.multimodal.
-    # This gate lives after the no-frame check so text-only records remain cheap
-    # and valid regardless of project configuration.
-    if not _enabled(context, "multimodal", default=False):
-        _append_stage(record, "frame_analysis_skipped", {
-            "created_at": datetime.now(UTC).isoformat(),
-            "reason": "multimodal_disabled",
-        })
-        return record
+    # Phase 1 is capability-driven: the presence of canonical visual units is
+    # the activation gate. Text-only records have already returned above.
     system_id, task_id = prompt_ids_for_stage(project_profile, "frame")
     ai26_multimodal = project_profile.casefold() == "ai26"
     system_resource = load_prompt(system_id, version="v2" if ai26_multimodal else "v1")
@@ -695,6 +690,7 @@ def run_canonical_pipeline(record: CanonicalRecord, *, provider, context: Pipeli
     entries = codebook_entries or []
     record.analysis.started_at = record.analysis.started_at or datetime.now(UTC)
     preprocess_record(record, preprocessor=preprocessor)
+    ensure_still_image_frames(record)
     plan = build_modality_plan(record)
     _append_stage(record, "modality_plan", {
         "created_at": datetime.now(UTC).isoformat(),
