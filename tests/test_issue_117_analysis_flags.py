@@ -4,6 +4,7 @@ from laclaugpt_data_analysis.canonical import CanonicalRecord, ContentSection, S
 from laclaugpt_data_analysis.canonical_pipeline import (
     DiscourseProposal,
     MultimodalSummaryProposal,
+    SummaryProposal,
     PipelineContext,
     _effective_stage_set,
     _validate_project_analysis_config,
@@ -21,7 +22,7 @@ def _record() -> CanonicalRecord:
 
 def test_enabled_summary_capabilities_are_projected() -> None:
     record = _record()
-    summary = MultimodalSummaryProposal(
+    summary = SummaryProposal(
         summary="summary",
         topics=["AI regulation"],
         entities=["European Union"],
