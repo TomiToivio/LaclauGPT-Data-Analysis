@@ -107,12 +107,14 @@ def test_small_indexed_mongodb_corpus_is_retrieved_as_context_not_evidence() -> 
     assert backend.index_records(records) == 3
 
     current = records[0]
+    policy = AnalysisContextPolicy()
+    policy.stages["discourse"].rag_mode = "graph"
     bundle, adapter = assemble_analysis_context(
         current,
         project_id="AI26",
         stage="discourse",
         task="Analyse the current source.",
-        policy=AnalysisContextPolicy(),
+        policy=policy,
         retrieval_backend=backend,
     )
 
@@ -128,7 +130,7 @@ def test_small_indexed_mongodb_corpus_is_retrieved_as_context_not_evidence() -> 
     assert rag_sources
     assert rag_sources[0]["source"] == "rag:MongoRetrievalBackend"
     assert rag_sources[0]["metadata"]["evidence_role"] == "context"
-    assert rag_sources[0]["metadata"]["retrieval_method"] == "hybrid"
+    assert rag_sources[0]["metadata"]["retrieval_method"] == "graph"
 
 
 def test_disabled_rag_is_prompt_equivalent_to_no_retrieval_backend() -> None:
