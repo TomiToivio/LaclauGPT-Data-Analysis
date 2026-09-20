@@ -108,13 +108,13 @@ def display_label(norm: str, kind: str) -> str:
 
 
 def stable_memory_id(kind: str, label: str) -> str:
-    """Return a deterministic ID from kind plus normalized surface form."""
+    """Return a deterministic stable ID from canonical kind + normalized label."""
     if kind not in KINDS:
         raise ValueError(f"unsupported memory kind: {kind}")
     norm = normalize(label)
     if not norm:
-        raise ValueError("memory label may not be empty")
-    digest = hashlib.sha256(f"{kind}:{norm}".encode("utf-8")).hexdigest()[:12]
+        raise ValueError("memory label must not be empty")
+    digest = hashlib.sha256(f"{kind}:{norm}".encode()).hexdigest()[:12]
     return f"{KIND_PREFIX[kind]}-{digest}"
 
 
