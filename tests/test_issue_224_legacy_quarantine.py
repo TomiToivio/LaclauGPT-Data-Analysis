@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from pathlib import Path
+import pathlib
 import re
 import tomllib
 
 import yaml
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = pathlib.Path(__file__).resolve().parents[1]
 INVENTORY = ROOT / "docs" / "legacy_phase1_inventory.yaml"
 
 
