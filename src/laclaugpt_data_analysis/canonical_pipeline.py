@@ -699,7 +699,15 @@ def run_canonical_pipeline(record: CanonicalRecord, *, provider, context: Pipeli
     entries = codebook_entries or []
     record.analysis.started_at = record.analysis.started_at or datetime.now(UTC)
     preprocess_record(record, preprocessor=preprocessor)
-    analyze_frames(record, provider=provider, context=ctx, codebook_entries=entries, model=model, prompt_version=f"{prompt_version}:frame", project_profile=project_profile, allow_cloud_fallback=allow_cloud_fallback)
+    from .llm.multimodal import FrameAwareProvider
+
+    frame_provider = FrameAwareProvider(
+        provider,
+        record.content.frames,
+        record.content.media_references,
+    )
+    analyze_frames(record, provider=frame_provider, context=ctx, codebook_entries=entries, model=model, prompt_version=f"{prompt_version}:frame", project_profile=project_profile, allow_cloud_fallback=allow_cloud_fallback)
+    _append_stage(record, "multimodal_visibility", frame_provider.audit())
     summary = summarize_record(record, provider=provider, context=ctx, codebook_entries=entries, model=model, prompt_version=f"{prompt_version}:summary", project_profile=project_profile, allow_cloud_fallback=allow_cloud_fallback)
     discourse = discourse_analysis(record, provider=provider, context=ctx, codebook_entries=entries, model=model, prompt_version=f"{prompt_version}:discourse", project_profile=project_profile, allow_cloud_fallback=allow_cloud_fallback) if _enabled(ctx, "laclau") or project_profile.casefold() != "ai26" else DiscourseProposal()
     postprocess_record(record, summary, discourse, ctx)
