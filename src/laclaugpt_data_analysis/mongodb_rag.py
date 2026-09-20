@@ -13,14 +13,14 @@ from collections import deque
 from datetime import UTC, datetime
 from typing import Any, Iterable, Mapping, Sequence
 
-from .canonical import CanonicalRecord, SCHEMA_VERSION
+from .canonical import SCHEMA_VERSION, CanonicalRecord
 from .rag import (
-    _context,
-    EmbeddingProvider,
     RAG_INDEX_VERSION,
     RAG_MODES,
+    EmbeddingProvider,
     RetrievalContext,
     RetrievalItem,
+    _context,
 )
 
 
