@@ -7,6 +7,7 @@ from laclaugpt_data_analysis.canonical import CanonicalRecord
 from laclaugpt_data_analysis.canonical_pipeline import (
     DiscourseProposal,
     FrameProposal,
+    MultimodalSummaryProposal,
     PipelineContext,
     SummaryProposal,
     run_canonical_pipeline,
@@ -95,7 +96,7 @@ def test_ep24_frame_slice_can_be_enabled_independently_and_runs_before_summary()
 
     assert len(provider.requests) == 3
     assert result.intermediate.frame_analysis[0]["frame_id"] == "frame-001"
-    assert provider.requests[0].response_format is not None
+    assert provider.requests[0].schema is not None
     assert "frame-001" in provider.requests[0].user
     assert "Synthetic election clip summary" not in provider.requests[0].user
     assert result.human_readable.summary == "EP24 summary"
@@ -149,7 +150,7 @@ def test_ai26_with_frames_remains_text_first_without_explicit_multimodal_activat
     # No OCR/Whisper/download hook is passed here. The presence of an already
     # extracted frame must not itself activate multimodal analysis.
     provider = SequencedProvider([
-        SummaryProposal(summary="Text-first summary"),
+        MultimodalSummaryProposal(summary="Text-first summary"),
         DiscourseProposal(),
     ])
 
