@@ -25,7 +25,7 @@ filters:
   date_after: "2026-09-01"
   languages: []
   regions: []
-  arenas: [elite, grassroots, parliamentary]
+  arenas: [elites, grassroots, parliamentary]
   platforms: []
 outputs:
   formats: [jsonl, csv]
@@ -53,10 +53,17 @@ periodic_reports:
 metadata:
   dimensions: [arena, platform, language, region, topic, author, datetime, signifier, formation]
   formations:
-    - accelerationist_techno_optimist
-    - doomer_xrisk
+    - accelerationist
+    - existential_risk
+    - left_accelerationist
+    - ai_safety
     - critical_ai
-    - anti_ai_luddite
-    - mainstream_governance
-    - left_techno_optimism_discovery
-  note: "Research categories are configurable analytical formations, not truth labels."
+    - anti_ai
+  formation_views:
+    accelerationist_techno_optimist: [accelerationist]
+    doomer_xrisk: [existential_risk]
+    critical_ai: [critical_ai]
+    anti_ai_luddite: [anti_ai]
+    mainstream_governance: [ai_safety]
+    left_techno_optimism_discovery: [left_accelerationist]
+  note: "Canonical IDs reuse the existing AI26 codebook. Views are configurable research categories, not truth labels."
