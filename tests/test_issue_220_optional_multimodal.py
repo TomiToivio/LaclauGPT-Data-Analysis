@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+# Ruff's import sorter rewrites the explicit module aliases used below; keep them stable.
+# ruff: noqa: I001
+
 import json
 from pathlib import Path
 
