@@ -15,12 +15,12 @@ from typing import Any, Iterable, Mapping, Sequence
 
 from .canonical import CanonicalRecord, SCHEMA_VERSION
 from .rag import (
+    _context,
+    EmbeddingProvider,
     RAG_INDEX_VERSION,
     RAG_MODES,
-    EmbeddingProvider,
     RetrievalContext,
     RetrievalItem,
-    _context,
 )
 
 
