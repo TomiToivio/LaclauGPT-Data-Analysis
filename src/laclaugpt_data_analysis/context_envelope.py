@@ -37,7 +37,7 @@ class PromptEnvelope(BaseModel):
             ("PROJECT CONTEXT", self.project),
             ("SOURCE CONTEXT", self.source),
             ("SITUATIONAL CONTEXT", self.situational),
-            ("CONTEXT MEMORY", self.memory),
+            ("MEMORY CONTEXT", self.memory),
             ("RAG CONTEXT", self.rag),
             ("CURRENT SOURCE ITEM", self.current_source),
             ("PREVIOUS ANALYSIS", self.previous_analysis),
