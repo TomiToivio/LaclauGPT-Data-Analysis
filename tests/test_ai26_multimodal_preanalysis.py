@@ -217,7 +217,7 @@ def test_ai26_pipeline_persists_social_semiotics_and_run_provenance() -> None:
     assert "Multimodal Social-Semiotic Pre-Analysis" in provider.requests[0].system
     assert "frame-001" in provider.requests[0].user
     assert "12.5" in provider.requests[0].user
-    assert "AI26 relevance guide only" in provider.requests[0].user
+    assert "AI26 source context only; remain descriptive." in provider.requests[0].user
     assert "denotative_description" in provider.requests[1].user
     assert "Laclau" in provider.requests[2].system
 

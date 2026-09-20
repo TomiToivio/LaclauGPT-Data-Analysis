@@ -85,7 +85,7 @@ def test_phase1_text_only_order_skips_frame_and_postprocesses_last():
     assert "multimodal_synthesis" in outputs
     assert "discourse_analysis" in outputs
     assert "postprocess" in outputs
-    assert outputs["frame_analysis_skipped"][-1]["reason"] == "text_only_or_no_extracted_frames"
+    assert outputs["frame_analysis_skipped"][-1]["reason"] == "no_materialized_image_or_video_frames"
     assert outputs["postprocess"][-1]["validated"] is True
     assert outputs["postprocess"][-1]["source_stages"] == ["summary", "discourse"]
 

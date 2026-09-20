@@ -121,8 +121,13 @@ class FrameAwareProvider:
         selected: tuple[str, str] | None = None
         for frame_id, image in self._frames.items():
             generic_marker = f"Analyse frame {frame_id} at "
+            social_semiotic_marker = f"Frame id: {frame_id}\n"
             ep24_marker = f"Frame: {frame_id}\n"
-            if generic_marker in request.user or ep24_marker in request.user:
+            if (
+                generic_marker in request.user
+                or social_semiotic_marker in request.user
+                or ep24_marker in request.user
+            ):
                 selected = (frame_id, image)
                 break
         if selected is None:

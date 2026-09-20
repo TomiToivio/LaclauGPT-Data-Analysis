@@ -51,3 +51,17 @@ LLM-generated theory-facing outputs remain provisional. The pipeline does not tu
 ## Testing
 
 Normal CI uses fake providers and synthetic records. Real Ollama, MongoDB, Redis, S3/Allas and CSC services are optional and must never be required for unit tests.
+
+
+## Phase 1 modality routing
+
+Phase 1 is multimodal by capability, not by default. After generic preprocessing, the canonical pipeline builds an audited modality plan from the record's canonical text, media, transcript, OCR and frame representations.
+
+- Text-only records skip the visual adapter, frame extraction/analysis path and vision-model calls entirely.
+- Materialized still images are represented as timestamp-zero visual units and use the same descriptive social-semiotic frame path as extracted video frames.
+- Video records become eligible for visual analysis only after frame/scene extraction has produced canonical frame units.
+- Audio-only records never invoke visual processing.
+- A remote URL, object-store key, filename, OCR string, transcript or historical frame description does not by itself count as newly processed visual evidence.
+- Multimodal dependencies are imported lazily so Phase 0 and text-only Phase 1 runs do not require the visual stack.
+
+The routing audit is stored in `intermediate.stage_outputs["modality_plan"]`. Direct image attachment remains separately auditable through `multimodal_visibility`. After analysis, `legacy.multimodal_compatibility` provides a deterministic adapter for useful EP24-era fields such as frame files/analyses, OCR, transcript/language/translation and multimodal summary. The canonical Phase 1 record remains authoritative.

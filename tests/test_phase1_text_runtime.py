@@ -1,9 +1,8 @@
 from laclaugpt_data_analysis.canonical_pipeline import (
     DiscourseProposal,
     DiscursiveElement,
-    FrameProposal,
+    MultimodalFrameProposal,
     MultimodalSummaryProposal,
-    SummaryProposal,
 )
 from laclaugpt_data_analysis.llm.base import ChatRequest, LLMCallProvenance, LLMResponse
 from laclaugpt_data_analysis.phase1_handoff import HANDOFF_SCHEMA, visualization_handoff
@@ -167,8 +166,8 @@ def test_ep24_frame_opt_in_runs_before_summary_for_framed_record():
         "frames": [{"id": "frame-1", "timestamp_seconds": 1.0, "description": "fixture"}]
     }
     provider = SequencedProvider([
-        FrameProposal(description="A campaign poster."),
-        SummaryProposal(summary="EP24 summary."),
+        MultimodalFrameProposal(denotation=["A campaign poster."]),
+        MultimodalSummaryProposal(summary="EP24 summary."),
     ])
     record = run_phase1_text_record(
         document, provider=provider,
@@ -179,11 +178,11 @@ def test_ep24_frame_opt_in_runs_before_summary_for_framed_record():
     )
     assert len(provider.requests) == 2
     assert record.intermediate.frame_analysis
-    assert "summary_preanalysis" in record.intermediate.stage_outputs
+    assert "multimodal_synthesis" in record.intermediate.stage_outputs
 
 
 def test_ep24_frame_opt_in_tolerates_text_only_record_and_ai26_stays_text_only():
-    ep24_provider = SequencedProvider([SummaryProposal(summary="EP24 text-only summary.")])
+    ep24_provider = SequencedProvider([MultimodalSummaryProposal(summary="EP24 text-only summary.")])
     ep24_record = run_phase1_text_record(
         phase0_document(), provider=ep24_provider,
         config=Phase1TextConfig(
@@ -192,7 +191,8 @@ def test_ep24_frame_opt_in_tolerates_text_only_record_and_ai26_stays_text_only()
         ),
     )
     assert len(ep24_provider.requests) == 1
-    assert ep24_record.intermediate.stage_outputs["frame_analysis_skipped"][-1]["reason"] == "text_only_or_no_extracted_frames"
+    assert ep24_record.intermediate.stage_outputs["modality_plan"][-1]["is_text_only"] is True
+    assert "frame_analysis_skipped" not in ep24_record.intermediate.stage_outputs
 
     provider = SequencedProvider([MultimodalSummaryProposal(summary="AI26 summary.")])
     record = run_phase1_text_record(

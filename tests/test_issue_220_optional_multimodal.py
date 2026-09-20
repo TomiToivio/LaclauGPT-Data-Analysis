@@ -50,12 +50,21 @@ def _context(*, multimodal: bool) -> cp.PipelineContext:
     )
 
 
-def _summary() -> cp.SummaryProposal:
-    return cp.SummaryProposal(summary="EP24 summary", narrative="Synthetic election clip summary.")
+def _summary() -> cp.MultimodalSummaryProposal:
+    return cp.MultimodalSummaryProposal(
+        summary="EP24 summary",
+        narrative="Synthetic election clip summary.",
+    )
 
 
-def test_ep24_frame_slice_is_disabled_by_default() -> None:
-    provider = SequencedProvider([_summary(), cp.DiscourseProposal()])
+def test_ep24_frame_slice_activates_from_media_without_feature_flag() -> None:
+    provider = SequencedProvider(
+        [
+            cp.MultimodalFrameProposal(denotation=["Candidate at campaign event."]),
+            _summary(),
+            cp.DiscourseProposal(),
+        ]
+    )
     record = _fixture_record()
 
     result = cp.run_canonical_pipeline(
@@ -66,17 +75,15 @@ def test_ep24_frame_slice_is_disabled_by_default() -> None:
         model="fake-model",
     )
 
-    assert len(provider.requests) == 2
-    assert not any(run.get("stage") == "frame" for run in result.analysis.model_runs)
-    assert result.intermediate.stage_outputs["frame_analysis_skipped"][-1]["reason"] == (
-        "multimodal_disabled"
-    )
+    assert len(provider.requests) == 3
+    assert any(run.get("stage") == "social_semiotic_frame" for run in result.analysis.model_runs)
+    assert result.intermediate.frame_analysis
 
 
 def test_ep24_frame_slice_can_be_enabled_independently_and_runs_before_summary() -> None:
     provider = SequencedProvider(
         [
-            cp.FrameProposal(description="Candidate at campaign event."),
+            cp.MultimodalFrameProposal(denotation=["Candidate at campaign event."]),
             _summary(),
             cp.DiscourseProposal(),
         ]
@@ -92,7 +99,7 @@ def test_ep24_frame_slice_can_be_enabled_independently_and_runs_before_summary()
 
     assert len(provider.requests) == 3
     assert result.intermediate.frame_analysis[0]["frame_id"] == "frame-001"
-    assert "Required output JSON shape" in provider.requests[0].user
+    assert "Multimodal Social-Semiotic Pre-Analysis" in provider.requests[0].system
     assert provider.requests[0].images == ("tests/fixtures/ep24_frame_sample.ppm",)
     assert "frame-001" in provider.requests[0].user
     assert "Synthetic election clip summary" not in provider.requests[0].user
@@ -118,7 +125,7 @@ def test_text_only_record_skips_frames_even_when_multimodal_enabled() -> None:
 
     assert len(provider.requests) == 2
     assert result.intermediate.stage_outputs["frame_analysis_skipped"][-1]["reason"] == (
-        "text_only_or_no_extracted_frames"
+        "no_materialized_image_or_video_frames"
     )
 
 
@@ -128,7 +135,7 @@ def test_ep24_frame_analysis_tolerates_missing_ocr_and_transcript_modalities() -
     assert record.content.transcripts == []
     provider = SequencedProvider(
         [
-            cp.FrameProposal(description="Visual evidence only."),
+            cp.MultimodalFrameProposal(denotation=["Visual evidence only."]),
             _summary(),
             cp.DiscourseProposal(),
         ]
@@ -146,11 +153,10 @@ def test_ep24_frame_analysis_tolerates_missing_ocr_and_transcript_modalities() -
     assert result.human_readable.summary == "EP24 summary"
 
 
-def test_ai26_with_frames_remains_text_first_without_explicit_multimodal_activation() -> None:
-    # No OCR/Whisper/download hook is passed here. The presence of an already
-    # extracted frame must not itself activate multimodal analysis.
+def test_ai26_with_frames_activates_multimodal_without_feature_flag() -> None:
     provider = SequencedProvider([
-        cp.MultimodalSummaryProposal(summary="Text-first summary"),
+        cp.MultimodalFrameProposal(denotation=["Synthetic frame"]),
+        cp.MultimodalSummaryProposal(summary="Media-aware summary"),
         cp.DiscourseProposal(),
     ])
 
@@ -162,8 +168,9 @@ def test_ai26_with_frames_remains_text_first_without_explicit_multimodal_activat
         model="fake-model",
     )
 
-    assert len(provider.requests) == 2
-    assert not any(run.get("stage") == "multimodal_frame" for run in result.analysis.model_runs)
-    assert result.intermediate.stage_outputs["frame_analysis_skipped"][-1]["reason"] == (
-        "multimodal_disabled"
+    assert len(provider.requests) == 3
+    assert any(
+        run.get("stage") == "social_semiotic_frame"
+        for run in result.analysis.model_runs
     )
+    assert result.intermediate.frame_analysis
