@@ -147,7 +147,7 @@ def test_ai26_with_frames_remains_text_first_without_explicit_multimodal_activat
     # No OCR/Whisper/download hook is passed here. The presence of an already
     # extracted frame must not itself activate multimodal analysis.
     provider = SequencedProvider([
-        Multimodalcp.SummaryProposal(summary="Text-first summary"),
+        cp.MultimodalSummaryProposal(summary="Text-first summary"),
         cp.DiscourseProposal(),
     ])
 
