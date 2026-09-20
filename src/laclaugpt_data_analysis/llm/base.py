@@ -70,6 +70,11 @@ class ChatRequest:
     allow_cloud_fallback: bool | None = None
     images: tuple[str, ...] = ()
 
+    @property
+    def user_prompt(self) -> str:
+        """Backward-compatible alias for the provider-neutral user field."""
+        return self.user
+
 
 class ProviderError(RuntimeError):
     """Raised when a provider cannot complete a call."""
