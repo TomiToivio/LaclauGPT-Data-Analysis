@@ -52,6 +52,13 @@ jobs:
           # Capture Ruff diagnostics for HEAD. Ruff exits non-zero when it finds
           # violations, so do not let `set -e` abort before we can compare them.
           ruff check --output-format=json -- "${FILES[@]}" > /tmp/ruff-head.json || true
+          python - <<'PY'
+          import json
+          with open("/tmp/ruff-head.json", encoding="utf-8") as handle:
+              for item in json.load(handle):
+                  if item.get("code") == "I001" and item.get("fix"):
+                      print("RUFF_I001_FIX", item["filename"], item["fix"])
+          PY
 
           # Recreate the base versions of changed files in a temporary tree and
           # lint them with the same repository configuration. Files added by the
