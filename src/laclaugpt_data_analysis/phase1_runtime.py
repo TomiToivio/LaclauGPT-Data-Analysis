@@ -14,8 +14,8 @@ from .canonical_pipeline import (
     summarize_record,
 )
 from .codebooks import CodebookEntry
+from .interchange import from_mongo_document, from_phase0_mongo_document
 from .phase1_shadow import preprocess_shadow_record
-from .interchange import from_phase0_mongo_document
 
 
 PHASE1_NAMESPACE = "phase1"
@@ -152,3 +152,58 @@ def persist_phase1_record(
         {"$set": {PHASE1_NAMESPACE: phase1_persistence_payload(record)}},
         upsert=False,
     )
+
+def load_persisted_phase1_record(source_document: Mapping[str, Any]) -> CanonicalRecord | None:
+    """Reload a previously persisted canonical Phase 1 record without recomputation."""
+    namespace = source_document.get(PHASE1_NAMESPACE)
+    if not isinstance(namespace, Mapping):
+        return None
+    payload = namespace.get("canonical_record")
+    if not isinstance(payload, Mapping):
+        return None
+    return from_mongo_document(payload)
+
+
+def persist_phase1_failure(
+    collection: Any,
+    source_document: Mapping[str, Any],
+    *,
+    stage: str,
+    error: Exception,
+) -> Any:
+    """Persist an isolated Phase 1 stage failure without touching Phase 0 fields."""
+    normalized_stage = stage.strip()
+    if not normalized_stage or any(char in normalized_stage for char in ".$"):
+        raise ValueError("stage must be a non-empty Mongo-safe field name")
+
+    if source_document.get("_id") is not None:
+        identity = {"_id": source_document["_id"]}
+    elif source_document.get("document_id"):
+        identity = {"document_id": source_document["document_id"]}
+    elif source_document.get("source_url"):
+        identity = {"source_url": source_document["source_url"]}
+    else:
+        raise ValueError("cannot persist Phase 1 failure without stable Phase 0 identity")
+
+    metadata = source_document.get("metadata")
+    metadata_source_url = metadata.get("source_url") if isinstance(metadata, Mapping) else None
+    source_url = str(source_document.get("source_url") or metadata_source_url or "")
+    prefix = f"{PHASE1_NAMESPACE}.failures.{normalized_stage}"
+    return collection.update_one(
+        identity,
+        {
+            "$set": {
+                f"{PHASE1_NAMESPACE}.runtime_version": PHASE1_RUNTIME_VERSION,
+                f"{PHASE1_NAMESPACE}.schema_version": SCHEMA_VERSION,
+                f"{PHASE1_NAMESPACE}.source_url": source_url,
+                f"{PHASE1_NAMESPACE}.status": "failed",
+                f"{prefix}.last_error": {
+                    "type": type(error).__name__,
+                    "message": str(error),
+                },
+            },
+            "$inc": {f"{prefix}.attempts": 1},
+        },
+        upsert=False,
+    )
+
