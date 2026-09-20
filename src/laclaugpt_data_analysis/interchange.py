@@ -244,6 +244,7 @@ def from_phase0_mongo_document(document: Mapping[str, Any]) -> CanonicalRecord:
         ),
         content=ContentSection(
             text=normalized_text,
+            frames=[FrameReference.model_validate(item) for item in document.get("frames", []) if isinstance(item, Mapping)],
             title=_none_if_blank(document.get("title") or metadata.get("title")),
             language=_none_if_blank(document.get("language") or metadata.get("language")),
         ),

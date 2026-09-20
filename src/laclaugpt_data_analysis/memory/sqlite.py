@@ -45,6 +45,25 @@ class SQLiteMemory:
             )
         return Resolution(raw=raw, kind=kind, decision="NEW")
 
+    def resolve_accepted(self, raw: str, kind: str) -> Resolution:
+        """Resolve only researcher-accepted canonical memory objects.
+
+        Unlike ``resolve``, this is safe for automatic runtime normalization:
+        provisional objects remain visible for review but are never attached to
+        Phase 1 output as accepted continuity identifiers.
+        """
+        norm = normalize(raw)
+        with sqlite3.connect(self.path) as connection:
+            row = connection.execute(
+                "SELECT o.obj_id, o.label FROM aliases a "
+                "JOIN objects o ON o.obj_id = a.obj_id "
+                "WHERE a.norm = ? AND o.kind = ? AND o.state = 'CANONICAL'",
+                (norm, kind),
+            ).fetchone()
+        if row:
+            return Resolution(raw=raw, kind=kind, obj_id=row[0], label=row[1], decision="EXISTING", matched_via="alias", score=1.0)
+        return Resolution(raw=raw, kind=kind, decision="NEW")
+
     def create(
         self,
         obj_id: str,
