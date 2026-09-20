@@ -21,7 +21,11 @@ Model routing is explicit. Laptop defaults to a small local Gemma 4 profile, Lin
 
 ## Memory
 
-Persistent stable-ID memory is separate from runtime retrieval. `SQLiteMemoryStore` is the zero-infrastructure default. Entries carry aliases, provenance references, temporal bounds and review state. Retrieval returns candidates and may abstain. Retrieved memory/codebook candidates are context, never evidence.
+Persistent stable-ID memory is separate from runtime retrieval. `SQLiteMemory` is the zero-infrastructure default and supports canonical actors, entities, topics, signifiers, targets and formations with aliases. Stable IDs are deterministic for a normalized kind + label.
+
+Resolution is deterministic and conservative: one accepted alias match resolves, no match abstains as `NEW`, and collisions abstain as `AMBIGUOUS` rather than choosing an arbitrary object. New objects default to `PROVISIONAL`; only explicit researcher action may move them to `CANONICAL`, and that promotion is reversible.
+
+When a memory store is passed to the Phase 1 analysis entrypoint, it is read-only. Accepted `CANONICAL` matches may replace ephemeral entity/topic/signifier IDs for longitudinal continuity, but provisional LLM output never writes to or promotes memory. Memory and codebook candidates remain normalization/context only, never source evidence, and do not alter evidence IDs, source URLs, confidence, uncertainty or human-review semantics.
 
 ## Codebooks
 
