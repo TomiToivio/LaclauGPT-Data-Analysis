@@ -1,4 +1,5 @@
 """Opt-in text-only Phase 1 runtime layered beside the stable Phase 0 pipeline."""
+
 from __future__ import annotations
 
 import os
