@@ -37,7 +37,22 @@ Outputs default to data/exports. Malformed input rows are reported in a separate
 
 ## Activation and rollback
 
-For a bounded Laskin comparison, set LACLAUGPT_PHASE1_ENABLED=1 only in the Phase 1 worker/process environment. Enable discourse with LACLAUGPT_PHASE1_DISCOURSE_ENABLED=1 after summary-only validation.
+For a bounded Laskin comparison, first prepare a copied/sanitized Phase 0 JSONL sample. The Phase 1 runner never claims the live Phase 0 queue.
+
+Preflight:
+
+    laclaugpt-phase1-laskin --check --input data/exports/phase0-laskin-sample.jsonl
+
+The default is disabled and performs no analysis. Activate summary-only processing in the Phase 1 process environment:
+
+    export LACLAUGPT_PHASE1_ENABLED=1
+    export LACLAUGPT_PHASE1_DISCOURSE_ENABLED=0
+    export LACLAUGPT_PHASE1_MAX_RECORDS=5
+    laclaugpt-phase1-laskin --input data/exports/phase0-laskin-sample.jsonl
+
+Results are written separately to data/exports/phase1-laskin-results.jsonl and a compact operator status to data/logs/phase1-laskin-status.json. Only after comparing the bounded summary output with Phase 0 should discourse be enabled with LACLAUGPT_PHASE1_DISCOURSE_ENABLED=1.
+
+The runner is text-only, hard-caps the number of records, reports the optional Ollama dependency cleanly, disables cloud fallback, and uses the Phase 1 context that explicitly keeps Phase 2 methods off.
 
 Rollback is immediate: unset both flags. Phase 0 fields are never overwritten. If Phase 1 persistence has been used, the isolated phase1 namespace can be ignored or removed without migrating Phase 0.
 
