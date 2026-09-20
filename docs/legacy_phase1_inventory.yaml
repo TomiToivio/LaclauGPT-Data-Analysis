@@ -1,0 +1,128 @@
+version: 1
+issue: 224
+phase: 1
+policy:
+  deletion_in_this_issue: false
+  rule: "Any unproven dependency remains quarantined; deletion requires a later dedicated issue."
+items:
+  - path: laclaugpt/puhti_preprocess.py
+    kind: legacy_script
+    decision: delete_after_replacement
+    state: quarantined
+    deletion_allowed: false
+    canonical_replacement:
+      - src/laclaugpt_data_analysis/multimodal/
+    regression_tests:
+      - tests/test_multimodal.py
+      - tests/test_issue_220_optional_multimodal.py
+    rationale: "Frame sampling, ASR/OCR and resumability belong in optional canonical multimodal adapters; the legacy executable is retained until the full replacement path is operationally proven."
+  - path: laclaugpt/puhti_frame.py
+    kind: legacy_script
+    decision: delete_after_replacement
+    state: quarantined
+    deletion_allowed: false
+    canonical_replacement:
+      - src/laclaugpt_data_analysis/multimodal/
+      - src/laclaugpt_data_analysis/prompts/ep24/frame_analysis_v2.md
+    regression_tests:
+      - tests/test_multimodal.py
+      - tests/test_issue_220_optional_multimodal.py
+    rationale: "Vision/frame behavior has a canonical evidence-first replacement, but the legacy script remains reference material until downstream EP24 operation is fully proven."
+  - path: laclaugpt/puhti_summary.py
+    kind: legacy_script
+    decision: delete_after_replacement
+    state: quarantined
+    deletion_allowed: false
+    canonical_replacement:
+      - src/laclaugpt_data_analysis/canonical_pipeline.py
+      - src/laclaugpt_data_analysis/prompts/ep24/summary_analysis_v2.md
+    regression_tests:
+      - tests/test_legacy_discourse_parity.py
+      - tests/test_phase1_text_runtime.py
+    rationale: "Multimodal synthesis and researcher-readable summary behavior are represented canonically; retain the old script while earlier Phase 1 activation issues remain open."
+  - path: laclaugpt/puhti_postprocess.py
+    kind: legacy_script
+    decision: delete_after_replacement
+    state: quarantined
+    deletion_allowed: false
+    canonical_replacement:
+      - src/laclaugpt_data_analysis/exporters.py
+      - src/laclaugpt_data_analysis/prompts/ep24/postprocess_v1.md
+    regression_tests:
+      - tests/test_legacy_discourse_parity.py
+      - tests/test_phase1_text_runtime.py
+    rationale: "Deterministic export and structured postprocessing have canonical homes; compatibility output remains useful for historical EP24 reproducibility."
+  - path: laclaugpt/puhti_populism.py
+    kind: legacy_script
+    decision: delete_after_replacement
+    state: quarantined
+    deletion_allowed: false
+    canonical_replacement:
+      - src/laclaugpt_data_analysis/canonical_pipeline.py
+      - src/laclaugpt_data_analysis/prompts/ep24/laclau_analysis_v2.md
+    regression_tests:
+      - tests/test_legacy_discourse_parity.py
+      - tests/test_phase1_text_runtime.py
+      - tests/test_plugin_pipeline.py
+    rationale: "The Laclau/Palonen analytical obligations belong in the canonical theory pipeline and plugin runtime, but the historical runner is retained as a parity reference."
+  - path: docs/legacy_ep24_prompts/
+    kind: compatibility_reference
+    decision: keep
+    state: reference_only
+    deletion_allowed: false
+    canonical_replacement:
+      - src/laclaugpt_data_analysis/prompts/ep24/
+    regression_tests:
+      - tests/test_prompt_library.py
+      - tests/test_legacy_discourse_parity.py
+    rationale: "These files document the historical scientific prompt contract and are useful for reproducibility; they are not runtime prompt resources."
+  - path: docs/EP24_LEGACY_PROMPTS.md
+    kind: compatibility_reference
+    decision: keep
+    state: reference_only
+    deletion_allowed: false
+    canonical_replacement:
+      - src/laclaugpt_data_analysis/prompts/ep24/
+    regression_tests:
+      - tests/test_prompt_library.py
+    rationale: "Keep as the provenance bridge between archived EP24 prompts and the versioned prompt library."
+  - path: docs/MULTIMODAL_MIGRATION.md
+    kind: migration_document
+    decision: keep
+    state: active_documentation
+    deletion_allowed: false
+    canonical_replacement:
+      - src/laclaugpt_data_analysis/multimodal/
+    regression_tests:
+      - tests/test_multimodal.py
+      - tests/test_issue_220_optional_multimodal.py
+    rationale: "This is the authoritative behavior-by-behavior migration map, not obsolete runtime code."
+  - path: src/laclaugpt_data_analysis/plugin_pipeline.py
+    symbol: LegacyLaclauPlugin
+    kind: compatibility_adapter
+    decision: adapt
+    state: active_compatibility
+    deletion_allowed: false
+    canonical_replacement:
+      - src/laclaugpt_data_analysis/plugin_pipeline.py
+    regression_tests:
+      - tests/test_plugin_pipeline.py
+    rationale: "The adapter is intentionally inside the canonical plugin runtime. Keep until all legacy-shaped callers use native plugins."
+  - path: laclaugpt/README.md
+    kind: legacy_assumptions_document
+    decision: adapt
+    state: quarantine_notes
+    deletion_allowed: false
+    canonical_replacement:
+      - docs/MULTIMODAL_MIGRATION.md
+      - docs/ANALYSIS_RUNTIME.md
+    regression_tests:
+      - tests/test_phase1_shadow_bridge.py
+      - tests/test_phase1_text_runtime.py
+    rationale: "Historical direct-script examples are useful context, but references to puhti_* must not be treated as canonical entry points."
+delete_after_replacement_candidates:
+  - laclaugpt/puhti_preprocess.py
+  - laclaugpt/puhti_frame.py
+  - laclaugpt/puhti_summary.py
+  - laclaugpt/puhti_postprocess.py
+  - laclaugpt/puhti_populism.py
