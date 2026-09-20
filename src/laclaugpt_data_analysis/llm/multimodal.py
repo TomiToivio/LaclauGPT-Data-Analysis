@@ -101,13 +101,20 @@ def _ollama_chat_with_images(provider: OllamaProvider, request: ChatRequest) -> 
 class FrameAwareProvider:
     """Attach actual local frame pixels to matching frame-analysis requests."""
 
-    def __init__(self, provider, frames) -> None:
+    def __init__(self, provider, frames, media_references=()) -> None:
         self.provider = provider
-        self._frames = {
-            str(frame.id): image
-            for frame in frames
-            if (image := _local_image(getattr(frame, "media_ref", None))) is not None
+        local_media = {
+            str(media.ref): media.local_ref
+            for media in media_references
+            if getattr(media, "ref", None) and getattr(media, "local_ref", None)
         }
+        self._frames: dict[str, str] = {}
+        for frame in frames:
+            ref = getattr(frame, "media_ref", None)
+            candidate = local_media.get(str(ref), ref)
+            image = _local_image(candidate)
+            if image is not None:
+                self._frames[str(frame.id)] = image
         self.attachments: list[dict[str, Any]] = []
 
     def chat(self, request: ChatRequest) -> LLMResponse:
