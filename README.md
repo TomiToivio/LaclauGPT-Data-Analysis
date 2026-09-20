@@ -1,5 +1,8 @@
 # LaclauGPT Data Analysis
 
+> [!IMPORTANT]
+> **Current development phase: Phase 1.** `main` is based on and synchronized with `phase-1`. The `phase-0` branch remains the preserved Phase 0 baseline; Phase 0 documentation and code remain Phase 0 and are not reclassified as Phase 1.
+
 [![tests](https://github.com/TomiToivio/LaclauGPT-Data-Analysis/actions/workflows/tests.yml/badge.svg)](https://github.com/TomiToivio/LaclauGPT-Data-Analysis/actions/workflows/tests.yml)
 
 > **Part of the [LaclauGPT](https://github.com/TomiToivio/LaclauGPT) project.** The main LaclauGPT repository is the **meta-repository** and project front door: it contains the scientific paper, theory, shared architecture, canonical data contract and complete-system documentation. This repository is only the **Data Analysis** implementation stage.
