@@ -21,7 +21,6 @@ from .canonical import SCHEMA_VERSION, CanonicalRecord
 from .canonical_pipeline import PipelineContext, run_canonical_pipeline
 from .codebooks import load_codebook
 from .config import Settings, load_settings
-from .phase1_laskin_runtime import load_ai26_runtime_policy
 from .llm.ollama import (
     LLM_ENDPOINT_ENV_ALIAS,
     LLM_HOST_ENV,
@@ -29,6 +28,7 @@ from .llm.ollama import (
     configured_llm_modes,
     resolve_llm_host,
 )
+from .phase1_laskin_runtime import load_ai26_runtime_policy
 from .staging import (
     MediaStager,
     ObjectUnavailableError,
