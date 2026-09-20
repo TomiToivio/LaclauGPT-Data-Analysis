@@ -157,6 +157,33 @@ def _adapt_shared_parity_fixture(data: dict[str, Any]) -> dict[str, Any]:
     for key in ("fixture_version", "source_units", "alignments"):
         if key in data:
             legacy[f"cross_module_{key}"] = data.get(key)
+
+    canonical_top_level = {
+        "schema_version",
+        "source_url",
+        "source_native_ids",
+        "raw_capture",
+        "source",
+        "content",
+        "intermediate",
+        "evidence",
+        "analysis",
+        "human_readable",
+        "provenance",
+        "review",
+        "legacy",
+        "fixture_version",
+        "source_units",
+        "alignments",
+    }
+    extensions = {
+        str(key): value
+        for key, value in data.items()
+        if key not in canonical_top_level
+    }
+    if extensions:
+        legacy["cross_module_extensions"] = extensions
+
     if "review_events" in review:
         legacy["cross_module_review_events"] = review.pop("review_events")
 
@@ -221,6 +248,7 @@ def normalize_schema_version(payload: Mapping[str, Any]) -> CanonicalRecord:
         )
         data["schema_version"] = SCHEMA_VERSION
     elif version in {"1.1", "1.1.0"}:
+        data = _adapt_shared_parity_fixture(data)
         data["schema_version"] = SCHEMA_VERSION
     elif version != SCHEMA_VERSION:
         raise UnsupportedSchemaVersion(
