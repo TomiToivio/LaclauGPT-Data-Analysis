@@ -85,3 +85,36 @@ def test_pipeline_preserves_uncertainty_and_human_review_boundary():
     assert result.analysis.uncertainty == ["Needs human review"]
     assert result.review.status is None
     assert result.analysis.formations[0].review_status == "PROVISIONAL"
+
+
+def test_pipeline_memory_normalization_is_optional_and_non_evidentiary(tmp_path):
+    memory = SQLiteMemory(tmp_path / "memory.sqlite3")
+    entity = memory.propose("entity", "Synthetic Actor", provenance="researcher-reviewed")
+    memory.accept(entity.obj_id)
+
+    source_url = "https://example.invalid/post/memory"
+    without_memory = analyze_record(
+        CanonicalRecord(
+            source_url=source_url,
+            content={"text": "Synthetic Actor discusses technology."},
+        ),
+        provider=FakeProvider(),
+        model="fake-model",
+    )
+    with_memory = analyze_record(
+        CanonicalRecord(
+            source_url=source_url,
+            content={"text": "Synthetic Actor discusses technology."},
+        ),
+        provider=FakeProvider(),
+        memory_store=memory,
+        model="fake-model",
+    )
+
+    assert without_memory.analysis.entities[0].entity_id == "entity:1"
+    assert with_memory.analysis.entities[0].entity_id == entity.obj_id
+    assert with_memory.analysis.memory_refs == [entity.obj_id]
+    assert with_memory.evidence == without_memory.evidence
+    assert with_memory.intermediate.stage_outputs["memory_normalization"]["evidence_role"] == (
+        "continuity_not_source_evidence"
+    )
