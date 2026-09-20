@@ -26,6 +26,7 @@ from .codebooks import CodebookEntry
 from .context_envelope import PromptEnvelope, build_prompt_envelope
 from .llm.structured_output import chat_structured
 from .models import Topic
+from .modality_routing import build_modality_plan, legacy_multimodal_projection
 from .prompt_library import load_prompt, prompt_provenance
 from .research_record import ensure_research_layers
 from .social_semiotic import (
@@ -694,18 +695,44 @@ def run_canonical_pipeline(record: CanonicalRecord, *, provider, context: Pipeli
     entries = codebook_entries or []
     record.analysis.started_at = record.analysis.started_at or datetime.now(UTC)
     preprocess_record(record, preprocessor=preprocessor)
-    from .llm.multimodal import FrameAwareProvider
+    plan = build_modality_plan(record)
+    _append_stage(record, "modality_plan", {
+        "created_at": datetime.now(UTC).isoformat(),
+        **plan.audit(),
+    })
 
-    frame_provider = FrameAwareProvider(
-        provider,
-        record.content.frames,
-        record.content.media_references,
-    )
-    analyze_frames(record, provider=frame_provider, context=ctx, codebook_entries=entries, model=model, prompt_version=f"{prompt_version}:frame", project_profile=project_profile, allow_cloud_fallback=allow_cloud_fallback)
-    _append_stage(record, "multimodal_visibility", frame_provider.audit())
+    if plan.needs_frame_analysis:
+        # Import the image-capable adapter lazily. Text/audio-only records never
+        # need multimodal dependencies or a vision-capable provider wrapper.
+        from .llm.multimodal import FrameAwareProvider
+
+        frame_provider = FrameAwareProvider(
+            provider,
+            record.content.frames,
+            record.content.media_references,
+        )
+        analyze_frames(
+            record,
+            provider=frame_provider,
+            context=ctx,
+            codebook_entries=entries,
+            model=model,
+            prompt_version=f"{prompt_version}:frame",
+            project_profile=project_profile,
+            allow_cloud_fallback=allow_cloud_fallback,
+        )
+        _append_stage(record, "multimodal_visibility", frame_provider.audit())
+    else:
+        _append_stage(record, "frame_analysis_skipped", {
+            "created_at": datetime.now(UTC).isoformat(),
+            "reason": "no_materialized_image_or_video_frames",
+            "modality_plan": plan.audit(),
+        })
+
     summary = summarize_record(record, provider=provider, context=ctx, codebook_entries=entries, model=model, prompt_version=f"{prompt_version}:summary", project_profile=project_profile, allow_cloud_fallback=allow_cloud_fallback)
     discourse = discourse_analysis(record, provider=provider, context=ctx, codebook_entries=entries, model=model, prompt_version=f"{prompt_version}:discourse", project_profile=project_profile, allow_cloud_fallback=allow_cloud_fallback) if _enabled(ctx, "laclau") or project_profile.casefold() != "ai26" else DiscourseProposal()
     postprocess_record(record, summary, discourse, ctx)
+    record.legacy["multimodal_compatibility"] = legacy_multimodal_projection(record)
     # Phase 2 / experimental methods remain explicit opt-ins and never enter the
     # Phase 1 default path. They run only after the five canonical Phase 1 stages.
     if _enabled(ctx, "critical_ai", default=False):
