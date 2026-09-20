@@ -151,13 +151,19 @@ def select_codebooks(
     return selected
 
 
-def seed_memory(codebook: Codebook, store) -> list[str]:
+def seed_memory(codebook: Codebook, store, *, accepted: bool = True) -> list[str]:
     ids: list[str] = []
     for entry in codebook.entries:
         obj_id = stable_codebook_id(entry)
         existing = store.resolve(entry.label, entry.kind)
         if existing.decision != "EXISTING":
-            store.create(obj_id, entry.kind, entry.label, provenance=entry.provenance)
+            store.create(
+                obj_id,
+                entry.kind,
+                entry.label,
+                provenance=entry.provenance,
+                state="CANONICAL" if accepted else "PROVISIONAL",
+            )
         for alias in entry.aliases:
             store.add_alias(obj_id, alias)
         ids.append(obj_id)
