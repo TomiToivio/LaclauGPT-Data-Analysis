@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from .canonical import CanonicalRecord, MediaReference
+from .canonical import CanonicalRecord, FrameReference, MediaReference
 
 CoverageState = Literal[
     "processed", "partial", "not_provided", "not_processed", "unsupported", "failed"
@@ -105,6 +105,33 @@ class ModalityPlan:
                 "audio": self.materialized_audio,
             },
         }
+
+
+def ensure_still_image_frames(record: CanonicalRecord) -> CanonicalRecord:
+    """Represent each materialized still image as a timestamp-zero visual unit.
+
+    This gives still images the same audited frame-analysis path as extracted
+    video frames without pretending they came from video decoding.
+    """
+    existing_refs = {str(frame.media_ref) for frame in record.content.frames if frame.media_ref}
+    next_index = len(record.content.frames) + 1
+    for media in record.content.media_references:
+        if _media_family(media) != "image" or not _materialized(media):
+            continue
+        media_key = str(media.ref or media.local_ref or "")
+        if not media_key or media_key in existing_refs:
+            continue
+        record.content.frames.append(
+            FrameReference(
+                id=f"image-{next_index:03d}",
+                timestamp_seconds=0.0,
+                media_ref=media.ref or media.local_ref,
+                description="Materialized still image",
+            )
+        )
+        existing_refs.add(media_key)
+        next_index += 1
+    return record
 
 
 def build_modality_plan(record: CanonicalRecord) -> ModalityPlan:
