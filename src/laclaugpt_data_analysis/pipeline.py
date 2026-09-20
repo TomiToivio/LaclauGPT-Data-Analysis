@@ -158,6 +158,7 @@ def analyze_record(
     source_context: str = "",
     situational_context: str = "",
     memory_context: str = "",
+    memory_store=None,
     rag_context: str = "",
     context_profile: str = "balanced",
     model: str = "auto",
@@ -169,6 +170,8 @@ def analyze_record(
     The compatibility entrypoint no longer sends only source text plus a codebook block.
     It renders the canonical PromptEnvelope through AnalysisContextBundle so callers may
     provide project/theory/source/situational/memory/RAG context with explicit trust roles.
+    When ``memory_store`` is supplied, only CANONICAL memory matches replace ephemeral
+    entity/topic/signifier IDs. The store is never mutated by this analysis call.
     """
     entries = codebook_entries or []
     selected_entries, codebook_selection = select_relevant_entries(
@@ -224,8 +227,21 @@ def analyze_record(
     record.analysis.started_at = record.analysis.started_at or now
     record.analysis.completed_at = now
     record.analysis.summary = proposal.summary or None
+
+    def stable_or_fallback(label: str, kind: str, fallback: str) -> str:
+        if memory_store is None:
+            return fallback
+        resolution = memory_store.resolve_accepted(label, kind)
+        if resolution.decision == "EXISTING":
+            return resolution.obj_id
+        return fallback
+
     record.analysis.entities = [
-        Entity(entity_id=f"entity:{index}", label=label, review_status="PROVISIONAL")
+        Entity(
+            entity_id=stable_or_fallback(label, "entity", f"entity:{index}"),
+            label=label,
+            review_status="PROVISIONAL",
+        )
         for index, label in enumerate(proposal.entities, start=1)
     ]
     record.analysis.classifications = [
@@ -244,7 +260,7 @@ def analyze_record(
     ]
     record.analysis.topics = [
         Topic(
-            topic_id=f"topic:{index}",
+            topic_id=stable_or_fallback(item.label, "topic", f"topic:{index}"),
             canonical_label=item.label,
             metadata={
                 "evidence_ids": _evidence_ids(record, item.evidence, f"topic:{index}"),
@@ -266,7 +282,7 @@ def analyze_record(
     )
     record.analysis.signifiers = [
         DiscourseObject(
-            object_id=f"signifiers:{index}",
+            object_id=stable_or_fallback(label, "signifier", f"signifiers:{index}"),
             label=label,
             kind="signifier",
             review_status="PROVISIONAL",
@@ -328,6 +344,7 @@ def analyze_record(
             "fallback_used": response.provenance.fallback_used,
             "context_profile": bundle.profile,
             "context_audit": context_audit,
+            "stable_memory_enabled": memory_store is not None,
             **prompt_meta,
         },
     )
