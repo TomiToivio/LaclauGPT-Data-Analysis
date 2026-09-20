@@ -28,6 +28,12 @@ from .llm.structured_output import chat_structured
 from .models import Topic
 from .prompt_library import load_prompt, prompt_provenance
 from .research_record import ensure_research_layers
+from .social_semiotic import (
+    MultimodalFrameProposal,
+    MultimodalSummaryProposal,
+    UncertaintyObservation,
+    assert_preanalysis_boundary,
+)
 
 # Shortest quote that may count as verbatim evidence. Below this length a match
 # is likely coincidence (a stray "AI" appears in almost any AI26 source), and a
@@ -62,23 +68,6 @@ class FrameProposal(BaseModel):
     symbols: list[str] = Field(default_factory=list)
     rhetorical_cues: list[str] = Field(default_factory=list)
     candidate_signifiers: list[str] = Field(default_factory=list)
-    uncertainty: list[str] = Field(default_factory=list)
-
-
-class MultimodalFrameProposal(BaseModel):
-    """Evidence-first semiotic frame description used by the AI26 pre-analysis path."""
-
-    material_canvas_organisation: list[str] = Field(default_factory=list)
-    scene_and_participants: list[str] = Field(default_factory=list)
-    subjects: list[str] = Field(default_factory=list)
-    objects: list[str] = Field(default_factory=list)
-    activities: list[str] = Field(default_factory=list)
-    visual_composition: list[str] = Field(default_factory=list)
-    visible_text: list[str] = Field(default_factory=list)
-    usernames: list[str] = Field(default_factory=list)
-    symbols_and_interface_cues: list[str] = Field(default_factory=list)
-    provenance_and_usage_cues: list[str] = Field(default_factory=list)
-    semiotic_contribution: str = ""
     uncertainty: list[str] = Field(default_factory=list)
 
 
@@ -134,35 +123,6 @@ class SummaryProposal(_CoerceStringListFields, BaseModel):
     feared_futures: list[str] = Field(default_factory=list)
     sociotechnical_imaginary_candidates: list[str] = Field(default_factory=list)
     ownership_governance_assumptions: list[str] = Field(default_factory=list)
-    uncertainty: list[str] = Field(default_factory=list)
-
-
-class CastellsContextProposal(BaseModel):
-    actors_organisations_institutions: list[str] = Field(default_factory=list)
-    networks_relations: list[str] = Field(default_factory=list)
-    flows: list[str] = Field(default_factory=list)
-    nodes_hubs_channels: list[str] = Field(default_factory=list)
-    space_of_places: list[str] = Field(default_factory=list)
-    space_of_flows: list[str] = Field(default_factory=list)
-    power_access_exclusion: list[str] = Field(default_factory=list)
-    uncertainty: list[str] = Field(default_factory=list)
-
-
-class MultimodalSummaryProposal(_CoerceStringListFields, BaseModel):
-    summary: str = ""
-    narrative: str = ""
-    semiotic_modes: list[str] = Field(default_factory=list)
-    cross_modal_relations: list[str] = Field(default_factory=list)
-    difficult_language: list[str] = Field(default_factory=list)
-    topics: list[str] = Field(default_factory=list)
-    entities: list[str] = Field(default_factory=list)
-    sentiment_observations: list[str] = Field(default_factory=list)
-    claims: list[str] = Field(default_factory=list)
-    demands: list[str] = Field(default_factory=list)
-    grievances: list[str] = Field(default_factory=list)
-    event_candidates: list[EventCandidate] = Field(default_factory=list)
-    castells_context: CastellsContextProposal = Field(default_factory=CastellsContextProposal)
-    later_analysis_cues: list[str] = Field(default_factory=list)
     uncertainty: list[str] = Field(default_factory=list)
 
 
@@ -338,10 +298,28 @@ def prompt_ids_for_stage(project_profile: str, stage: str) -> tuple[str, str]:
 
 
 def _summary_markdown(proposal: MultimodalSummaryProposal) -> str:
-    parts = ["# Multimodal item synthesis", proposal.narrative or proposal.summary]
-    if proposal.cross_modal_relations:
-        parts.extend(("## Cross-modal relations", "\n".join(f"- {x}" for x in proposal.cross_modal_relations)))
+    parts = [
+        "# Multimodal social-semiotic pre-analysis",
+        proposal.cross_modal_synthesis or proposal.narrative or proposal.summary,
+    ]
+    if proposal.intermodal_relations:
+        relations = "\n".join(
+            f"- {item.relation_type}: {item.description}"
+            for item in proposal.intermodal_relations
+        )
+        parts.extend(("## Intermodal relations", relations))
+    if proposal.limitations:
+        parts.extend(("## Limitations", "\n".join(f"- {x}" for x in proposal.limitations)))
     return "\n\n".join(part for part in parts if part).strip()
+
+
+def _summary_uncertainty(summary: SummaryResult) -> list[str]:
+    values = getattr(summary, "uncertainty", [])
+    return [
+        item.description if isinstance(item, UncertaintyObservation) else str(item)
+        for item in values
+        if item
+    ]
 
 
 def preprocess_record(record: CanonicalRecord, *, preprocessor: Preprocessor | None = None) -> CanonicalRecord:
@@ -378,14 +356,19 @@ def analyze_frames(record: CanonicalRecord, *, provider, context: PipelineContex
         })
         return record
     system_id, task_id = prompt_ids_for_stage(project_profile, "frame")
-    system_resource = load_prompt(system_id, version="v1")
-    task_resource = load_prompt(task_id, version="v2" if project_profile.casefold() == "ep24" else "v1")
     ai26_multimodal = project_profile.casefold() == "ai26"
+    system_resource = load_prompt(system_id, version="v2" if ai26_multimodal else "v1")
+    task_resource = load_prompt(
+        task_id,
+        version="v2" if (ai26_multimodal or project_profile.casefold() == "ep24") else "v1",
+    )
     for frame in record.content.frames:
         rendered_task = task_resource.render(frame_id=frame.id, timestamp_seconds=frame.timestamp_seconds, project_note="AI26 relevance guide only" if ai26_multimodal else "Generic descriptive frame analysis.")
         envelope = _envelope(record, context, task=rendered_task.text, codebook_entries=codebook_entries, prompt_version=prompt_version)
         proposal_model = MultimodalFrameProposal if ai26_multimodal else FrameProposal
         proposal, response = chat_structured(provider, proposal_model, model=model, system_prompt=system_resource.text, user_prompt=envelope.render(), allow_cloud_fallback=allow_cloud_fallback)
+        if ai26_multimodal:
+            assert_preanalysis_boundary(proposal.model_dump(mode="json"))
         prompt_meta = prompt_provenance(system_resource, task_resource, rendered=rendered_task)
         run_meta = _model_run_metadata(context, response, prompt_meta, prompt_version=prompt_version, stage="multimodal_frame" if ai26_multimodal else "frame")
         record.intermediate.frame_analysis.append({"frame_id": frame.id, "timestamp_seconds": frame.timestamp_seconds, "analysis": proposal.model_dump(mode="json"), "prompt_version": prompt_version, **prompt_meta, "context_provenance": envelope.provenance_snapshot(), "model_run": run_meta})
@@ -396,12 +379,17 @@ def analyze_frames(record: CanonicalRecord, *, provider, context: PipelineContex
 def summarize_record(record: CanonicalRecord, *, provider, context: PipelineContext, codebook_entries: list[CodebookEntry], model: str, prompt_version: str, project_profile: str, allow_cloud_fallback: bool | None) -> SummaryResult:
     ai26_multimodal = project_profile.casefold() == "ai26"
     system_id, task_id = prompt_ids_for_stage(project_profile, "summary")
-    system_resource = load_prompt(system_id, version="v1")
-    task_resource = load_prompt(task_id, version="v2" if project_profile.casefold() == "ep24" else "v1")
+    system_resource = load_prompt(system_id, version="v2" if ai26_multimodal else "v1")
+    task_resource = load_prompt(
+        task_id,
+        version="v2" if (ai26_multimodal or project_profile.casefold() == "ep24") else "v1",
+    )
     rendered_task = task_resource.render(project_note="AI26 multimodal/light sociology summary." if ai26_multimodal else "(none)")
     envelope = _envelope(record, context, task=rendered_task.text, codebook_entries=codebook_entries, prompt_version=prompt_version)
     proposal_model = MultimodalSummaryProposal if ai26_multimodal else SummaryProposal
     proposal, response = chat_structured(provider, proposal_model, model=model, system_prompt=system_resource.text, user_prompt=envelope.render(), allow_cloud_fallback=allow_cloud_fallback)
+    if ai26_multimodal:
+        assert_preanalysis_boundary(proposal.model_dump(mode="json"))
     prompt_meta = prompt_provenance(system_resource, task_resource, rendered=rendered_task)
     run_meta = _model_run_metadata(context, response, prompt_meta, prompt_version=prompt_version, stage="multimodal_summary" if ai26_multimodal else "summary")
     now = datetime.now(UTC).isoformat()
@@ -410,8 +398,6 @@ def summarize_record(record: CanonicalRecord, *, provider, context: PipelineCont
     record.human_readable.markdown = _summary_markdown(proposal) if isinstance(proposal, MultimodalSummaryProposal) else (proposal.narrative or proposal.summary)
     record.analysis.model_runs.append(run_meta)
     _append_stage(record, "multimodal_synthesis" if ai26_multimodal else "summary_preanalysis", {"created_at": now, "prompt_version": prompt_version, **prompt_meta, "context_provenance": envelope.provenance_snapshot(), "proposal": proposal.model_dump(mode="json"), "model_run": run_meta})
-    if isinstance(proposal, MultimodalSummaryProposal):
-        _append_stage(record, "castells_context", {"created_at": now, "proposal": proposal.castells_context.model_dump(mode="json")})
     return proposal
 
 
@@ -548,7 +534,7 @@ def postprocess_record(record: CanonicalRecord, summary: SummaryResult, discours
     record.analysis.frontier = _objects(record, discourse.frontiers, "frontier")
     record.analysis.affects = _objects(record, discourse.affects, "affect")
     record.analysis.formula_of_populism = {"populist": discourse.populist, "non_populist_reason": discourse.non_populist_reason, **discourse.formula_of_populism}
-    record.analysis.uncertainty = list(dict.fromkeys(summary.uncertainty + discourse.uncertainty))
+    record.analysis.uncertainty = list(dict.fromkeys(_summary_uncertainty(summary) + discourse.uncertainty))
     record.analysis.abstentions = discourse.abstentions
     record.analysis.equivalence_chains = _relation_chains(record, discourse.equivalences, "equivalence")
     record.analysis.difference_chains = _relation_chains(record, discourse.differences, "difference")
