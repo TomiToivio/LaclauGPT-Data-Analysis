@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 Mode = Literal[
     "linguistic", "visual", "auditory", "gestural", "spatial", "typographic",
@@ -36,6 +36,25 @@ class EvidencePointer(StrictMethodModel):
     timestamp_end: float | None = Field(default=None, ge=0)
     confidence: Confidence = "unknown"
     uncertainty: str = ""
+
+
+class EventCandidate(StrictMethodModel):
+    """Descriptive event candidate retained for canonical compatibility."""
+
+    description: str = ""
+    time: str = ""
+    location: str = ""
+    actors: list[str] = Field(default_factory=list)
+    evidence: list[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.0, ge=0, le=1)
+
+    @field_validator("actors", "evidence", mode="before")
+    @classmethod
+    def _coerce_single_string(cls, value):
+        if isinstance(value, str):
+            text = value.strip()
+            return [text] if text else []
+        return value
 
 
 class SemioticResource(StrictMethodModel):
@@ -200,7 +219,25 @@ class MultimodalSummaryProposal(StrictMethodModel):
     topics: list[str] = Field(default_factory=list)
     entities: list[str] = Field(default_factory=list)
     claims: list[str] = Field(default_factory=list)
-    event_candidates: list[dict] = Field(default_factory=list)
+    event_candidates: list[EventCandidate] = Field(default_factory=list)
+
+    @field_validator(
+        "source_languages",
+        "semiotic_modes",
+        "cross_modal_relations",
+        "difficult_language",
+        "topics",
+        "entities",
+        "claims",
+        "limitations",
+        mode="before",
+    )
+    @classmethod
+    def _coerce_single_string_list(cls, value):
+        if isinstance(value, str):
+            text = value.strip()
+            return [text] if text else []
+        return value
 
     @property
     def sentiment_observations(self) -> list[str]:
