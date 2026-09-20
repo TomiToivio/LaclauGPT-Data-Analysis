@@ -361,3 +361,75 @@ Use a synthetic/public-safe record rather than private research material:
   deliberate opt-in;
 - the six formation anchors are provisional sensitising concepts, never actor
   identities or ground truth.
+
+
+## Phase 1 canonical runtime contract (#272)
+
+The Laskin worker now reads study semantics from the packaged canonical Phase 1
+AI26 protocol created in #269. Operational code must not duplicate the AI26
+study boundary or report dimensions.
+
+The public profile controls:
+
+- `filters.date_after` for incremental Collection -> Analysis ingestion;
+- the Phase 1 stage map recorded in runtime provenance;
+- the 24h periodic-report interval;
+- report grouping dimensions (signifier, formation, author, arena, language,
+  region, topic);
+- deterministic Phase 1 config and codebook fingerprints.
+
+The Collection handoff query uses a strict `$gt` comparison for
+`filters.date_after`, so the documented AI26 rule “after 2026-09-01” is
+configuration, not Python logic.
+
+### Visualization handoff
+
+The distributed analysis path writes directly to namespaced MongoDB collections.
+No bespoke export step is required for the Phase 1 dashboard:
+
+| Collection role | Payload | Visualization use |
+| --- | --- | --- |
+| `analysis_results` | canonical analyzed record under `result`, task/run identity and provenance | recent feed, item drilldown, signifier/formation timelines, actors/entities, evidence inspection, DNA/SNA fields when present |
+| `analysis_failures` | failed task identity, attempt, error class and provenance | operational diagnostics |
+| `periodic_reports` | stable report id, scope, 24h window, structured summary payload, SHA-256 and protocol provenance | report views, trend summaries, bounded historical context |
+
+All collections are namespaced through `Settings.distributed_namespace`, and
+all report queries are isolated by both `project_id` and `run_id`.
+
+A periodic report document has the stable identity key:
+
+```text
+(project_id, run_id, report_id)
+```
+
+and contains `scope_key`, `window_start`, `window_end`, the complete
+`PeriodicDiscourseSummary` under `payload`, its `sha256`, and canonical
+Phase 1 config/codebook revisions. Re-running the hourly Laskin wrapper updates
+the same latest completed 24h report rather than creating duplicates.
+
+### Periodic report operation
+
+The normal wrapper runs reports automatically after a successful analysis
+cycle. It can also be invoked directly:
+
+```bash
+.venv/bin/laclaugpt-phase1-laskin-report --run-id "$LACLAUGPT_RUN_ID"
+```
+
+Set `LACLAUGPT_PERIODIC_REPORTS=0` only for deliberate maintenance/debugging.
+A report failure makes the wrapper exit non-zero so unattended monitoring does
+not mistake a missing research report for a healthy full cycle.
+
+### Configuration changes and stale work
+
+The canonical Phase 1 profile and codebook fingerprints are added to worker and
+report provenance. Changing a meaningful public protocol setting therefore
+changes the fingerprint recorded with new outputs. The existing frozen private
+run-manifest hashes remain responsible for private configuration/codebook
+pinning; together these two layers preserve the public/private split without
+placing private AI26 material in this repository.
+
+### Phase 0 isolation
+
+These changes are Phase 1-only. They do not modify the `phase-0` branch or its
+runtime. Public tests use only packaged public profiles and synthetic values.

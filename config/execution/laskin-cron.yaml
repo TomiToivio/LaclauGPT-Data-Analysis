@@ -53,3 +53,14 @@ logging:
 retry:
   max_attempts: 3
   dead_letter: true
+
+
+periodic_reports:
+  # The wrapper regenerates the latest completed canonical report window after
+  # a successful worker cycle. Upserts make hourly execution idempotent while
+  # the study profile controls the actual report interval (24h for AI26).
+  after_successful_worker: true
+  command: laclaugpt-phase1-laskin-report
+  source: mongodb
+  destination: mongodb
+  collection_role: periodic_reports

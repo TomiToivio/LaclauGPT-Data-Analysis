@@ -208,5 +208,28 @@ set +e
 STATUS=$?
 set -e
 
+# Periodic reports are part of the Phase 1 runtime contract. Recomputing the
+# latest completed window on every successful hourly tick is safe because the
+# report command upserts stable report identities.
+if [[ "$STATUS" -eq 0 && "${LACLAUGPT_PERIODIC_REPORTS:-1}" != "0" ]]; then
+  REPORT_BIN="$ROOT_DIR/.venv/bin/laclaugpt-phase1-laskin-report"
+  if [[ -x "$REPORT_BIN" ]]; then
+    log "AI26 Phase 1 periodic report start run=$LACLAUGPT_RUN_ID"
+    set +e
+    "$REPORT_BIN" --run-id "$LACLAUGPT_RUN_ID"
+    REPORT_STATUS=$?
+    set -e
+    if [[ "$REPORT_STATUS" -ne 0 ]]; then
+      log "AI26 Phase 1 periodic report failed status=$REPORT_STATUS"
+      STATUS=$REPORT_STATUS
+    else
+      log "AI26 Phase 1 periodic report end status=0"
+    fi
+  else
+    log "AI26 Phase 1 periodic report command missing: $REPORT_BIN"
+    STATUS=2
+  fi
+fi
+
 log "AI26 Laskin analysis end status=$STATUS"
 exit "$STATUS"
