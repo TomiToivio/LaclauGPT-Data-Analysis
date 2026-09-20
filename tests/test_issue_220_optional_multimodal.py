@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from laclaugpt_data_analysis.canonical import CanonicalRecord
-from laclaugpt_data_analysis.llm.base import ChatRequest, LLMCallProvenance, LLMResponse
-from laclaugpt_data_analysis import canonical_pipeline as cp
+import laclaugpt_data_analysis.canonical as canonical
+import laclaugpt_data_analysis.canonical_pipeline as cp
+import laclaugpt_data_analysis.llm.base as llm_base
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "ep24_media_sample.json"
@@ -14,14 +14,14 @@ FIXTURE = Path(__file__).parent / "fixtures" / "ep24_media_sample.json"
 class SequencedProvider:
     def __init__(self, payloads):
         self.payloads = list(payloads)
-        self.requests: list[ChatRequest] = []
+        self.requests: list[llm_base.ChatRequest] = []
 
-    def chat(self, request: ChatRequest) -> LLMResponse:
+    def chat(self, request: llm_base.ChatRequest) -> llm_base.LLMResponse:
         self.requests.append(request)
         payload = self.payloads.pop(0)
-        return LLMResponse(
+        return llm_base.LLMResponse(
             content=payload.model_dump_json(),
-            provenance=LLMCallProvenance(
+            provenance=llm_base.LLMCallProvenance(
                 requested_mode="local",
                 requested_model="fake-model",
                 resolved_model="fake-model",
@@ -32,8 +32,8 @@ class SequencedProvider:
         )
 
 
-def _fixture_record() -> CanonicalRecord:
-    return CanonicalRecord.model_validate(json.loads(FIXTURE.read_text(encoding="utf-8")))
+def _fixture_record() -> canonical.CanonicalRecord:
+    return canonical.CanonicalRecord.model_validate(json.loads(FIXTURE.read_text(encoding="utf-8")))
 
 
 def _context(*, multimodal: bool) -> cp.PipelineContext:
