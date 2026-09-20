@@ -9,8 +9,8 @@ from laclaugpt_data_analysis.canonical_pipeline import (
     FrameProposal,
     MultimodalSummaryProposal,
     PipelineContext,
-    SummaryProposal,
     run_canonical_pipeline,
+    SummaryProposal,
 )
 from laclaugpt_data_analysis.llm.base import ChatRequest, LLMCallProvenance, LLMResponse
 
