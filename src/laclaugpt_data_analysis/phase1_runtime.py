@@ -10,9 +10,9 @@ from typing import Any
 from .analysis_context import codebook_context
 from .canonical import CanonicalRecord, SCHEMA_VERSION
 from .canonical_pipeline import (
+    PipelineContext,
     analyze_frames,
     discourse_analysis,
-    PipelineContext,
     postprocess_record,
     summarize_record,
 )
