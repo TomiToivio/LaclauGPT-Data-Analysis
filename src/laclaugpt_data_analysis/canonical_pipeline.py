@@ -302,6 +302,15 @@ def prompt_ids_for_stage(project_profile: str, stage: str) -> tuple[str, str]:
     raise ValueError(f"unsupported canonical pipeline stage: {stage}")
 
 
+def phase1_preanalysis_prompt_ids(stage: str) -> tuple[str, str]:
+    """Current Phase 1 descriptive prompt family, independent of corpus profile."""
+    if stage == "frame":
+        return "multimodal.system", "multimodal.frame_analysis"
+    if stage == "summary":
+        return "multimodal.system", "multimodal.summary_analysis"
+    raise ValueError(f"unsupported Phase 1 pre-analysis stage: {stage}")
+
+
 def _summary_markdown(proposal: MultimodalSummaryProposal) -> str:
     parts = [
         "# Multimodal social-semiotic pre-analysis",
@@ -351,49 +360,43 @@ def analyze_frames(record: CanonicalRecord, *, provider, context: PipelineContex
         return record
     # Phase 1 is capability-driven: the presence of canonical visual units is
     # the activation gate. Text-only records have already returned above.
-    system_id, task_id = prompt_ids_for_stage(project_profile, "frame")
-    ai26_multimodal = project_profile.casefold() == "ai26"
-    system_resource = load_prompt(system_id, version="v2" if ai26_multimodal else "v1")
-    task_resource = load_prompt(
-        task_id,
-        version="v2" if (ai26_multimodal or project_profile.casefold() == "ep24") else "v1",
-    )
+    system_id, task_id = phase1_preanalysis_prompt_ids("frame")
+    system_resource = load_prompt(system_id, version="v2")
+    task_resource = load_prompt(task_id, version="v2")
     for frame in record.content.frames:
-        rendered_task = task_resource.render(frame_id=frame.id, timestamp_seconds=frame.timestamp_seconds, project_note="AI26 relevance guide only" if ai26_multimodal else "Generic descriptive frame analysis.")
+        rendered_task = task_resource.render(
+            frame_id=frame.id,
+            timestamp_seconds=frame.timestamp_seconds,
+            project_note=f"{project_profile.upper()} source context only; remain descriptive.",
+        )
         envelope = _envelope(record, context, task=rendered_task.text, codebook_entries=codebook_entries, prompt_version=prompt_version)
-        proposal_model = MultimodalFrameProposal if ai26_multimodal else FrameProposal
-        proposal, response = chat_structured(provider, proposal_model, model=model, system_prompt=system_resource.text, user_prompt=envelope.render(), allow_cloud_fallback=allow_cloud_fallback)
-        if ai26_multimodal:
-            assert_preanalysis_boundary(proposal.model_dump(mode="json"))
+        proposal, response = chat_structured(provider, MultimodalFrameProposal, model=model, system_prompt=system_resource.text, user_prompt=envelope.render(), allow_cloud_fallback=allow_cloud_fallback)
+        assert_preanalysis_boundary(proposal.model_dump(mode="json"))
         prompt_meta = prompt_provenance(system_resource, task_resource, rendered=rendered_task)
-        run_meta = _model_run_metadata(context, response, prompt_meta, prompt_version=prompt_version, stage="multimodal_frame" if ai26_multimodal else "frame")
+        run_meta = _model_run_metadata(context, response, prompt_meta, prompt_version=prompt_version, stage="social_semiotic_frame")
         record.intermediate.frame_analysis.append({"frame_id": frame.id, "timestamp_seconds": frame.timestamp_seconds, "analysis": proposal.model_dump(mode="json"), "prompt_version": prompt_version, **prompt_meta, "context_provenance": envelope.provenance_snapshot(), "model_run": run_meta})
         record.analysis.model_runs.append(run_meta)
     return record
 
 
 def summarize_record(record: CanonicalRecord, *, provider, context: PipelineContext, codebook_entries: list[CodebookEntry], model: str, prompt_version: str, project_profile: str, allow_cloud_fallback: bool | None) -> SummaryResult:
-    ai26_multimodal = project_profile.casefold() == "ai26"
-    system_id, task_id = prompt_ids_for_stage(project_profile, "summary")
-    system_resource = load_prompt(system_id, version="v2" if ai26_multimodal else "v1")
-    task_resource = load_prompt(
-        task_id,
-        version="v2" if (ai26_multimodal or project_profile.casefold() == "ep24") else "v1",
+    system_id, task_id = phase1_preanalysis_prompt_ids("summary")
+    system_resource = load_prompt(system_id, version="v2")
+    task_resource = load_prompt(task_id, version="v2")
+    rendered_task = task_resource.render(
+        project_note=f"{project_profile.upper()} source context only; remain descriptive."
     )
-    rendered_task = task_resource.render(project_note="AI26 multimodal/light sociology summary." if ai26_multimodal else "(none)")
     envelope = _envelope(record, context, task=rendered_task.text, codebook_entries=codebook_entries, prompt_version=prompt_version)
-    proposal_model = MultimodalSummaryProposal if ai26_multimodal else SummaryProposal
-    proposal, response = chat_structured(provider, proposal_model, model=model, system_prompt=system_resource.text, user_prompt=envelope.render(), allow_cloud_fallback=allow_cloud_fallback)
-    if ai26_multimodal:
-        assert_preanalysis_boundary(proposal.model_dump(mode="json"))
+    proposal, response = chat_structured(provider, MultimodalSummaryProposal, model=model, system_prompt=system_resource.text, user_prompt=envelope.render(), allow_cloud_fallback=allow_cloud_fallback)
+    assert_preanalysis_boundary(proposal.model_dump(mode="json"))
     prompt_meta = prompt_provenance(system_resource, task_resource, rendered=rendered_task)
-    run_meta = _model_run_metadata(context, response, prompt_meta, prompt_version=prompt_version, stage="multimodal_summary" if ai26_multimodal else "summary")
+    run_meta = _model_run_metadata(context, response, prompt_meta, prompt_version=prompt_version, stage="social_semiotic_summary")
     now = datetime.now(UTC).isoformat()
     record.human_readable.summary = proposal.summary
     record.human_readable.generated_at = now
-    record.human_readable.markdown = _summary_markdown(proposal) if isinstance(proposal, MultimodalSummaryProposal) else (proposal.narrative or proposal.summary)
+    record.human_readable.markdown = _summary_markdown(proposal)
     record.analysis.model_runs.append(run_meta)
-    _append_stage(record, "multimodal_synthesis" if ai26_multimodal else "summary_preanalysis", {"created_at": now, "prompt_version": prompt_version, **prompt_meta, "context_provenance": envelope.provenance_snapshot(), "proposal": proposal.model_dump(mode="json"), "model_run": run_meta})
+    _append_stage(record, "multimodal_synthesis", {"created_at": now, "prompt_version": prompt_version, **prompt_meta, "context_provenance": envelope.provenance_snapshot(), "proposal": proposal.model_dump(mode="json"), "model_run": run_meta})
     return proposal
 
 
