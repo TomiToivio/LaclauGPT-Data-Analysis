@@ -16,6 +16,12 @@ from .models import (
 
 
 class SQLiteMemory:
+    """Persistent analytical memory used only for continuity and normalization.
+
+    Memory never constitutes source evidence. New model guesses should be stored
+    as PROVISIONAL, and only explicit researcher action may mark them CANONICAL.
+    """
+
     def __init__(self, path: str | Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -30,34 +36,26 @@ class SQLiteMemory:
                 "CREATE TABLE IF NOT EXISTS aliases ("
                 "norm TEXT NOT NULL, obj_id TEXT NOT NULL, UNIQUE(norm, obj_id))"
             )
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_memory_alias_norm ON aliases(norm)"
-            )
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_memory_object_kind_state "
-                "ON objects(kind, state)"
-            )
 
-    @staticmethod
-    def _validate_kind(kind: str) -> None:
+    def _resolve(self, raw: str, kind: str, *, accepted_only: bool) -> Resolution:
         if kind not in KINDS:
             raise ValueError(f"unsupported memory kind: {kind}")
-
-    def _resolve_states(self, raw: str, kind: str, states: tuple[str, ...]) -> Resolution:
-        self._validate_kind(kind)
         norm = normalize(raw)
         if not norm:
             return Resolution(raw=raw, kind=kind, decision="NEW")
-        placeholders = ",".join("?" for _ in states)
+
+        state_clause = "AND o.state = 'CANONICAL'" if accepted_only else (
+            "AND o.state NOT IN ('REJECTED', 'MERGED')"
+        )
         with sqlite3.connect(self.path) as connection:
             rows = connection.execute(
-                "SELECT DISTINCT o.obj_id, o.label FROM aliases a "
+                "SELECT o.obj_id, o.label FROM aliases a "
                 "JOIN objects o ON o.obj_id = a.obj_id "
                 "WHERE a.norm = ? AND o.kind = ? "
-                f"AND o.state IN ({placeholders}) "
-                "ORDER BY o.obj_id",
-                (norm, kind, *states),
+                f"{state_clause} ORDER BY o.obj_id ASC",
+                (norm, kind),
             ).fetchall()
+
         if len(rows) == 1:
             return Resolution(
                 raw=raw,
@@ -74,23 +72,22 @@ class SQLiteMemory:
                 kind=kind,
                 decision="AMBIGUOUS",
                 matched_via="alias",
-                score=0.0,
+                score=1.0,
             )
         return Resolution(raw=raw, kind=kind, decision="NEW")
 
     def resolve(self, raw: str, kind: str) -> Resolution:
-        """Resolve review-visible objects, abstaining on alias collisions."""
-        return self._resolve_states(raw, kind, ("CANONICAL", "PROVISIONAL", "DEPRECATED"))
+        """Resolve against active memory, including provisional candidates."""
+        return self._resolve(raw, kind, accepted_only=False)
 
     def resolve_accepted(self, raw: str, kind: str) -> Resolution:
-        """Resolve only researcher-accepted canonical objects.
+        """Resolve only researcher-accepted canonical memory objects.
 
-        This is the only resolver intended for automatic runtime normalization.
-        Provisional LLM/research suggestions remain visible for review but can
-        never become accepted continuity identifiers without an explicit state
-        transition.
+        This is the only resolver suitable for automatic output normalization:
+        provisional objects remain reviewable but cannot silently become stable
+        identifiers in Phase 1 analysis results.
         """
-        return self._resolve_states(raw, kind, ("CANONICAL",))
+        return self._resolve(raw, kind, accepted_only=True)
 
     def create(
         self,
@@ -101,12 +98,13 @@ class SQLiteMemory:
         *,
         state: str = "PROVISIONAL",
     ) -> MemoryRef:
-        self._validate_kind(kind)
+        if kind not in KINDS:
+            raise ValueError(f"unsupported memory kind: {kind}")
         if state not in STATES:
             raise ValueError(f"unsupported memory state: {state}")
         norm = normalize(label)
         if not norm:
-            raise ValueError("memory label may not be empty")
+            raise ValueError("memory label must not be empty")
         canonical_label = display_label(norm, kind)
         with sqlite3.connect(self.path) as connection:
             connection.execute(
@@ -120,19 +118,29 @@ class SQLiteMemory:
             )
         return MemoryRef(obj_id, canonical_label, kind, label)
 
-    def propose(self, kind: str, label: str, *, provenance: str = "") -> MemoryRef:
-        """Persist a deterministic PROVISIONAL object without accepting it."""
-        obj_id = stable_memory_id(kind, label)
-        try:
-            return self.create(obj_id, kind, label, provenance=provenance)
-        except sqlite3.IntegrityError:
-            resolution = self.resolve(label, kind)
-            if resolution.decision == "EXISTING" and resolution.obj_id == obj_id:
-                return MemoryRef(obj_id, resolution.label, kind, label)
-            raise
+    def create_stable(
+        self,
+        kind: str,
+        label: str,
+        provenance: str = "",
+        *,
+        state: str = "PROVISIONAL",
+    ) -> MemoryRef:
+        """Create one deterministic stable-ID object.
+
+        The default remains PROVISIONAL. Callers must opt in explicitly to
+        CANONICAL state for researcher-approved seeds.
+        """
+        return self.create(
+            stable_memory_id(kind, label),
+            kind,
+            label,
+            provenance=provenance,
+            state=state,
+        )
 
     def set_state(self, obj_id: str, state: str) -> None:
-        """Explicit researcher/review transition; never called by resolve()."""
+        """Explicitly change review state; CANONICAL promotion is reversible."""
         if state not in STATES:
             raise ValueError(f"unsupported memory state: {state}")
         with sqlite3.connect(self.path) as connection:
@@ -143,14 +151,10 @@ class SQLiteMemory:
             if cursor.rowcount != 1:
                 raise KeyError(obj_id)
 
-    def accept(self, obj_id: str) -> None:
-        """Mark an already-reviewed object canonical."""
-        self.set_state(obj_id, "CANONICAL")
-
     def add_alias(self, obj_id: str, alias: str) -> None:
         norm = normalize(alias)
         if not norm:
-            raise ValueError("memory alias may not be empty")
+            raise ValueError("memory alias must not be empty")
         with sqlite3.connect(self.path) as connection:
             exists = connection.execute(
                 "SELECT 1 FROM objects WHERE obj_id = ?",
