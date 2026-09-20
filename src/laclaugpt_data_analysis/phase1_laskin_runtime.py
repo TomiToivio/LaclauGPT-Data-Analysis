@@ -9,14 +9,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from importlib.resources import files
+from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
 from .phase1_protocol import compose_protocol, load_mapping
 
 
-_RESOURCE_ROOT = files("laclaugpt_data_analysis").joinpath("resources", "phase1")
+_RESOURCE_ROOT = Path(__file__).resolve().parent / "resources" / "phase1"
 _DEFAULTS = _RESOURCE_ROOT.joinpath("defaults.yaml")
 _AI26 = _RESOURCE_ROOT.joinpath("ai26.yaml")
 _CODEBOOK = _RESOURCE_ROOT.joinpath("phase1_v1.yaml")
