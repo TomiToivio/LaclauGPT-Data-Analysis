@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import ast
 import pathlib
-import re
 import tomllib
 
 
@@ -18,17 +18,46 @@ PUHTI_MODULES = {
 }
 
 
+def _legacy_puhti_imports(path: pathlib.Path) -> list[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    offenders: list[str] = []
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                name = alias.name
+                if name in PUHTI_MODULES:
+                    offenders.append(name)
+                    continue
+                for module in PUHTI_MODULES:
+                    if name == f"laclaugpt.{module}" or name.startswith(f"laclaugpt.{module}."):
+                        offenders.append(name)
+
+        elif isinstance(node, ast.ImportFrom):
+            module = node.module or ""
+            if module in PUHTI_MODULES:
+                offenders.append(module)
+                continue
+
+            for legacy_module in PUHTI_MODULES:
+                if module == f"laclaugpt.{legacy_module}" or module.startswith(
+                    f"laclaugpt.{legacy_module}."
+                ):
+                    offenders.append(module)
+
+            if module == "laclaugpt":
+                for alias in node.names:
+                    if alias.name in PUHTI_MODULES:
+                        offenders.append(f"laclaugpt.{alias.name}")
+
+    return offenders
+
+
 def test_active_runtime_does_not_import_quarantined_puhti_modules() -> None:
-    import_pattern = re.compile(
-        r"^\s*(?:from|import)\s+(?:laclaugpt\.)?(puhti_[A-Za-z0-9_]*)\b",
-        re.MULTILINE,
-    )
     offenders: list[str] = []
     for path in SRC.rglob("*.py"):
-        text = path.read_text(encoding="utf-8")
-        for match in import_pattern.finditer(text):
-            if match.group(1) in PUHTI_MODULES:
-                offenders.append(f"{path.relative_to(ROOT)} -> {match.group(1)}")
+        for imported in _legacy_puhti_imports(path):
+            offenders.append(f"{path.relative_to(ROOT)} -> {imported}")
     assert offenders == [], "active runtime imports quarantined legacy code: " + ", ".join(offenders)
 
 
