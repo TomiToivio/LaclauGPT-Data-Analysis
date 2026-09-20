@@ -1,0 +1,58 @@
+schema_version: "1"
+phase: phase-1
+study_id: phase1-default
+profile: phase-1
+codebooks:
+  paths:
+    - codebooks/public/phase1_v1.yaml
+  revision_policy: fingerprint
+prompts:
+  resource_revision: phase1-v1
+stages:
+  source_evidence: true
+  multimodal_preanalysis: true
+  llm_structuralism: true
+  laclau_analysis: true
+  postprocess: true
+models:
+  policy: configurable
+  cloud_allowed: false
+  routing: {}
+storage:
+  backend: auto
+execution:
+  profile: cli
+  resume: true
+machine:
+  profile: local
+multimodal:
+  run_only_when_media_present: true
+  preserve_modalities: true
+  preserve_uncertainty: true
+filters:
+  date_after: null
+  languages: []
+  regions: []
+  arenas: []
+  platforms: []
+outputs:
+  formats: [jsonl]
+  include_provenance: true
+sampling:
+  seed: 2601
+  deterministic: true
+retry:
+  max_attempts: 3
+  resume: true
+provenance:
+  record_config_hash: true
+  record_codebook_hash: true
+  record_prompt_revision: true
+  record_models: true
+context_memory:
+  enabled: true
+periodic_reports:
+  enabled: true
+  interval_hours: 24
+metadata:
+  public_example: true
