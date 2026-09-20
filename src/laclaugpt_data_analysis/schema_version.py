@@ -183,6 +183,8 @@ def _adapt_shared_parity_fixture(data: dict[str, Any]) -> dict[str, Any]:
     }
     if extensions:
         legacy["cross_module_extensions"] = extensions
+        for key in extensions:
+            data.pop(key, None)
 
     if "review_events" in review:
         legacy["cross_module_review_events"] = review.pop("review_events")
