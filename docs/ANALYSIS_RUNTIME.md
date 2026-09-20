@@ -21,7 +21,7 @@ Model routing is explicit. Laptop defaults to a small local Gemma 4 profile, Lin
 
 ## Memory
 
-Persistent stable-ID memory is separate from runtime retrieval. `SQLiteMemoryStore` is the zero-infrastructure default. Entries carry aliases, provenance references, temporal bounds and review state. Retrieval returns candidates and may abstain. Retrieved memory/codebook candidates are context, never evidence.
+Persistent stable-ID memory is separate from runtime retrieval. `SQLiteMemory` is the zero-infrastructure default for canonical actors, entities, topics, signifiers, targets and formations plus aliases. IDs can be derived deterministically from normalized kind + label with `stable_memory_id()`.\n\nResolution is conservative: an exact normalized alias resolves only when it identifies one object; collisions return `AMBIGUOUS` instead of choosing arbitrarily. New proposals are `PROVISIONAL` by default. Only an explicit review transition (`accept()` / `set_state()`) makes an object `CANONICAL`, and automatic runtime normalization reads only `CANONICAL` objects.\n\n`analyze_record(..., memory_store=...)` applies accepted memory as an optional final normalization layer. It may replace ephemeral entity/topic/signifier IDs and records the stable IDs in `analysis.memory_refs`; accepted source-author actor IDs are recorded as continuity refs without rewriting source metadata. The normalization step never creates or promotes memory, never changes evidence, and is independently reversible by omitting the store. Memory/codebook context is continuity/normalization, never source evidence.
 
 ## Codebooks
 

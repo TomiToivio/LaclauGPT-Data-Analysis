@@ -18,6 +18,7 @@ from .canonical_pipeline import (
 )
 from .codebooks import CodebookEntry
 from .interchange import from_mongo_document, from_phase0_mongo_document
+from .memory.normalization import apply_accepted_memory
 from .memory.sqlite import SQLiteMemory
 from .phase1_shadow import preprocess_shadow_record
 
@@ -144,6 +145,7 @@ def _record_memory_resolution(
 ) -> None:
     refs = resolve_analytical_memory(memory, candidates)
     record.analysis.memory_refs = list(dict.fromkeys([*record.analysis.memory_refs, *refs]))
+    apply_accepted_memory(record, memory)
     record.intermediate.stage_outputs["phase1_analytical_memory"] = [{
         "enabled": True,
         "role": "continuity_normalization_not_evidence",

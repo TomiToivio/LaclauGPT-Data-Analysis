@@ -16,6 +16,7 @@ from .canonical import (
 )
 from .codebooks import CodebookEntry
 from .llm.structured_output import chat_structured
+from .memory.normalization import apply_accepted_memory
 from .memory.retrieval import context_block, select_relevant_entries
 from .models import ClassificationResult, Topic
 from .prompt_library import load_prompt, prompt_provenance
@@ -158,6 +159,7 @@ def analyze_record(
     source_context: str = "",
     situational_context: str = "",
     memory_context: str = "",
+    memory_store=None,
     rag_context: str = "",
     context_profile: str = "balanced",
     model: str = "auto",
@@ -366,4 +368,16 @@ def analyze_record(
             "provenance_id": provenance.provenance_id,
         },
     )
+    if memory_store is not None:
+        apply_accepted_memory(record, memory_store)
+        _append_stage_output(
+            record,
+            "memory_normalization",
+            {
+                "enabled": True,
+                "resolver": "accepted_exact_alias_v1",
+                "evidence_role": "continuity_not_source_evidence",
+                "memory_refs": list(record.analysis.memory_refs),
+            },
+        )
     return ensure_research_layers(record)
