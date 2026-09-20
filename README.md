@@ -1,5 +1,8 @@
 # LaclauGPT Data Analysis
 
+> [!IMPORTANT]
+> **Current development phase: Phase 1.** `main` is based on and synchronized with `phase-1`. The `phase-0` branch remains the preserved Phase 0 baseline; Phase 0 documentation and code remain Phase 0 and are not reclassified as Phase 1.
+
 [![tests](https://github.com/TomiToivio/LaclauGPT-Data-Analysis/actions/workflows/tests.yml/badge.svg)](https://github.com/TomiToivio/LaclauGPT-Data-Analysis/actions/workflows/tests.yml)
 
 > **Part of the [LaclauGPT](https://github.com/TomiToivio/LaclauGPT) project.** The main LaclauGPT repository is the **meta-repository** and project front door: it contains the scientific paper, theory, shared architecture, canonical data contract and complete-system documentation. This repository is only the **Data Analysis** implementation stage.
@@ -69,7 +72,7 @@ preprocessing
   -> postprocessing
 ```
 
-The default AI26 path uses AI26-specific multimodal and discourse prompts. EP24 is an explicit project profile with its own election-specific prompt templates. Model outputs remain provisional, evidence-linked pre-analysis for human review.
+The default AI26 path is text-first. Frame analysis is an **explicit opt-in** through `project_config.analysis.multimodal.enabled=true`; merely receiving a record that contains extracted frame references does not activate vision, OCR, ASR/Whisper, downloads, or additional media dependencies. EP24 is an explicit project profile with its own election-specific prompt templates and can enable the same independently switchable multimodal slice for video-heavy records. When enabled and frames exist, frame analysis runs before summary analysis. Model outputs remain provisional, evidence-linked pre-analysis for human review.
 
 DNA, SNA, Critical AI Studies and other advanced methods are Phase 2 / experimental / optional. They are disabled by default and are not allowed to enter the Phase 1 canonical runner silently.
 

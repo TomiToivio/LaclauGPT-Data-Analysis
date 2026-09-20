@@ -156,6 +156,9 @@ def _rag_items(
         mode=policy.rag_mode,
     )
     items: list[ContextItem] = []
+    audit = context.audit
+    banner = "RAG RETRIEVAL CONTEXT — NOT CURRENT-SOURCE EVIDENCE"
+    backend_name = type(backend).__name__
     for item in context.items:
         if item.canonical_id == record.source_url:
             continue
@@ -164,12 +167,16 @@ def _rag_items(
             continue
         items.append(
             ContextItem(
-                kind="rag_record",
-                text=item.text,
-                source="retrieval_backend",
+                kind="rag_context_not_evidence",
+                text=f"{banner}\n{item.text}",
+                source=f"rag:{backend_name}",
                 record_id=item.canonical_id,
                 trust=review_status,
                 metadata={
+                    "evidence_role": "context",
+                    "retrieval_request_id": audit.request_id,
+                    "retrieval_method": audit.method,
+                    "retrieval_index_version": audit.index_version,
                     "score": item.score,
                     "graph_path": item.graph_path,
                     **item.metadata,

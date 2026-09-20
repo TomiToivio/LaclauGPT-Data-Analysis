@@ -76,7 +76,6 @@ def test_pipeline_keeps_raw_legacy_human_and_structured_layers():
         narrative="A synthetic debate about democratic control of AI.",
         topics=["AI governance"],
         entities=["Synthetic Lab"],
-        later_analysis_cues=["Later discourse analysis may examine democratic AI claims."],
     )
     discourse = DiscourseProposal(
         demands=[
@@ -136,7 +135,7 @@ def test_pipeline_keeps_raw_legacy_human_and_structured_layers():
     assert result.analysis.formations[0].metadata["corpus_validation_required"] is True
     assert result.analysis.formula_of_populism["populist"] is False
     assert "multimodal_synthesis" in result.intermediate.stage_outputs
-    assert "castells_context" in result.intermediate.stage_outputs
+    assert "castells_context" not in result.intermediate.stage_outputs
     assert "discourse_analysis" in result.intermediate.stage_outputs
     assert "discourse_graph" in result.intermediate.stage_outputs
     assert len(provider.requests) == 2

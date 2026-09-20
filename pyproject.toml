@@ -19,6 +19,8 @@ dependencies = [
 
 [project.scripts]
 laclaugpt-analysis-worker = "laclaugpt_data_analysis.contextual_entrypoints:worker_main"
+laclaugpt-phase1-shadow = "laclaugpt_data_analysis.phase1_shadow:main"
+laclaugpt-phase1-laskin = "laclaugpt_data_analysis.phase1_laskin:main"
 laclaugpt-reprocess = "laclaugpt_data_analysis.contextual_entrypoints:reprocessing_main"
 laclaugpt-ep24 = "laclaugpt_data_analysis.ep24_reprocessing:main"
 laclaugpt-summarize-period = "laclaugpt_data_analysis.periodic_summary:main"
