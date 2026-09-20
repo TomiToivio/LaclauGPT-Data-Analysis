@@ -97,9 +97,13 @@ def test_ep24_frame_slice_can_be_enabled_independently_and_runs_before_summary()
     assert len(provider.requests) == 3
     assert result.intermediate.frame_analysis[0]["frame_id"] == "frame-001"
     assert provider.requests[0].schema is not None
+    assert provider.requests[0].images == ("tests/fixtures/ep24_frame_sample.ppm",)
     assert "frame-001" in provider.requests[0].user
     assert "Synthetic election clip summary" not in provider.requests[0].user
     assert result.human_readable.summary == "EP24 summary"
+    visibility = result.intermediate.stage_outputs["multimodal_visibility"][-1]
+    assert visibility["declared"] == "direct_image_pixels"
+    assert visibility["attachments"][0]["frame_id"] == "frame-001"
 
 
 def test_text_only_record_skips_frames_even_when_multimodal_enabled() -> None:
