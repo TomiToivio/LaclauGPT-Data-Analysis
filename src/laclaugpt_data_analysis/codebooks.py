@@ -152,11 +152,19 @@ def select_codebooks(
 
 
 def seed_memory(codebook: Codebook, store, *, accepted: bool = True) -> list[str]:
+    """Seed researcher-authored vocabulary without silently resolving ambiguity."""
     ids: list[str] = []
     for entry in codebook.entries:
-        obj_id = stable_codebook_id(entry)
+        desired_id = stable_codebook_id(entry)
         existing = store.resolve(entry.label, entry.kind)
-        if existing.decision != "EXISTING":
+        if existing.decision == "AMBIGUOUS":
+            raise ValueError(f"ambiguous memory seed: {entry.kind}:{entry.label}")
+        if existing.decision == "EXISTING":
+            obj_id = existing.obj_id
+            if accepted:
+                store.set_state(obj_id, "CANONICAL")
+        else:
+            obj_id = desired_id
             store.create(
                 obj_id,
                 entry.kind,
