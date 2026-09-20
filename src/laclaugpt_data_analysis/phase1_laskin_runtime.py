@@ -4,6 +4,7 @@ This module is the bridge between the research-protocol resources introduced for
 Phase 1 and the older distributed worker/deployment code.  Operational code must
 read study semantics from this policy rather than copy values into Python.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
