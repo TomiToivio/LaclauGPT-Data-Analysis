@@ -20,6 +20,7 @@ from .codebooks import CodebookEntry
 from .interchange import from_mongo_document, from_phase0_mongo_document
 from .memory.normalization import apply_accepted_memory
 from .memory.sqlite import SQLiteMemory
+from .modality_routing import build_modality_plan, ensure_still_image_frames
 from .phase1_shadow import preprocess_shadow_record
 
 PHASE1_NAMESPACE = "phase1"
@@ -196,21 +197,27 @@ def run_phase1_text_record(
             "codebook_context_sha256": ctx.codebook_revision,
         }]
 
-    # Phase 1 remains text-first by default. Frame analysis is an explicit
-    # EP24-only opt-in; it never activates AI26 multimodal dependencies.
-    if cfg.ep24_frame_analysis_enabled and cfg.project_profile.casefold() == "ep24":
-        # The explicit EP24 flag is itself the multimodal opt-in for this
-        # compatibility runtime. Mirror it into the canonical capability gate.
-        project_config = dict(ctx.project_config)
-        analysis = dict(project_config.get("analysis") or {})
-        analysis["multimodal"] = True
-        project_config["analysis"] = analysis
-        ctx = ctx.model_copy(update={"project_config": project_config})
-        analyze_frames(
-            record, provider=provider, context=ctx, codebook_entries=[],
-            model=cfg.model, prompt_version=f"{cfg.prompt_version}:frame",
-            project_profile="ep24", allow_cloud_fallback=cfg.allow_cloud_fallback,
+    # Phase 1 multimodality is capability-driven. The historical EP24 flag is
+    # retained in configuration for compatibility, but media presence now decides
+    # whether visual analysis runs.
+    ensure_still_image_frames(record)
+    modality_plan = build_modality_plan(record)
+    record.intermediate.stage_outputs["modality_plan"] = [modality_plan.audit()]
+    if modality_plan.needs_frame_analysis:
+        from .llm.multimodal import FrameAwareProvider
+
+        frame_provider = FrameAwareProvider(
+            provider,
+            record.content.frames,
+            record.content.media_references,
         )
+        analyze_frames(
+            record, provider=frame_provider, context=ctx, codebook_entries=[],
+            model=cfg.model, prompt_version=f"{cfg.prompt_version}:frame",
+            project_profile=cfg.project_profile,
+            allow_cloud_fallback=cfg.allow_cloud_fallback,
+        )
+        record.intermediate.stage_outputs["multimodal_visibility"] = [frame_provider.audit()]
 
     summary = summarize_record(
         record,
