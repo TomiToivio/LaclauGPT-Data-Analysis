@@ -1,8 +1,8 @@
 Analyse one sampled visual frame as a descriptive social-semiotic observation.
 
-Frame id: {{ frame_id }}
-Timestamp (seconds): {{ timestamp_seconds }}
-Project note: {{ project_note }}
+Frame id: {frame_id}
+Timestamp (seconds): {timestamp_seconds}
+Project note: {project_note}
 
 Treat frame literally as a visual/presentation unit, never as political framing analysis.
 
