@@ -357,7 +357,12 @@ def analyze_frames(record: CanonicalRecord, *, provider, context: PipelineContex
             "reason": "text_only_or_no_extracted_frames",
         })
         return record
-    if project_profile.casefold() == "ai26" and not _enabled(context, "multimodal"):
+    # Multimodal/frame analysis is an explicitly activated slice for every
+    # project profile.  In particular, AI26 stays text-first by default and
+    # EP24/video-heavy studies opt in through project_config.analysis.multimodal.
+    # This gate lives after the no-frame check so text-only records remain cheap
+    # and valid regardless of project configuration.
+    if not _enabled(context, "multimodal", default=False):
         _append_stage(record, "frame_analysis_skipped", {
             "created_at": datetime.now(UTC).isoformat(),
             "reason": "multimodal_disabled",
