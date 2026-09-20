@@ -7,6 +7,7 @@ formations; states CANONICAL / PROVISIONAL / MERGED / DEPRECATED / REJECTED.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import unicodedata
@@ -104,6 +105,17 @@ def display_label(norm: str, kind: str) -> str:
     if kind in ("entity", "actor"):
         return " ".join(word.capitalize() for word in norm.split())
     return norm
+
+
+def stable_memory_id(kind: str, label: str) -> str:
+    """Return a deterministic stable ID from canonical kind + normalized label."""
+    if kind not in KINDS:
+        raise ValueError(f"unsupported memory kind: {kind}")
+    norm = normalize(label)
+    if not norm:
+        raise ValueError("memory label must not be empty")
+    digest = hashlib.sha256(f"{kind}:{norm}".encode("utf-8")).hexdigest()[:12]
+    return f"{KIND_PREFIX[kind]}-{digest}"
 
 
 @dataclass(frozen=True)
