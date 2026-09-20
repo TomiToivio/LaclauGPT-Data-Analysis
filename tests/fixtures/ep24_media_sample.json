@@ -1,0 +1,28 @@
+{
+  "source_url": "https://example.test/ep24/video/001",
+  "source": {
+    "platform": "synthetic-ep24",
+    "source_type": "video",
+    "created_at": "2024-05-20T12:00:00+00:00"
+  },
+  "content": {
+    "title": "Synthetic EP24 campaign clip",
+    "text": "A candidate discusses jobs and public services.",
+    "frames": [
+      {
+        "id": "frame-001",
+        "timestamp_seconds": 2.5,
+        "media_ref": "media-001",
+        "description": "Candidate speaking in front of a campaign backdrop."
+      }
+    ],
+    "media_references": [
+      {
+        "kind": "video",
+        "media_type": "image/x-portable-pixmap",
+        "ref": "media-001",
+        "local_ref": "tests/fixtures/ep24_frame_sample.ppm"
+      }
+    ]
+  }
+}
