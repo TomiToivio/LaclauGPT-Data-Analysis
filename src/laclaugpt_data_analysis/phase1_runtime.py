@@ -1,5 +1,4 @@
 """Opt-in text-only Phase 1 runtime layered beside the stable Phase 0 pipeline."""
-
 from __future__ import annotations
 
 import os
@@ -11,9 +10,9 @@ from typing import Any
 from .analysis_context import codebook_context
 from .canonical import CanonicalRecord, SCHEMA_VERSION
 from .canonical_pipeline import (
+    PipelineContext,
     analyze_frames,
     discourse_analysis,
-    PipelineContext,
     postprocess_record,
     summarize_record,
 )
@@ -22,6 +21,7 @@ from .interchange import from_mongo_document, from_phase0_mongo_document
 from .memory.normalization import apply_accepted_memory
 from .memory.sqlite import SQLiteMemory
 from .phase1_shadow import preprocess_shadow_record
+
 
 PHASE1_NAMESPACE = "phase1"
 PHASE1_RUNTIME_VERSION = "phase1-text-v1"
