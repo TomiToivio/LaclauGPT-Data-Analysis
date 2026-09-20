@@ -10,7 +10,6 @@ from .canonical import CanonicalRecord
 from .config import Settings, load_settings
 from .periodic_summary import (
     PeriodicDiscourseSummary,
-    SummaryScope,
     grouped_summaries,
     latest_completed_window,
 )
