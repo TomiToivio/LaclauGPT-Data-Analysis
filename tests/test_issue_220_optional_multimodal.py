@@ -3,15 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from laclaugpt_data_analysis import canonical_pipeline as cp
 from laclaugpt_data_analysis.canonical import CanonicalRecord
-from laclaugpt_data_analysis.canonical_pipeline import (
-    DiscourseProposal,
-    FrameProposal,
-    MultimodalSummaryProposal,
-    PipelineContext,
-    run_canonical_pipeline,
-    SummaryProposal,
-)
 from laclaugpt_data_analysis.llm.base import ChatRequest, LLMCallProvenance, LLMResponse
 
 
@@ -43,8 +36,8 @@ def _fixture_record() -> CanonicalRecord:
     return CanonicalRecord.model_validate(json.loads(FIXTURE.read_text(encoding="utf-8")))
 
 
-def _context(*, multimodal: bool) -> PipelineContext:
-    return PipelineContext(
+def _context(*, multimodal: bool) -> cp.PipelineContext:
+    return cp.PipelineContext(
         project_config={
             "analysis_phase": 1,
             "analysis": {
@@ -54,18 +47,18 @@ def _context(*, multimodal: bool) -> PipelineContext:
     )
 
 
-def _summary() -> SummaryProposal:
-    return SummaryProposal(summary="EP24 summary", narrative="Synthetic election clip summary.")
+def _summary() -> cp.SummaryProposal:
+    return cp.SummaryProposal(summary="EP24 summary", narrative="Synthetic election clip summary.")
 
 
 def test_ep24_frame_slice_is_disabled_by_default() -> None:
-    provider = SequencedProvider([_summary(), DiscourseProposal()])
+    provider = SequencedProvider([_summary(), cp.DiscourseProposal()])
     record = _fixture_record()
 
-    result = run_canonical_pipeline(
+    result = cp.run_canonical_pipeline(
         record,
         provider=provider,
-        context=PipelineContext(),
+        context=cp.PipelineContext(),
         project_profile="ep24",
         model="fake-model",
     )
@@ -80,13 +73,13 @@ def test_ep24_frame_slice_is_disabled_by_default() -> None:
 def test_ep24_frame_slice_can_be_enabled_independently_and_runs_before_summary() -> None:
     provider = SequencedProvider(
         [
-            FrameProposal(description="Candidate at campaign event."),
+            cp.FrameProposal(description="Candidate at campaign event."),
             _summary(),
-            DiscourseProposal(),
+            cp.DiscourseProposal(),
         ]
     )
 
-    result = run_canonical_pipeline(
+    result = cp.run_canonical_pipeline(
         _fixture_record(),
         provider=provider,
         context=_context(multimodal=True),
@@ -110,9 +103,9 @@ def test_text_only_record_skips_frames_even_when_multimodal_enabled() -> None:
     record = _fixture_record()
     record.content.frames = []
     record.content.media_references = []
-    provider = SequencedProvider([_summary(), DiscourseProposal()])
+    provider = SequencedProvider([_summary(), cp.DiscourseProposal()])
 
-    result = run_canonical_pipeline(
+    result = cp.run_canonical_pipeline(
         record,
         provider=provider,
         context=_context(multimodal=True),
@@ -132,13 +125,13 @@ def test_ep24_frame_analysis_tolerates_missing_ocr_and_transcript_modalities() -
     assert record.content.transcripts == []
     provider = SequencedProvider(
         [
-            FrameProposal(description="Visual evidence only."),
+            cp.FrameProposal(description="Visual evidence only."),
             _summary(),
-            DiscourseProposal(),
+            cp.DiscourseProposal(),
         ]
     )
 
-    result = run_canonical_pipeline(
+    result = cp.run_canonical_pipeline(
         record,
         provider=provider,
         context=_context(multimodal=True),
@@ -154,14 +147,14 @@ def test_ai26_with_frames_remains_text_first_without_explicit_multimodal_activat
     # No OCR/Whisper/download hook is passed here. The presence of an already
     # extracted frame must not itself activate multimodal analysis.
     provider = SequencedProvider([
-        MultimodalSummaryProposal(summary="Text-first summary"),
-        DiscourseProposal(),
+        Multimodalcp.SummaryProposal(summary="Text-first summary"),
+        cp.DiscourseProposal(),
     ])
 
-    result = run_canonical_pipeline(
+    result = cp.run_canonical_pipeline(
         _fixture_record(),
         provider=provider,
-        context=PipelineContext(),
+        context=cp.PipelineContext(),
         project_profile="ai26",
         model="fake-model",
     )
