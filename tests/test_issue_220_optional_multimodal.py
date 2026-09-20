@@ -96,7 +96,7 @@ def test_ep24_frame_slice_can_be_enabled_independently_and_runs_before_summary()
 
     assert len(provider.requests) == 3
     assert result.intermediate.frame_analysis[0]["frame_id"] == "frame-001"
-    assert provider.requests[0].schema is not None
+    assert "Required output JSON shape" in provider.requests[0].user
     assert provider.requests[0].images == ("tests/fixtures/ep24_frame_sample.ppm",)
     assert "frame-001" in provider.requests[0].user
     assert "Synthetic election clip summary" not in provider.requests[0].user
