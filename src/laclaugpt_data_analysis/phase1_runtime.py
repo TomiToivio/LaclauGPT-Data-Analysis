@@ -22,7 +22,6 @@ from .memory.normalization import apply_accepted_memory
 from .memory.sqlite import SQLiteMemory
 from .phase1_shadow import preprocess_shadow_record
 
-
 PHASE1_NAMESPACE = "phase1"
 PHASE1_RUNTIME_VERSION = "phase1-text-v1"
 
