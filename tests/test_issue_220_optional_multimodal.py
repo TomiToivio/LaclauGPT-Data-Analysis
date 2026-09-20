@@ -3,9 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from laclaugpt_data_analysis import canonical_pipeline as cp
 from laclaugpt_data_analysis.canonical import CanonicalRecord
 from laclaugpt_data_analysis.llm.base import ChatRequest, LLMCallProvenance, LLMResponse
+from laclaugpt_data_analysis import canonical_pipeline as cp
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "ep24_media_sample.json"
