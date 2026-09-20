@@ -1,0 +1,62 @@
+schema_version: "1"
+phase: phase-1
+study_id: ai26
+profile: ai26-public
+codebooks:
+  paths:
+    - codebooks/public/phase1_v1.yaml
+  revision_policy: fingerprint
+prompts:
+  resource_revision: phase1-ai26-v1
+stages:
+  source_evidence: true
+  multimodal_preanalysis: true
+  llm_structuralism: true
+  laclau_analysis: true
+  postprocess: true
+models:
+  policy: configurable
+  cloud_allowed: false
+storage:
+  backend: auto
+execution:
+  profile: cli
+filters:
+  date_after: "2026-09-01"
+  languages: []
+  regions: []
+  arenas: [elite, grassroots, parliamentary]
+  platforms: []
+outputs:
+  formats: [jsonl, csv]
+  include_provenance: true
+sampling:
+  seed: 2601
+  deterministic: true
+retry:
+  max_attempts: 3
+  resume: true
+provenance:
+  record_config_hash: true
+  record_codebook_hash: true
+  record_prompt_revision: true
+  record_models: true
+multimodal:
+  run_only_when_media_present: true
+  preserve_modalities: true
+  preserve_uncertainty: true
+context_memory:
+  enabled: true
+periodic_reports:
+  enabled: true
+  interval_hours: 24
+metadata:
+  dimensions: [arena, platform, language, region, topic, author, datetime, signifier, formation]
+  formations:
+    - accelerationist_techno_optimist
+    - doomer_xrisk
+    - critical_ai
+    - anti_ai_luddite
+    - mainstream_governance
+    - left_techno_optimism_discovery
+  note: "Research categories are configurable analytical formations, not truth labels."
