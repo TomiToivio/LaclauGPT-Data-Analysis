@@ -1,6 +1,6 @@
 Produce an item-level Multimodal Social-Semiotic Pre-Analysis across every modality actually available in the source envelope.
 
-Project note: {{ project_note }}
+Project note: {project_note}
 
 Apply the same schema to text-only, image-only, screenshot/meme, OCR, audio transcript, video+transcript+sampled frames, post+media, or mixed web/social-media objects.
 
