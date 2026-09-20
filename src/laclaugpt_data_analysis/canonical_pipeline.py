@@ -25,12 +25,12 @@ from .canonical import (
 from .codebooks import CodebookEntry
 from .context_envelope import PromptEnvelope, build_prompt_envelope
 from .llm.structured_output import chat_structured
-from .models import Topic
 from .modality_routing import (
     build_modality_plan,
     ensure_still_image_frames,
     legacy_multimodal_projection,
 )
+from .models import Topic
 from .prompt_library import load_prompt, prompt_provenance
 from .research_record import ensure_research_layers
 from .social_semiotic import (
