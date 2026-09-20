@@ -250,7 +250,16 @@ def _phase_allows(context: PipelineContext, key: str) -> bool:
 
 
 def _enabled(context: PipelineContext, key: str, *, default: bool = True) -> bool:
-    value = _analysis_flags(context).get(key, default)
+    flags = _analysis_flags(context)
+    if key in flags:
+        value = flags[key]
+    elif key == "multimodal" and context.project_config and key in context.project_config:
+        # Compatibility with the pre-analysis config shape used before
+        # project_config.analysis became the canonical capability namespace.
+        # It is still an explicit opt-in, never an inferred activation.
+        value = context.project_config[key]
+    else:
+        value = default
     configured = bool(value.get("enabled", default)) if isinstance(value, dict) else bool(value)
     return configured and _phase_allows(context, key)
 
