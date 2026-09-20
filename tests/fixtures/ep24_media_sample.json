@@ -19,9 +19,9 @@
     "media_references": [
       {
         "kind": "video",
-        "media_type": "video/mp4",
+        "media_type": "image/x-portable-pixmap",
         "ref": "media-001",
-        "local_ref": "data/media/ep24/sample-001.mp4"
+        "local_ref": "tests/fixtures/ep24_frame_sample.ppm"
       }
     ]
   }
