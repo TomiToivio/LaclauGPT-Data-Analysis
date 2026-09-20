@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 
 from laclaugpt_data_analysis.canonical import CanonicalRecord
 from laclaugpt_data_analysis.canonical_pipeline import (
-    CastellsContextProposal,
     DiscourseProposal,
     MultimodalFrameProposal,
     MultimodalSummaryProposal,
@@ -14,6 +13,11 @@ from laclaugpt_data_analysis.canonical_pipeline import (
 )
 from laclaugpt_data_analysis.llm.base import ChatRequest, LLMCallProvenance, LLMResponse
 from laclaugpt_data_analysis.prompt_library import load_prompt
+from laclaugpt_data_analysis.social_semiotic import (
+    EvidencePointer,
+    IntermodalRelation,
+    UncertaintyObservation,
+)
 
 
 class SequencedProvider:
@@ -59,9 +63,9 @@ def multimodal_record() -> CanonicalRecord:
 
 
 def test_multimodal_prompt_family_loads_hashes_and_renders() -> None:
-    system = load_prompt("multimodal.system", version="v1")
-    frame = load_prompt("multimodal.frame_analysis", version="v1")
-    summary = load_prompt("multimodal.summary_analysis", version="v1")
+    system = load_prompt("multimodal.system", version="v2")
+    frame = load_prompt("multimodal.frame_analysis", version="v2")
+    summary = load_prompt("multimodal.summary_analysis", version="v2")
 
     assert len(system.sha256) == 64
     assert len(frame.sha256) == 64
@@ -75,9 +79,9 @@ def test_multimodal_prompt_family_loads_hashes_and_renders() -> None:
     assert "12.5" in rendered.text
     assert "AI26 relevance guide only" in rendered.text
 
-    # Historical prompt resources remain loadable for reproducibility.
+    # Historical resources remain loadable for reproducibility.
+    assert load_prompt("multimodal.system", version="v1").version == "v1"
     assert load_prompt("laclau.frame_analysis", version="v1").version == "v1"
-    assert load_prompt("laclau.summary_analysis", version="v1").version == "v1"
 
 
 def test_ai26_stage_selection_separates_multimodal_and_discourse_prompts() -> None:
@@ -99,10 +103,16 @@ def test_ai26_stage_selection_separates_multimodal_and_discourse_prompts() -> No
     )
 
 
-def test_multimodal_schemas_allow_uncertainty_without_ideological_labels() -> None:
+def test_multimodal_schemas_preserve_uncertainty_without_political_labels() -> None:
     frame = MultimodalFrameProposal(
         material_canvas_organisation=["Split-screen layout"],
-        uncertainty=["The logo is unreadable."],
+        uncertainty=[
+            UncertaintyObservation(
+                category="visual",
+                description="The logo is unreadable.",
+                confidence="low",
+            )
+        ],
     )
     assert frame.uncertainty
     assert "candidate_signifiers" not in MultimodalFrameProposal.model_fields
@@ -110,42 +120,76 @@ def test_multimodal_schemas_allow_uncertainty_without_ideological_labels() -> No
 
     summary = MultimodalSummaryProposal(
         summary="The spoken claim and chart point in different directions.",
-        cross_modal_relations=["Speech endorses the claim; chart annotation qualifies it."],
-        castells_context=CastellsContextProposal(),
-        later_analysis_cues=["Later discourse analysis may examine how control is articulated."],
+        intermodal_relations=[
+            IntermodalRelation(
+                relation_type="conflict",
+                modes=["linguistic", "visual"],
+                description="Speech endorses the claim; chart annotation qualifies it.",
+                confidence="high",
+            )
+        ],
+        uncertainty=[
+            UncertaintyObservation(
+                category="source_context",
+                description="The chart source is not visible.",
+                confidence="low",
+            )
+        ],
     )
-    assert summary.cross_modal_relations
-    assert summary.castells_context.networks_relations == []
+    assert summary.intermodal_relations
     assert "candidate_signifiers" not in MultimodalSummaryProposal.model_fields
     assert "candidate_frontiers" not in MultimodalSummaryProposal.model_fields
+    assert "sentiment_observations" not in MultimodalSummaryProposal.model_fields
 
 
-def test_ai26_pipeline_persists_multimodal_castells_and_run_provenance() -> None:
+def test_ai26_pipeline_persists_social_semiotics_and_run_provenance() -> None:
     frame = MultimodalFrameProposal(
         material_canvas_organisation=["Chart beside speaker video"],
         scene_and_participants=["One visible speaker"],
         visible_text=["Synthetic benchmark"],
         semiotic_contribution="The chart visually contextualises the spoken technical claim.",
-        uncertainty=["Chart source is not visible."],
+        evidence=[
+            EvidencePointer(
+                evidence_id="frame:1",
+                modality="visual",
+                frame_id="frame-001",
+                timestamp_start=12.5,
+                confidence="high",
+            )
+        ],
+        uncertainty=[
+            UncertaintyObservation(
+                category="visual",
+                description="Chart source is not visible.",
+                confidence="low",
+            )
+        ],
     )
     summary = MultimodalSummaryProposal(
         summary="A technical AI claim is presented through speech and a benchmark chart.",
         narrative="The speaker introduces the claim, then the chart supplies numerical context.",
+        modalities_present=["linguistic", "visual", "temporal_editing"],
         semiotic_modes=["speech", "written chart labels", "video"],
         cross_modal_relations=["The chart elaborates the spoken claim without fully proving it."],
+        intermodal_relations=[
+            IntermodalRelation(
+                relation_type="elaboration",
+                modes=["linguistic", "visual"],
+                description="The chart adds numerical context to the spoken claim.",
+                confidence="high",
+            )
+        ],
         topics=["AI benchmarks"],
         entities=["Synthetic Lab"],
         claims=["The speaker claims a model improved on a benchmark."],
-        sentiment_observations=["Positive evaluation targets the reported benchmark result."],
-        castells_context=CastellsContextProposal(
-            actors_organisations_institutions=["Synthetic Lab is named in source context."],
-            flows=["Benchmark information is communicated through the video."],
-            nodes_hubs_channels=["The video platform functions as the communication channel."],
-            networks_relations=[],
-            uncertainty=["No wider organisational network is established by this item."],
-        ),
-        later_analysis_cues=["How is technical performance articulated with social authority?"],
-        uncertainty=["The benchmark methodology is not visible in the item."],
+        cross_modal_synthesis="Speech presents the claim and the chart adds numerical context.",
+        uncertainty=[
+            UncertaintyObservation(
+                category="source_context",
+                description="The benchmark methodology is not visible in the item.",
+                confidence="low",
+            )
+        ],
     )
     discourse = DiscourseProposal(
         populist=False,
@@ -170,26 +214,23 @@ def test_ai26_pipeline_persists_multimodal_castells_and_run_provenance() -> None
     )
 
     assert len(provider.requests) == 3
-    assert "Multimodal pre-analysis method" in provider.requests[0].system
+    assert "Multimodal Social-Semiotic Pre-Analysis" in provider.requests[0].system
     assert "frame-001" in provider.requests[0].user
     assert "12.5" in provider.requests[0].user
     assert "AI26 relevance guide only" in provider.requests[0].user
-    assert "Light Castells-style sociological context" in provider.requests[1].user
+    assert "denotative_description" in provider.requests[1].user
     assert "Laclau" in provider.requests[2].system
 
     frame_result = result.intermediate.frame_analysis[0]
     prompt_ids = [item["prompt_id"] for item in frame_result["prompt_resources"]]
     assert prompt_ids == ["multimodal.system", "multimodal.frame_analysis"]
+    assert all(item["version"] == "v2" for item in frame_result["prompt_resources"])
     assert "multimodal_synthesis" in result.intermediate.stage_outputs
-    assert "castells_context" in result.intermediate.stage_outputs
+    assert "castells_context" not in result.intermediate.stage_outputs
     assert "discourse_analysis" in result.intermediate.stage_outputs
     assert "summary_preanalysis" not in result.intermediate.stage_outputs
-
-    castells = result.intermediate.stage_outputs["castells_context"][-1]["proposal"]
-    assert castells["networks_relations"] == []
-    assert "No wider organisational network" in castells["uncertainty"][0]
-    assert "Later analysis cues" in result.human_readable.markdown
     assert result.analysis.signifiers == []
+    assert "benchmark methodology" in result.analysis.uncertainty[0]
 
     for run in result.analysis.model_runs:
         assert run["codebook_revision"] == "codebook-r4"
