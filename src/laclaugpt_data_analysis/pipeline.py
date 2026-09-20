@@ -16,7 +16,7 @@ from .canonical import (
 )
 from .codebooks import CodebookEntry
 from .llm.structured_output import chat_structured
-from .memory.retrieval import context_block
+from .memory.retrieval import context_block, select_relevant_entries
 from .models import ClassificationResult, Topic
 from .prompt_library import load_prompt, prompt_provenance
 from .research_record import ensure_research_layers
@@ -149,6 +149,9 @@ def analyze_record(
     *,
     provider,
     codebook_entries: list[CodebookEntry] | None = None,
+    codebook_context_enabled: bool = True,
+    codebook_context_limit: int = 8,
+    codebook_context_threshold: float = 0.15,
     context_bundle: AnalysisContextBundle | None = None,
     project_context: str = "",
     theory_context: str = "",
@@ -168,7 +171,23 @@ def analyze_record(
     provide project/theory/source/situational/memory/RAG context with explicit trust roles.
     """
     entries = codebook_entries or []
-    retrieved = context_block(record.content.text, entries) if entries else ""
+    selected_entries, codebook_selection = select_relevant_entries(
+        record.content.text,
+        entries,
+        enabled=codebook_context_enabled,
+        limit=codebook_context_limit,
+        threshold=codebook_context_threshold,
+    )
+    retrieved = (
+        context_block(
+            record.content.text,
+            selected_entries,
+            limit=len(selected_entries),
+            threshold=0.0,
+        )
+        if selected_entries
+        else ""
+    )
     system_resource = load_prompt("laclau.system", version="v1")
     task_resource = load_prompt("laclau.document_analysis", version="v1")
     rendered_task = task_resource.render(
@@ -182,7 +201,7 @@ def analyze_record(
         project_background=project_context,
         theory_context=theory_context,
         source_profile=source_context,
-        codebook_entries=entries,
+        codebook_entries=selected_entries,
         situational_summary=situational_context,
         memory_context=memory_context,
         rag_context=rag_context,
@@ -190,6 +209,7 @@ def analyze_record(
     )
     envelope = bundle.prompt_envelope(record, prompt_version=prompt_version)
     context_audit = bundle.audit_snapshot()
+    context_audit["codebook_selection"] = codebook_selection
     proposal, response = chat_structured(
         provider,
         AnalysisProposal,
@@ -283,7 +303,7 @@ def analyze_record(
     ]
     record.analysis.uncertainty = proposal.uncertainty
     record.analysis.abstentions = proposal.abstentions
-    record.analysis.codebook_refs = sorted({entry.label for entry in entries})
+    record.analysis.codebook_refs = sorted({entry.label for entry in selected_entries})
     prompt_meta = prompt_provenance(system_resource, task_resource, rendered=rendered_task)
     model_run = {
         **response.provenance.to_dict(),
