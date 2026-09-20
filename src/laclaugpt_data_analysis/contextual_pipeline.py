@@ -91,7 +91,11 @@ def run_contextual_canonical_pipeline(
         memory_items=memory_items,
     )
     frame_audit = frame_bundle.audit_snapshot()
-    frame_provider = FrameAwareProvider(provider, record.content.frames)
+    frame_provider = FrameAwareProvider(
+        provider,
+        record.content.frames,
+        record.content.media_references,
+    )
     record = analyze_frames(
         record,
         provider=frame_provider,
