@@ -5,7 +5,7 @@ It never creates/promotes memory objects and never changes evidence/provenance.
 """
 from __future__ import annotations
 
-from .canonical import CanonicalRecord
+from ..canonical import CanonicalRecord
 
 
 def apply_accepted_memory(record: CanonicalRecord, store) -> CanonicalRecord:
