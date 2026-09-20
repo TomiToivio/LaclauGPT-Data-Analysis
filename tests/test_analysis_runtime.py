@@ -115,6 +115,6 @@ def test_pipeline_memory_normalization_is_optional_and_non_evidentiary(tmp_path)
     assert with_memory.analysis.entities[0].entity_id == entity.obj_id
     assert with_memory.analysis.memory_refs == [entity.obj_id]
     assert with_memory.evidence == without_memory.evidence
-    assert with_memory.intermediate.stage_outputs["memory_normalization"]["evidence_role"] == (
+    assert with_memory.intermediate.stage_outputs["memory_normalization"][-1]["evidence_role"] == (
         "continuity_not_source_evidence"
     )
