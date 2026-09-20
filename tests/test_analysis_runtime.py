@@ -17,6 +17,8 @@ class FakeProvider:
             summary="Synthetic summary",
             entities=["Synthetic Actor"],
             classifications={"stance": "synthetic"},
+            topics=[{"label": "Synthetic Topic"}],
+            signifiers=["Synthetic Signifier"],
             formations=["Synthetic Formation"],
             uncertainty=["Needs human review"],
         )
@@ -52,6 +54,7 @@ def test_codebook_seed_uses_stable_ids_and_aliases(tmp_path):
     resolved = memory.resolve("FOSS", "entity")
     assert resolved.decision == "EXISTING"
     assert resolved.obj_id == ids[0]
+    assert memory.resolve_accepted("FOSS", "entity").obj_id == ids[0]
 
 
 def test_pipeline_enriches_same_canonical_record_with_fake_provider():
@@ -87,34 +90,26 @@ def test_pipeline_preserves_uncertainty_and_human_review_boundary():
     assert result.analysis.formations[0].review_status == "PROVISIONAL"
 
 
-def test_pipeline_memory_normalization_is_optional_and_non_evidentiary(tmp_path):
+def test_pipeline_uses_only_accepted_memory_for_stable_output_ids(tmp_path):
     memory = SQLiteMemory(tmp_path / "memory.sqlite3")
-    entity = memory.propose("entity", "Synthetic Actor", provenance="researcher-reviewed")
-    memory.accept(entity.obj_id)
+    entity = memory.create_stable("entity", "Synthetic Actor", state="CANONICAL")
+    topic = memory.create_stable("topic", "Synthetic Topic", state="CANONICAL")
+    signifier = memory.create_stable("signifier", "Synthetic Signifier", state="PROVISIONAL")
 
-    source_url = "https://example.invalid/post/memory"
-    without_memory = analyze_record(
-        CanonicalRecord(
-            source_url=source_url,
-            content={"text": "Synthetic Actor discusses technology."},
-        ),
-        provider=FakeProvider(),
-        model="fake-model",
+    record = CanonicalRecord(
+        source_url="https://example.invalid/post/memory",
+        content={"text": "Synthetic Actor discusses Synthetic Topic."},
     )
-    with_memory = analyze_record(
-        CanonicalRecord(
-            source_url=source_url,
-            content={"text": "Synthetic Actor discusses technology."},
-        ),
+    result = analyze_record(
+        record,
         provider=FakeProvider(),
         memory_store=memory,
         model="fake-model",
     )
 
-    assert without_memory.analysis.entities[0].entity_id == "entity:1"
-    assert with_memory.analysis.entities[0].entity_id == entity.obj_id
-    assert with_memory.analysis.memory_refs == [entity.obj_id]
-    assert with_memory.evidence == without_memory.evidence
-    assert with_memory.intermediate.stage_outputs["memory_normalization"]["evidence_role"] == (
-        "continuity_not_source_evidence"
-    )
+    assert result.analysis.entities[0].entity_id == entity.obj_id
+    assert result.analysis.topics[0].topic_id == topic.obj_id
+    assert result.analysis.signifiers[0].object_id == "signifiers:1"
+    assert result.analysis.signifiers[0].object_id != signifier.obj_id
+    assert result.analysis.entities[0].review_status == "PROVISIONAL"
+    assert result.provenance[-1].metadata["stable_memory_enabled"] is True
