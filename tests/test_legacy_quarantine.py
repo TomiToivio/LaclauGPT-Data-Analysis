@@ -1,11 +1,11 @@
 from __future__ import annotations
 
+import pathlib
 import re
 import tomllib
-from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = pathlib.Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "laclaugpt_data_analysis"
 AUDIT = ROOT / "docs" / "LEGACY_PHASE1_AUDIT.md"
 
