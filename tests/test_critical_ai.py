@@ -57,7 +57,6 @@ def summary() -> MultimodalSummaryProposal:
         summary="A company makes a claim about adoption of an AI platform.",
         narrative="The item presents the company's claim without independent verification.",
         claims=["The company describes adoption as unavoidable."],
-        later_analysis_cues=["The inevitability wording can be examined downstream."],
     )
 
 
