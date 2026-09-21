@@ -34,6 +34,8 @@ from laclaugpt_data_analysis.llm.base import (
 
 logger = logging.getLogger(__name__)
 
+_TRUNCATION_REASONS = {"length", "max_tokens", "max_token", "token_limit"}
+
 LLM_MODE_ENV = "LLM_MODE"
 LLM_MODE_ENV_ALIASES = ("LACLAUGPT_LLM_MODE", "LACLAUGPT_OLLAMA_MODE")
 LLM_HOST_ENV = "OLLAMA_HOST"
@@ -274,6 +276,13 @@ def model_digest(model: str) -> str:
         return ""
 
 
+def _response_value(response: Any, name: str, default: Any = None) -> Any:
+    """Read a field from either Ollama\'s mapping or typed response object."""
+    if isinstance(response, dict):
+        return response.get(name, default)
+    return getattr(response, name, default)
+
+
 def _fallback_allowed(explicit: bool | None) -> bool:
     if explicit is not None:
         return explicit
@@ -344,7 +353,14 @@ class OllamaProvider:
             fallback_used = True
             fallback_reason = f"{type(exc).__name__}: {exc}"
 
-        content = response["message"]["content"]
+        message = _response_value(response, "message", {})
+        content = (
+            message.get("content", "")
+            if isinstance(message, dict)
+            else getattr(message, "content", "")
+        )
+        finish_reason = str(_response_value(response, "done_reason", "") or "")
+        truncated = finish_reason.casefold() in _TRUNCATION_REASONS
         provenance = LLMCallProvenance(
             requested_mode=mode,
             requested_model=request.model,
@@ -364,4 +380,9 @@ class OllamaProvider:
             use_model,
             fallback_used,
         )
-        return LLMResponse(content=content, provenance=provenance)
+        return LLMResponse(
+            content=content,
+            provenance=provenance,
+            finish_reason=finish_reason,
+            truncated=truncated,
+        )
