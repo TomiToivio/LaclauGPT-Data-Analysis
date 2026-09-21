@@ -1,8 +1,9 @@
 # EP24 Finland/Poland reprocessing on CSC Roihu (ARM64/GH200)
-# System dependency: local Ollama.
+# System dependencies: ffmpeg/ffprobe module and project-local Ollama.
 openpyxl>=3.1,<4
 PyYAML>=6.0,<7
 numpy>=1.26,<3
 pandas>=2.2,<3
 ollama>=0.6,<1
+faster-whisper>=1.2,<2
 pytest>=8.3,<9
