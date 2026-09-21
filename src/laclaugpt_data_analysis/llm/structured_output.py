@@ -153,11 +153,10 @@ def _validation_feedback(exc: Exception, max_chars: int = 1800) -> str:
     return text[:max_chars] if text else type(exc).__name__
 
 
-def _attach_failure_diagnostics(exc: Exception, response: LLMResponse) -> Exception:
+def _attach_failure_diagnostics(exc: Exception, response: LLMResponse) -> None:
     """Attach provider evidence without changing the public exception type."""
-    setattr(exc, "response_raw", response.content)
-    setattr(exc, "finish_reason", response.finish_reason)
-    return exc
+    exc.response_raw = response.content
+    exc.finish_reason = response.finish_reason
 
 
 def build_structured_prompt(user_prompt: str, model_cls: type[T]) -> str:
@@ -231,7 +230,8 @@ def chat_structured(
                     f"(finish_reason={response.finish_reason or 'unknown'}, "
                     f"num_predict={run_options.get('num_predict')})"
                 )
-                raise _attach_failure_diagnostics(exc, response)
+                _attach_failure_diagnostics(exc, response)
+                raise exc from None
             current_budget = int(run_options.get("num_predict", STRUCTURED_NUM_PREDICT))
             next_budget = min(
                 max(current_budget * 2, STRUCTURED_NUM_PREDICT),
@@ -251,7 +251,8 @@ def chat_structured(
         except Exception as exc:
             logger.warning("structured parse failed (attempt %d): %s", attempt, exc)
             if attempt == 2:
-                raise _attach_failure_diagnostics(exc, response)
+                _attach_failure_diagnostics(exc, response)
+                raise
             shape_prompt += (
                 "\n\n### Validation failure from your previous answer\n"
                 f"{_validation_feedback(exc)}\n"
