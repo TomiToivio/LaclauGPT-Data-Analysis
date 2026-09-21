@@ -286,3 +286,75 @@ def test_ai26_retry_reaches_dead_letter_instead_of_looping_forever() -> None:
     assert len(queue.dead_letters) == 1
     assert queue.dead_letters[0]["task"]["attempt"] == 3
     assert not queue.pending
+
+
+@pytest.mark.parametrize("reclaimed", [False, True], ids=["claim", "reclaim"])
+def test_manifest_validation_failure_is_quarantined_without_blocking_queue(reclaimed: bool) -> None:
+    queue = InMemoryTaskQueue()
+    store = InMemoryTaskStore()
+    handled: list[str] = []
+
+    stale = TaskEnvelope(
+        task_id="stale-task",
+        idempotency_key="stale-id",
+        project_id="ai26",
+        run_id="run-001",
+        task_type="analyze-record",
+        record_ref="https://example.invalid/source/stale",
+        schema_version=SCHEMA_VERSION,
+        config_revision="cfg",
+        codebook_revision="stale-codebook",
+    )
+    current = TaskEnvelope(
+        task_id="current-task",
+        idempotency_key="current-id",
+        project_id="ai26",
+        run_id="run-001",
+        task_type="analyze-record",
+        record_ref="https://example.invalid/source/current",
+        schema_version=SCHEMA_VERSION,
+        config_revision="cfg",
+        codebook_revision="current-codebook",
+    )
+    queue.publish(stale)
+    queue.publish(current)
+
+    if reclaimed:
+        claimed = queue.claim()
+        assert claimed is not None
+        assert claimed.task.task_id == "stale-task"
+
+    def validate(task: TaskEnvelope) -> None:
+        if task.codebook_revision != "current-codebook":
+            raise ValueError("task/run manifest mismatch: codebook_revision")
+
+    def handle(task: TaskEnvelope) -> dict[str, str]:
+        handled.append(task.task_id)
+        return {"task_id": task.task_id}
+
+    worker = AI26TaskWorker(
+        queue=queue,
+        durable_store=store,
+        handler=handle,
+        worker_id="worker-1",
+        provenance={"run_id": "run-001"},
+        validator=validate,
+        max_attempts=3,
+    )
+    reclaim_idle_ms = 0 if reclaimed else None
+
+    assert worker.run_once(reclaim_idle_ms=reclaim_idle_ms) == "dead-letter"
+    assert handled == []
+    assert worker.last_failure_class == "ValueError"
+    assert len(store.failures) == 1
+    assert store.failures[0]["task"]["attempt"] == 1
+    assert store.failures[0]["provenance"]["run_id"] == "run-001"
+    assert "codebook_revision" in store.failures[0]["error"]
+    assert len(queue.dead_letters) == 1
+    assert queue.dead_letters[0]["task"]["attempt"] == 1
+
+    assert worker.run_once(reclaim_idle_ms=reclaim_idle_ms) == "completed"
+    assert handled == ["current-task"]
+    assert store.has_result("current-id")
+    assert not queue.pending
+    assert not queue.claimed

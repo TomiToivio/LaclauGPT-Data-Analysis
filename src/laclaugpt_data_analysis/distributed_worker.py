@@ -514,7 +514,18 @@ class AI26TaskWorker(TaskWorker):
             return "idle"
         task = claimed.task
         if self.validator is not None:
-            self.validator(task)
+            try:
+                self.validator(task)
+            except Exception as exc:
+                # Validation failures are terminal for this immutable task envelope.
+                # Persist and quarantine them immediately so a stale revision cannot
+                # poison the head of either the fresh or reclaimed queue.
+                self.last_failure_class = type(exc).__name__
+                error = f"{self.last_failure_class}: {exc}"
+                self.durable_store.write_failure(task, error, self.provenance)
+                self.queue.dead_letter(task, error)
+                self.queue.ack(claimed.message_id)
+                return "dead-letter"
         if self.durable_store.has_result(task.idempotency_key):
             self.queue.ack(claimed.message_id)
             return "duplicate"
