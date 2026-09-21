@@ -1,6 +1,6 @@
 # Phase 1 reactivation runtime
 
-Phase 1 is developed on the phase-1 branch while main/phase-0 remain the stable production line.
+Phase 1 is developed directly on `main`. The `phase-1` branch is only a passive mirror of the validated `main` tree, while `phase-0` remains the preserved Phase 0 baseline.
 
 The reactivation path is intentionally additive:
 
