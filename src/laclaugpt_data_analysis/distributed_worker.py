@@ -500,6 +500,18 @@ class AI26Handler:
         return analyzed.model_dump(mode="json")
 
 
+def _failure_diagnostics(exc: Exception) -> dict[str, Any]:
+    """Extract structured-output evidence attached at the LLM boundary."""
+    response_raw = getattr(exc, "response_raw", None)
+    finish_reason = getattr(exc, "finish_reason", None)
+    if response_raw is None and finish_reason is None:
+        return {}
+    return {
+        "response_raw": "" if response_raw is None else str(response_raw),
+        "finish_reason": "" if finish_reason is None else str(finish_reason),
+    }
+
+
 class AI26TaskWorker(TaskWorker):
     """Task worker with explicit retry requeue so attempt counters actually advance."""
 
@@ -543,7 +555,12 @@ class AI26TaskWorker(TaskWorker):
         except Exception as exc:
             self.last_failure_class = type(exc).__name__
             error = f"{self.last_failure_class}: {exc}"
-            self.durable_store.write_failure(task, error, self.provenance)
+            self.durable_store.write_failure(
+                task,
+                error,
+                self.provenance,
+                diagnostics=_failure_diagnostics(exc),
+            )
             if task.attempt >= self.max_attempts:
                 self.queue.dead_letter(task, error)
                 self.queue.ack(claimed.message_id)
