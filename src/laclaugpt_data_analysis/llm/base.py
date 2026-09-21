@@ -47,10 +47,12 @@ class LLMCallProvenance:
 
 @dataclass(frozen=True)
 class LLMResponse:
-    """One completed provider call."""
+    """One completed provider call with provider termination metadata."""
 
     content: str
     provenance: LLMCallProvenance
+    finish_reason: str = ""
+    truncated: bool = False
 
 
 @dataclass(frozen=True)
@@ -78,6 +80,10 @@ class ChatRequest:
 
 class ProviderError(RuntimeError):
     """Raised when a provider cannot complete a call."""
+
+
+class LLMTruncationError(ProviderError):
+    """Raised when a provider stops because the generation budget was exhausted."""
 
 
 @runtime_checkable
