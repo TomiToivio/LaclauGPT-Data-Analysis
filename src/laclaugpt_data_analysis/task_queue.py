@@ -4,10 +4,9 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Callable, Mapping, Protocol
 
 from .config import Settings
 
