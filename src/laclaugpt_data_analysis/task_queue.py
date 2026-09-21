@@ -108,6 +108,86 @@ class TaskQueue(Protocol):
 class DurableTaskStore(Protocol):
     def has_result(self, idempotency_key: str) -> bool: ...
 
+    def has_terminal_failure(self, idempotency_key: str) -> bool: ...
+
+    def rearm_terminal_failure(self, idempotency_key: str) -> int: ...
+
+    def failure_summary(self) -> dict[str, int]: ...
+
+    def has_terminal_failure(self, idempotency_key: str) -> bool:
+        with sqlite3.connect(self.path) as connection:
+            row = connection.execute(
+                "SELECT 1 FROM task_failures "
+                "WHERE idempotency_key = ? AND terminal = 1 AND rearmed_at IS NULL LIMIT 1",
+                (idempotency_key,),
+            ).fetchone()
+        return row is not None
+
+    def rearm_terminal_failure(self, idempotency_key: str) -> int:
+        with sqlite3.connect(self.path) as connection:
+            cursor = connection.execute(
+                "UPDATE task_failures SET rearmed_at = ? "
+                "WHERE idempotency_key = ? AND terminal = 1 AND rearmed_at IS NULL",
+                (time.time(), idempotency_key),
+            )
+            return int(cursor.rowcount)
+
+    def failure_summary(self) -> dict[str, int]:
+        with sqlite3.connect(self.path) as connection:
+            events = int(connection.execute("SELECT COUNT(*) FROM task_failures").fetchone()[0])
+            distinct = int(
+                connection.execute(
+                    "SELECT COUNT(DISTINCT idempotency_key) FROM task_failures"
+                ).fetchone()[0]
+            )
+            terminal = int(
+                connection.execute(
+                    "SELECT COUNT(DISTINCT idempotency_key) FROM task_failures "
+                    "WHERE terminal = 1 AND rearmed_at IS NULL"
+                ).fetchone()[0]
+            )
+        return {"events": events, "distinct": distinct, "terminal": terminal}
+
+    def has_terminal_failure(self, idempotency_key: str) -> bool:
+        return (
+            self.failures.find_one(
+                {
+                    "project_id": self.project_id,
+                    "run_id": self.run_id,
+                    "idempotency_key": idempotency_key,
+                    "terminal": True,
+                    "rearmed_at": {"$exists": False},
+                },
+                {"_id": 1},
+            )
+            is not None
+        )
+
+    def rearm_terminal_failure(self, idempotency_key: str) -> int:
+        result = self.failures.update_many(
+            {
+                "project_id": self.project_id,
+                "run_id": self.run_id,
+                "idempotency_key": idempotency_key,
+                "terminal": True,
+                "rearmed_at": {"$exists": False},
+            },
+            {"$set": {"rearmed_at": time.time()}},
+        )
+        return int(result.modified_count)
+
+    def failure_summary(self) -> dict[str, int]:
+        base = {"project_id": self.project_id, "run_id": self.run_id}
+        events = int(self.failures.count_documents(base))
+        distinct = len(self.failures.distinct("idempotency_key", base))
+        terminal_query = {
+            **base,
+            "terminal": True,
+            "rearmed_at": {"$exists": False},
+        }
+        terminal = len(self.failures.distinct("idempotency_key", terminal_query))
+        return {"events": events, "distinct": distinct, "terminal": terminal}
+
     def write_result(
         self,
         task: TaskEnvelope,
@@ -121,6 +201,8 @@ class DurableTaskStore(Protocol):
         error: str,
         provenance: Mapping[str, Any],
         diagnostics: Mapping[str, Any] | None = None,
+        *,
+        terminal: bool = False,
     ) -> None: ...
 
 
@@ -166,9 +248,26 @@ class InMemoryTaskStore:
     def __init__(self) -> None:
         self.results: dict[str, dict[str, Any]] = {}
         self.failures: list[dict[str, Any]] = []
+        self.terminal_failures: set[str] = set()
 
     def has_result(self, idempotency_key: str) -> bool:
         return idempotency_key in self.results
+
+    def has_terminal_failure(self, idempotency_key: str) -> bool:
+        return idempotency_key in self.terminal_failures
+
+    def rearm_terminal_failure(self, idempotency_key: str) -> int:
+        if idempotency_key not in self.terminal_failures:
+            return 0
+        self.terminal_failures.remove(idempotency_key)
+        return 1
+
+    def failure_summary(self) -> dict[str, int]:
+        return {
+            "events": len(self.failures),
+            "distinct": len({row["task"]["idempotency_key"] for row in self.failures}),
+            "terminal": len(self.terminal_failures),
+        }
 
     def write_result(
         self,
@@ -191,15 +290,20 @@ class InMemoryTaskStore:
         error: str,
         provenance: Mapping[str, Any],
         diagnostics: Mapping[str, Any] | None = None,
+        *,
+        terminal: bool = False,
     ) -> None:
         self.failures.append(
             {
                 "task": task.to_dict(),
                 "error": error,
                 "provenance": dict(provenance),
+                "terminal": terminal,
                 **bounded_failure_diagnostics(diagnostics),
             }
         )
+        if terminal:
+            self.terminal_failures.add(task.idempotency_key)
 
 
 class SqliteTaskStore:
@@ -226,7 +330,8 @@ class SqliteTaskStore:
                 "idempotency_key TEXT NOT NULL, source_url TEXT, attempt INTEGER NOT NULL, "
                 "error TEXT NOT NULL, provenance_json TEXT NOT NULL, response_raw TEXT, "
                 "response_raw_chars INTEGER, response_raw_truncated INTEGER, finish_reason TEXT, "
-                "diagnostic_only INTEGER, created_at REAL NOT NULL)"
+                "diagnostic_only INTEGER, terminal INTEGER NOT NULL DEFAULT 0, "
+                "rearmed_at REAL, created_at REAL NOT NULL)"
             )
             failure_columns = {
                 str(row[1]) for row in connection.execute("PRAGMA table_info(task_failures)")
@@ -239,6 +344,8 @@ class SqliteTaskStore:
                 "response_raw_truncated": "INTEGER",
                 "finish_reason": "TEXT",
                 "diagnostic_only": "INTEGER",
+                "terminal": "INTEGER NOT NULL DEFAULT 0",
+                "rearmed_at": "REAL",
             }.items():
                 if column not in failure_columns:
                     connection.execute(
@@ -282,6 +389,8 @@ class SqliteTaskStore:
         error: str,
         provenance: Mapping[str, Any],
         diagnostics: Mapping[str, Any] | None = None,
+        *,
+        terminal: bool = False,
     ) -> None:
         diagnostic = bounded_failure_diagnostics(diagnostics)
         with sqlite3.connect(self.path) as connection:
@@ -289,7 +398,7 @@ class SqliteTaskStore:
                 "INSERT INTO task_failures "
                 "(task_id, idempotency_key, source_url, attempt, error, provenance_json, "
                 "response_raw, response_raw_chars, response_raw_truncated, finish_reason, "
-                "diagnostic_only, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "diagnostic_only, terminal, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     task.task_id,
                     task.idempotency_key,
@@ -302,6 +411,7 @@ class SqliteTaskStore:
                     int(bool(diagnostic.get("response_raw_truncated"))) if diagnostic else None,
                     diagnostic.get("finish_reason"),
                     int(bool(diagnostic.get("diagnostic_only"))) if diagnostic else None,
+                    int(terminal),
                     time.time(),
                 ),
             )
@@ -395,6 +505,8 @@ class MongoTaskStore:
         error: str,
         provenance: Mapping[str, Any],
         diagnostics: Mapping[str, Any] | None = None,
+        *,
+        terminal: bool = False,
     ) -> None:
         self.failures.insert_one(
             {
@@ -406,6 +518,7 @@ class MongoTaskStore:
                 "attempt": task.attempt,
                 "error": error,
                 "provenance": dict(provenance),
+                "terminal": terminal,
                 **bounded_failure_diagnostics(diagnostics),
                 "created_at": time.time(),
             }
