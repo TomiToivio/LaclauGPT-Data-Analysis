@@ -1,7 +1,7 @@
 # LaclauGPT Data Analysis
 
 > [!IMPORTANT]
-> **Current development phase: Phase 1.** `main` is based on and synchronized with `phase-1`. The `phase-0` branch remains the preserved Phase 0 baseline; Phase 0 documentation and code remain Phase 0 and are not reclassified as Phase 1.
+> **Current development phase: Phase 1.** All Phase 1 work goes directly to `main`. The `phase-1` branch is a passive mirror of the validated `main` tree. The `phase-0` branch remains the preserved Phase 0 baseline; Phase 0 documentation and code remain Phase 0 and are not reclassified as Phase 1.
 
 [![tests](https://github.com/TomiToivio/LaclauGPT-Data-Analysis/actions/workflows/tests.yml/badge.svg)](https://github.com/TomiToivio/LaclauGPT-Data-Analysis/actions/workflows/tests.yml)
 
