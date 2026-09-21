@@ -369,6 +369,7 @@ class RedisStreamQueue:
     """Redis Streams adapter using consumer groups and pending-entry reclaim."""
 
     _LEGACY_PENDING_BATCH = 100
+    _MAX_ENTRIES_PER_CALL = 1000
 
     @staticmethod
     def _is_xautoclaim_unknown_command(exc: Exception) -> bool:
@@ -414,6 +415,7 @@ class RedisStreamQueue:
         self.consumer = consumer
         self.dead_letter_stream = dead_letter_stream or f"{stream}:dead"
         self.heartbeat_key = heartbeat_key or f"{stream}:heartbeat:{consumer}"
+        self.quarantined_count = 0
         try:
             self.redis.xgroup_create(stream, group, id="0", mkstream=True)
         except Exception as exc:  # pragma: no cover - redis response type varies
@@ -449,55 +451,117 @@ class RedisStreamQueue:
             return int(entry.get("time_since_delivered", 0))
         return int(entry[2])
 
+    def _quarantine_entry(
+        self,
+        message_id: Any,
+        values: Mapping[Any, Any],
+        error: Exception,
+    ) -> None:
+        entry_id = self._text(message_id)
+        raw_fields = {self._text(key): self._text(value) for key, value in values.items()}
+        self.redis.xadd(
+            self.dead_letter_stream,
+            {
+                "source_message_id": entry_id,
+                "error": f"{type(error).__name__}: {error}",
+                "raw_fields": json.dumps(raw_fields, ensure_ascii=False, sort_keys=True),
+            },
+        )
+        self.redis.xack(self.stream, self.group, entry_id)
+        self.quarantined_count = getattr(self, "quarantined_count", 0) + 1
+
+    def _decode_or_quarantine(
+        self,
+        message_id: Any,
+        values: Mapping[Any, Any],
+    ) -> ClaimedTask | None:
+        try:
+            task = self._decode_task(values)
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            self._quarantine_entry(message_id, values, exc)
+            return None
+        return ClaimedTask(self._text(message_id), task)
+
     def publish(self, task: TaskEnvelope) -> str:
-        return self._text(self.redis.xadd(self.stream, {"task": json.dumps(task.to_dict())}))
+        payload = json.dumps(task.to_dict())
+        # Keep the write boundary strict: anything published must round-trip
+        # through the same decoder used by workers.
+        self._decode_task({"task": payload})
+        return self._text(self.redis.xadd(self.stream, {"task": payload}))
 
     def claim(self) -> ClaimedTask | None:
-        response = self.redis.xreadgroup(
-            self.group,
-            self.consumer,
-            {self.stream: ">"},
-            count=1,
-            block=1000,
-        )
-        if not response:
-            return None
-        _, entries = response[0]
-        message_id, values = entries[0]
-        return ClaimedTask(self._text(message_id), self._decode_task(values))
-
-    def reclaim(self, *, min_idle_ms: int) -> ClaimedTask | None:
-        try:
-            response = self.redis.xautoclaim(
-                self.stream,
+        examined = 0
+        while examined < self._MAX_ENTRIES_PER_CALL:
+            response = self.redis.xreadgroup(
                 self.group,
                 self.consumer,
-                min_idle_ms,
-                "0-0",
+                {self.stream: ">"},
                 count=1,
+                block=1000,
             )
-        except (AttributeError, TypeError):
-            # Very old client libraries without the xautoclaim method.
-            response = None
-        except Exception as exc:
-            if not self._is_xautoclaim_unknown_command(exc):
-                raise
-            response = None
-        if response:
-            entries = response[1] if len(response) > 1 else []
-            if entries:
-                message_id, values = entries[0]
-                return ClaimedTask(self._text(message_id), self._decode_task(values))
+            if not response:
+                return None
+            _, entries = response[0]
+            if not entries:
+                return None
+            message_id, values = entries[0]
+            examined += 1
+            claimed = self._decode_or_quarantine(message_id, values)
+            if claimed is not None:
+                return claimed
+        return None
+
+    def reclaim(self, *, min_idle_ms: int) -> ClaimedTask | None:
+        examined = 0
+        cursor = "0-0"
+        xautoclaim_supported = True
+        while examined < self._MAX_ENTRIES_PER_CALL:
+            try:
+                response = self.redis.xautoclaim(
+                    self.stream,
+                    self.group,
+                    self.consumer,
+                    min_idle_ms,
+                    cursor,
+                    count=1,
+                )
+            except (AttributeError, TypeError):
+                # Very old client libraries without the xautoclaim method.
+                xautoclaim_supported = False
+                break
+            except Exception as exc:
+                if not self._is_xautoclaim_unknown_command(exc):
+                    raise
+                xautoclaim_supported = False
+                break
+
+            entries = response[1] if response and len(response) > 1 else []
+            if not entries:
+                return None
+            next_cursor = self._text(response[0]) if response else "0-0"
+            message_id, values = entries[0]
+            examined += 1
+            claimed = self._decode_or_quarantine(message_id, values)
+            if claimed is not None:
+                return claimed
+            cursor = next_cursor if next_cursor != "0-0" else self._next_stream_id(message_id)
+
+        if xautoclaim_supported:
+            return None
 
         start = "-"
-        while True:
+        while examined < self._MAX_ENTRIES_PER_CALL:
+            request_count = min(
+                self._LEGACY_PENDING_BATCH,
+                self._MAX_ENTRIES_PER_CALL - examined,
+            )
             try:
                 pending = self.redis.xpending_range(
                     self.stream,
                     self.group,
                     min=start,
                     max="+",
-                    count=self._LEGACY_PENDING_BATCH,
+                    count=request_count,
                     idle=min_idle_ms,
                 )
             except TypeError:
@@ -506,7 +570,7 @@ class RedisStreamQueue:
                     self.group,
                     min=start,
                     max="+",
-                    count=self._LEGACY_PENDING_BATCH,
+                    count=request_count,
                 )
             except Exception as exc:
                 if not self._is_xpending_idle_unsupported(exc):
@@ -516,28 +580,34 @@ class RedisStreamQueue:
                     self.group,
                     min=start,
                     max="+",
-                    count=self._LEGACY_PENDING_BATCH,
+                    count=request_count,
                 )
-            eligible = [entry for entry in pending if self._idle_ms(entry) >= min_idle_ms][:1]
+            examined += len(pending)
+            eligible = [entry for entry in pending if self._idle_ms(entry) >= min_idle_ms]
             if eligible:
                 entry = eligible[0]
                 message_id = entry["message_id"] if isinstance(entry, dict) else entry[0]
-                claimed = self.redis.xclaim(
+                claimed_entries = self.redis.xclaim(
                     self.stream,
                     self.group,
                     self.consumer,
                     min_idle_ms,
                     [message_id],
                 )
-                if not claimed:
+                if not claimed_entries:
                     return None
-                claimed_id, values = claimed[0]
-                return ClaimedTask(self._text(claimed_id), self._decode_task(values))
-            if not pending or len(pending) < self._LEGACY_PENDING_BATCH:
+                claimed_id, values = claimed_entries[0]
+                claimed = self._decode_or_quarantine(claimed_id, values)
+                if claimed is not None:
+                    return claimed
+                start = self._next_stream_id(claimed_id)
+                continue
+            if not pending or len(pending) < request_count:
                 return None
             last = pending[-1]
             last_id = last["message_id"] if isinstance(last, dict) else last[0]
             start = self._next_stream_id(last_id)
+        return None
 
     def ack(self, message_id: str) -> None:
         self.redis.xack(self.stream, self.group, message_id)
