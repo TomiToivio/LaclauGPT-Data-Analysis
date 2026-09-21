@@ -391,8 +391,10 @@ No bespoke export step is required for the Phase 1 dashboard:
 | Collection role | Payload | Visualization use |
 | --- | --- | --- |
 | `analysis_results` | canonical analyzed record under `result`, task/run identity and provenance | recent feed, item drilldown, signifier/formation timelines, actors/entities, evidence inspection, DNA/SNA fields when present |
-| `analysis_failures` | failed task identity, attempt, error class and provenance | operational diagnostics |
+| `analysis_failures` | failed task identity, attempt, error class, provenance, provider finish reason and a diagnostic-only raw response capped at 16,384 characters (with original length + truncation flag) | operational diagnostics only; never research output |
 | `periodic_summaries` | stable report id, scope, 24h window, structured summary payload, SHA-256 and protocol provenance | report views, trend summaries, bounded historical context |
+
+The raw failure response is deliberately stored only in the failure collection. It is diagnostic evidence for parser/provider post-mortems, not an analysed artifact, and visualization/public research surfaces must not promote or expose it.
 
 All collections are namespaced through `Settings.distributed_namespace`, and
 all report queries are isolated by both `project_id` and `run_id`.
