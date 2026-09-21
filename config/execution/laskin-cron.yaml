@@ -63,4 +63,4 @@ periodic_reports:
   command: laclaugpt-phase1-laskin-report
   source: mongodb
   destination: mongodb
-  collection_role: periodic_reports
+  collection_role: periodic_summaries
