@@ -679,13 +679,17 @@ def main(argv: list[str] | None = None) -> int:
         "quarantined": 0,
         "idle": 0,
     }
+    failure_classes: dict[str, int] = {}
     for _ in range(max(args.max_tasks, 0)):
         outcome = worker.run_once(reclaim_idle_ms=args.reclaim_idle_ms)
         counts[outcome] = counts.get(outcome, 0) + 1
         counts["quarantined"] += int(getattr(worker, "last_quarantined", 0))
+        failure_class = getattr(worker, "last_failure_class", None)
+        if failure_class:
+            failure_classes[failure_class] = failure_classes.get(failure_class, 0) + 1
         if outcome == "idle":
             break
-    logger.info("AI26 worker cycle: %s", counts)
+    logger.info("AI26 worker cycle: %s failure_classes=%s", counts, failure_classes)
     return _cycle_exit_code(counts)
 
 
