@@ -10,6 +10,7 @@ from laclaugpt_data_analysis.llm.base import (
     LLMCallProvenance,
     LLMProvider,
     LLMResponse,
+    LLMTruncationError,
     ProviderError,
     merge_options,
 )
@@ -37,6 +38,7 @@ __all__ = [
     "LLMCallProvenance",
     "LLMProvider",
     "LLMResponse",
+    "LLMTruncationError",
     "ProviderError",
     "build_structured_prompt",
     "chat_structured",
