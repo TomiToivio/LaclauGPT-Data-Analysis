@@ -11,6 +11,28 @@ from typing import Any, Callable, Mapping, Protocol
 from .config import Settings
 
 
+FAILURE_RESPONSE_RAW_MAX_CHARS = 16_384
+
+
+def bounded_failure_diagnostics(
+    diagnostics: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Normalize and bound model-output diagnostics before durable persistence."""
+    if not diagnostics:
+        return {}
+    raw = str(diagnostics.get("response_raw") or "")
+    finish_reason = str(diagnostics.get("finish_reason") or "")
+    if not raw and not finish_reason:
+        return {}
+    return {
+        "response_raw": raw[:FAILURE_RESPONSE_RAW_MAX_CHARS],
+        "response_raw_chars": len(raw),
+        "response_raw_truncated": len(raw) > FAILURE_RESPONSE_RAW_MAX_CHARS,
+        "finish_reason": finish_reason,
+        "diagnostic_only": True,
+    }
+
+
 @dataclass(frozen=True, slots=True)
 class TaskEnvelope:
     task_id: str
@@ -99,6 +121,7 @@ class DurableTaskStore(Protocol):
         task: TaskEnvelope,
         error: str,
         provenance: Mapping[str, Any],
+        diagnostics: Mapping[str, Any] | None = None,
     ) -> None: ...
 
 
@@ -168,12 +191,14 @@ class InMemoryTaskStore:
         task: TaskEnvelope,
         error: str,
         provenance: Mapping[str, Any],
+        diagnostics: Mapping[str, Any] | None = None,
     ) -> None:
         self.failures.append(
             {
                 "task": task.to_dict(),
                 "error": error,
                 "provenance": dict(provenance),
+                **bounded_failure_diagnostics(diagnostics),
             }
         )
 
@@ -200,13 +225,26 @@ class SqliteTaskStore:
                 "CREATE TABLE IF NOT EXISTS task_failures ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL, "
                 "idempotency_key TEXT NOT NULL, source_url TEXT, attempt INTEGER NOT NULL, "
-                "error TEXT NOT NULL, provenance_json TEXT NOT NULL, created_at REAL NOT NULL)"
+                "error TEXT NOT NULL, provenance_json TEXT NOT NULL, response_raw TEXT, "
+                "response_raw_chars INTEGER, response_raw_truncated INTEGER, finish_reason TEXT, "
+                "diagnostic_only INTEGER, created_at REAL NOT NULL)"
             )
             failure_columns = {
                 str(row[1]) for row in connection.execute("PRAGMA table_info(task_failures)")
             }
             if "source_url" not in failure_columns:
                 connection.execute("ALTER TABLE task_failures ADD COLUMN source_url TEXT")
+            for column, declaration in {
+                "response_raw": "TEXT",
+                "response_raw_chars": "INTEGER",
+                "response_raw_truncated": "INTEGER",
+                "finish_reason": "TEXT",
+                "diagnostic_only": "INTEGER",
+            }.items():
+                if column not in failure_columns:
+                    connection.execute(
+                        f"ALTER TABLE task_failures ADD COLUMN {column} {declaration}"
+                    )
 
     def has_result(self, idempotency_key: str) -> bool:
         with sqlite3.connect(self.path) as connection:
@@ -244,12 +282,15 @@ class SqliteTaskStore:
         task: TaskEnvelope,
         error: str,
         provenance: Mapping[str, Any],
+        diagnostics: Mapping[str, Any] | None = None,
     ) -> None:
+        diagnostic = bounded_failure_diagnostics(diagnostics)
         with sqlite3.connect(self.path) as connection:
             connection.execute(
                 "INSERT INTO task_failures "
-                "(task_id, idempotency_key, source_url, attempt, error, provenance_json, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "(task_id, idempotency_key, source_url, attempt, error, provenance_json, "
+                "response_raw, response_raw_chars, response_raw_truncated, finish_reason, "
+                "diagnostic_only, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     task.task_id,
                     task.idempotency_key,
@@ -257,6 +298,11 @@ class SqliteTaskStore:
                     task.attempt,
                     error,
                     json.dumps(dict(provenance), ensure_ascii=False, default=str),
+                    diagnostic.get("response_raw"),
+                    diagnostic.get("response_raw_chars"),
+                    int(bool(diagnostic.get("response_raw_truncated"))) if diagnostic else None,
+                    diagnostic.get("finish_reason"),
+                    int(bool(diagnostic.get("diagnostic_only"))) if diagnostic else None,
                     time.time(),
                 ),
             )
@@ -349,6 +395,7 @@ class MongoTaskStore:
         task: TaskEnvelope,
         error: str,
         provenance: Mapping[str, Any],
+        diagnostics: Mapping[str, Any] | None = None,
     ) -> None:
         self.failures.insert_one(
             {
@@ -360,6 +407,7 @@ class MongoTaskStore:
                 "attempt": task.attempt,
                 "error": error,
                 "provenance": dict(provenance),
+                **bounded_failure_diagnostics(diagnostics),
                 "created_at": time.time(),
             }
         )
