@@ -21,17 +21,19 @@ MODEL=${EP24_ANALYSIS_MODEL:-gemma4:12b}
 VENV=${EP24_ROIHU_VENV:-/scratch/project_2009497/LaclauGPT-Private/.venv-roihu}
 OLLAMA_INSTALL_ROOT=${OLLAMA_INSTALL_ROOT:-/scratch/project_2009497/LaclauGPT-Private/.ollama}
 
-mkdir -p "${PRIVATE_ROOT}"/{data,logs,outputs,qa,provenance}
+mkdir -p "${PRIVATE_ROOT}"/{data,media,keyframes,logs,outputs,qa,provenance}
 cd "${PUBLIC_ROOT}"
 
 module --force purge
 module load gcc/14.3.0
 module load python-pytorch/2.13
+module load ffmpeg
 unset PYTHONPATH
 unset PYTHONHOME
 
 [[ -x "${VENV}/bin/python" ]] || {
   echo "Missing Roihu ARM64 venv: ${VENV}" >&2
+  echo "Create it on Roihu and install requirements/roihu-ep24.txt." >&2
   exit 2
 }
 source "${VENV}/bin/activate"
@@ -43,6 +45,15 @@ print("NumPy:", numpy.__version__, numpy.__file__)
 print("Pandas:", pandas.__version__)
 print("openpyxl:", openpyxl.__version__)
 print("PyYAML:", yaml.__version__)
+PY
+
+ffmpeg -version | head -n 1
+ffprobe -version | head -n 1
+
+# Phase 0 isolation smoke check. This must not import EP24/Roihu optional stacks.
+python - <<'PY'
+import laclaugpt
+print("Phase 0 import: OK", getattr(laclaugpt, "__file__", ""))
 PY
 
 export PATH="${OLLAMA_INSTALL_ROOT}/bin:${PATH}"
@@ -84,7 +95,10 @@ ollama list >/dev/null 2>&1 || {
 }
 
 ollama pull "${MODEL}"
+ollama show "${MODEL}" >/dev/null
 
-srun --ntasks=1 python -m laclaugpt_data_analysis.ep24_roihu preflight   --private-root "${PRIVATE_ROOT}" --model "${MODEL}"
+srun --ntasks=1 python -m laclaugpt_data_analysis.ep24_roihu preflight \
+  --private-root "${PRIVATE_ROOT}" --model "${MODEL}"
 
-srun --ntasks=1 python -m laclaugpt_data_analysis.ep24_roihu "${MODE}"   --private-root "${PRIVATE_ROOT}" --model "${MODEL}"
+srun --ntasks=1 python -m laclaugpt_data_analysis.ep24_roihu "${MODE}" \
+  --private-root "${PRIVATE_ROOT}" --model "${MODEL}"
