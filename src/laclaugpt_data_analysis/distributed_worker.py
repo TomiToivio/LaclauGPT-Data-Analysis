@@ -505,11 +505,17 @@ class AI26TaskWorker(TaskWorker):
 
     def run_once(self, *, reclaim_idle_ms: int | None = None) -> str:
         self.last_failure_class: str | None = None
+        quarantine_before = int(getattr(self.queue, "quarantined_count", 0))
+        self.last_quarantined = 0
         claimed = None
         if reclaim_idle_ms is not None:
             claimed = self.queue.reclaim(min_idle_ms=reclaim_idle_ms)
         if claimed is None:
             claimed = self.queue.claim()
+        self.last_quarantined = max(
+            0,
+            int(getattr(self.queue, "quarantined_count", 0)) - quarantine_before,
+        )
         if claimed is None:
             return "idle"
         task = claimed.task
@@ -654,10 +660,18 @@ def main(argv: list[str] | None = None) -> int:
             worker.durable_store,
             limit=max(args.max_tasks, 0),
         )
-    counts = {"completed": 0, "duplicate": 0, "retry": 0, "dead-letter": 0, "idle": 0}
+    counts = {
+        "completed": 0,
+        "duplicate": 0,
+        "retry": 0,
+        "dead-letter": 0,
+        "quarantined": 0,
+        "idle": 0,
+    }
     for _ in range(max(args.max_tasks, 0)):
         outcome = worker.run_once(reclaim_idle_ms=args.reclaim_idle_ms)
         counts[outcome] = counts.get(outcome, 0) + 1
+        counts["quarantined"] += int(getattr(worker, "last_quarantined", 0))
         if outcome == "idle":
             break
     logger.info("AI26 worker cycle: %s", counts)
