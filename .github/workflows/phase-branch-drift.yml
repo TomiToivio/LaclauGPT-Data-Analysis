@@ -1,0 +1,35 @@
+name: Phase branch drift guard
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 4 * * *"
+  push:
+    branches:
+      - phase-1
+
+permissions:
+  contents: read
+
+jobs:
+  phase-1-tree-alignment:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch active Phase 1 refs
+        run: git fetch origin main phase-1 --no-tags
+
+      - name: Require identical active-phase trees
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet origin/main origin/phase-1 --; then
+            echo "::error::main and phase-1 differ while Phase 1 is active."
+            git diff --stat origin/main origin/phase-1
+            exit 1
+          fi
+          echo "main and phase-1 trees are aligned."
