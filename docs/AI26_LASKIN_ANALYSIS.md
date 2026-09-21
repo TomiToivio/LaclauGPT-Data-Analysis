@@ -172,6 +172,7 @@ bounded batch and exits. Exit codes:
 0  success
 2  configuration or preflight failure
 3  another tick holds the lock (benign; the previous run is still working)
+4  periodic-report stage failed after a successful worker cycle
 ```
 
 A cycle that attempts work and completes none of it exits non-zero, so cron or
@@ -390,8 +391,10 @@ No bespoke export step is required for the Phase 1 dashboard:
 | Collection role | Payload | Visualization use |
 | --- | --- | --- |
 | `analysis_results` | canonical analyzed record under `result`, task/run identity and provenance | recent feed, item drilldown, signifier/formation timelines, actors/entities, evidence inspection, DNA/SNA fields when present |
-| `analysis_failures` | failed task identity, attempt, error class and provenance | operational diagnostics |
-| `periodic_reports` | stable report id, scope, 24h window, structured summary payload, SHA-256 and protocol provenance | report views, trend summaries, bounded historical context |
+| `analysis_failures` | failed task identity, attempt, error class, provenance, provider finish reason and a diagnostic-only raw response capped at 16,384 characters (with original length + truncation flag) | operational diagnostics only; never research output |
+| `periodic_summaries` | stable report id, scope, 24h window, structured summary payload, SHA-256 and protocol provenance | report views, trend summaries, bounded historical context |
+
+The raw failure response is deliberately stored only in the failure collection. It is diagnostic evidence for parser/provider post-mortems, not an analysed artifact, and visualization/public research surfaces must not promote or expose it.
 
 All collections are namespaced through `Settings.distributed_namespace`, and
 all report queries are isolated by both `project_id` and `run_id`.
@@ -417,8 +420,8 @@ cycle. It can also be invoked directly:
 ```
 
 Set `LACLAUGPT_PERIODIC_REPORTS=0` only for deliberate maintenance/debugging.
-A report failure makes the wrapper exit non-zero so unattended monitoring does
-not mistake a missing research report for a healthy full cycle.
+A report failure makes the wrapper exit `4`, separately from worker/task failures,
+so unattended monitoring can distinguish a missing research report from a broken analysis cycle.
 
 ### Configuration changes and stale work
 

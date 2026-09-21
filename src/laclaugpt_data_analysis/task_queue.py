@@ -10,6 +10,27 @@ from typing import Any, Callable, Mapping, Protocol
 
 from .config import Settings
 
+FAILURE_RESPONSE_RAW_MAX_CHARS = 16_384
+
+
+def bounded_failure_diagnostics(
+    diagnostics: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Normalize and bound model-output diagnostics before durable persistence."""
+    if not diagnostics:
+        return {}
+    raw = str(diagnostics.get("response_raw") or "")
+    finish_reason = str(diagnostics.get("finish_reason") or "")
+    if not raw and not finish_reason:
+        return {}
+    return {
+        "response_raw": raw[:FAILURE_RESPONSE_RAW_MAX_CHARS],
+        "response_raw_chars": len(raw),
+        "response_raw_truncated": len(raw) > FAILURE_RESPONSE_RAW_MAX_CHARS,
+        "finish_reason": finish_reason,
+        "diagnostic_only": True,
+    }
+
 
 @dataclass(frozen=True, slots=True)
 class TaskEnvelope:
@@ -87,6 +108,12 @@ class TaskQueue(Protocol):
 class DurableTaskStore(Protocol):
     def has_result(self, idempotency_key: str) -> bool: ...
 
+    def has_terminal_failure(self, idempotency_key: str) -> bool: ...
+
+    def rearm_terminal_failure(self, idempotency_key: str) -> int: ...
+
+    def failure_summary(self) -> dict[str, int]: ...
+
     def write_result(
         self,
         task: TaskEnvelope,
@@ -99,6 +126,9 @@ class DurableTaskStore(Protocol):
         task: TaskEnvelope,
         error: str,
         provenance: Mapping[str, Any],
+        diagnostics: Mapping[str, Any] | None = None,
+        *,
+        terminal: bool = False,
     ) -> None: ...
 
 
@@ -144,9 +174,26 @@ class InMemoryTaskStore:
     def __init__(self) -> None:
         self.results: dict[str, dict[str, Any]] = {}
         self.failures: list[dict[str, Any]] = []
+        self.terminal_failures: set[str] = set()
 
     def has_result(self, idempotency_key: str) -> bool:
         return idempotency_key in self.results
+
+    def has_terminal_failure(self, idempotency_key: str) -> bool:
+        return idempotency_key in self.terminal_failures
+
+    def rearm_terminal_failure(self, idempotency_key: str) -> int:
+        if idempotency_key not in self.terminal_failures:
+            return 0
+        self.terminal_failures.remove(idempotency_key)
+        return 1
+
+    def failure_summary(self) -> dict[str, int]:
+        return {
+            "events": len(self.failures),
+            "distinct": len({row["task"]["idempotency_key"] for row in self.failures}),
+            "terminal": len(self.terminal_failures),
+        }
 
     def write_result(
         self,
@@ -168,14 +215,21 @@ class InMemoryTaskStore:
         task: TaskEnvelope,
         error: str,
         provenance: Mapping[str, Any],
+        diagnostics: Mapping[str, Any] | None = None,
+        *,
+        terminal: bool = False,
     ) -> None:
         self.failures.append(
             {
                 "task": task.to_dict(),
                 "error": error,
                 "provenance": dict(provenance),
+                "terminal": terminal,
+                **bounded_failure_diagnostics(diagnostics),
             }
         )
+        if terminal:
+            self.terminal_failures.add(task.idempotency_key)
 
 
 class SqliteTaskStore:
@@ -200,13 +254,29 @@ class SqliteTaskStore:
                 "CREATE TABLE IF NOT EXISTS task_failures ("
                 "id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT NOT NULL, "
                 "idempotency_key TEXT NOT NULL, source_url TEXT, attempt INTEGER NOT NULL, "
-                "error TEXT NOT NULL, provenance_json TEXT NOT NULL, created_at REAL NOT NULL)"
+                "error TEXT NOT NULL, provenance_json TEXT NOT NULL, response_raw TEXT, "
+                "response_raw_chars INTEGER, response_raw_truncated INTEGER, finish_reason TEXT, "
+                "diagnostic_only INTEGER, terminal INTEGER NOT NULL DEFAULT 0, "
+                "rearmed_at REAL, created_at REAL NOT NULL)"
             )
             failure_columns = {
                 str(row[1]) for row in connection.execute("PRAGMA table_info(task_failures)")
             }
             if "source_url" not in failure_columns:
                 connection.execute("ALTER TABLE task_failures ADD COLUMN source_url TEXT")
+            for column, declaration in {
+                "response_raw": "TEXT",
+                "response_raw_chars": "INTEGER",
+                "response_raw_truncated": "INTEGER",
+                "finish_reason": "TEXT",
+                "diagnostic_only": "INTEGER",
+                "terminal": "INTEGER NOT NULL DEFAULT 0",
+                "rearmed_at": "REAL",
+            }.items():
+                if column not in failure_columns:
+                    connection.execute(
+                        f"ALTER TABLE task_failures ADD COLUMN {column} {declaration}"
+                    )
 
     def has_result(self, idempotency_key: str) -> bool:
         with sqlite3.connect(self.path) as connection:
@@ -214,6 +284,36 @@ class SqliteTaskStore:
                 "SELECT 1 FROM task_results WHERE idempotency_key = ?", (idempotency_key,)
             ).fetchone()
         return row is not None
+
+    def has_terminal_failure(self, idempotency_key: str) -> bool:
+        with sqlite3.connect(self.path) as connection:
+            row = connection.execute(
+                "SELECT 1 FROM task_failures "
+                "WHERE idempotency_key = ? AND terminal = 1 AND rearmed_at IS NULL LIMIT 1",
+                (idempotency_key,),
+            ).fetchone()
+        return row is not None
+
+    def rearm_terminal_failure(self, idempotency_key: str) -> int:
+        with sqlite3.connect(self.path) as connection:
+            cursor = connection.execute(
+                "UPDATE task_failures SET rearmed_at = ? "
+                "WHERE idempotency_key = ? AND terminal = 1 AND rearmed_at IS NULL",
+                (time.time(), idempotency_key),
+            )
+            return int(cursor.rowcount)
+
+    def failure_summary(self) -> dict[str, int]:
+        with sqlite3.connect(self.path) as connection:
+            events = int(connection.execute("SELECT COUNT(*) FROM task_failures").fetchone()[0])
+            distinct = int(connection.execute(
+                "SELECT COUNT(DISTINCT idempotency_key) FROM task_failures"
+            ).fetchone()[0])
+            terminal = int(connection.execute(
+                "SELECT COUNT(DISTINCT idempotency_key) FROM task_failures "
+                "WHERE terminal = 1 AND rearmed_at IS NULL"
+            ).fetchone()[0])
+        return {"events": events, "distinct": distinct, "terminal": terminal}
 
     def write_result(
         self,
@@ -244,12 +344,17 @@ class SqliteTaskStore:
         task: TaskEnvelope,
         error: str,
         provenance: Mapping[str, Any],
+        diagnostics: Mapping[str, Any] | None = None,
+        *,
+        terminal: bool = False,
     ) -> None:
+        diagnostic = bounded_failure_diagnostics(diagnostics)
         with sqlite3.connect(self.path) as connection:
             connection.execute(
                 "INSERT INTO task_failures "
-                "(task_id, idempotency_key, source_url, attempt, error, provenance_json, created_at) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "(task_id, idempotency_key, source_url, attempt, error, provenance_json, "
+                "response_raw, response_raw_chars, response_raw_truncated, finish_reason, "
+                "diagnostic_only, terminal, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     task.task_id,
                     task.idempotency_key,
@@ -257,6 +362,12 @@ class SqliteTaskStore:
                     task.attempt,
                     error,
                     json.dumps(dict(provenance), ensure_ascii=False, default=str),
+                    diagnostic.get("response_raw"),
+                    diagnostic.get("response_raw_chars"),
+                    int(bool(diagnostic.get("response_raw_truncated"))) if diagnostic else None,
+                    diagnostic.get("finish_reason"),
+                    int(bool(diagnostic.get("diagnostic_only"))) if diagnostic else None,
+                    int(terminal),
                     time.time(),
                 ),
             )
@@ -316,6 +427,42 @@ class MongoTaskStore:
             is not None
         )
 
+    def has_terminal_failure(self, idempotency_key: str) -> bool:
+        return (
+            self.failures.find_one(
+                {
+                    "project_id": self.project_id,
+                    "run_id": self.run_id,
+                    "idempotency_key": idempotency_key,
+                    "terminal": True,
+                    "rearmed_at": {"$exists": False},
+                },
+                {"_id": 1},
+            )
+            is not None
+        )
+
+    def rearm_terminal_failure(self, idempotency_key: str) -> int:
+        result = self.failures.update_many(
+            {
+                "project_id": self.project_id,
+                "run_id": self.run_id,
+                "idempotency_key": idempotency_key,
+                "terminal": True,
+                "rearmed_at": {"$exists": False},
+            },
+            {"$set": {"rearmed_at": time.time()}},
+        )
+        return int(result.modified_count)
+
+    def failure_summary(self) -> dict[str, int]:
+        base = {"project_id": self.project_id, "run_id": self.run_id}
+        events = int(self.failures.count_documents(base))
+        distinct = len(self.failures.distinct("idempotency_key", base))
+        terminal_query = {**base, "terminal": True, "rearmed_at": {"$exists": False}}
+        terminal = len(self.failures.distinct("idempotency_key", terminal_query))
+        return {"events": events, "distinct": distinct, "terminal": terminal}
+
     def write_result(
         self,
         task: TaskEnvelope,
@@ -349,6 +496,9 @@ class MongoTaskStore:
         task: TaskEnvelope,
         error: str,
         provenance: Mapping[str, Any],
+        diagnostics: Mapping[str, Any] | None = None,
+        *,
+        terminal: bool = False,
     ) -> None:
         self.failures.insert_one(
             {
@@ -360,6 +510,8 @@ class MongoTaskStore:
                 "attempt": task.attempt,
                 "error": error,
                 "provenance": dict(provenance),
+                "terminal": terminal,
+                **bounded_failure_diagnostics(diagnostics),
                 "created_at": time.time(),
             }
         )
@@ -369,6 +521,7 @@ class RedisStreamQueue:
     """Redis Streams adapter using consumer groups and pending-entry reclaim."""
 
     _LEGACY_PENDING_BATCH = 100
+    _MAX_ENTRIES_PER_CALL = 1000
 
     @staticmethod
     def _is_xautoclaim_unknown_command(exc: Exception) -> bool:
@@ -414,6 +567,7 @@ class RedisStreamQueue:
         self.consumer = consumer
         self.dead_letter_stream = dead_letter_stream or f"{stream}:dead"
         self.heartbeat_key = heartbeat_key or f"{stream}:heartbeat:{consumer}"
+        self.quarantined_count = 0
         try:
             self.redis.xgroup_create(stream, group, id="0", mkstream=True)
         except Exception as exc:  # pragma: no cover - redis response type varies
@@ -449,55 +603,117 @@ class RedisStreamQueue:
             return int(entry.get("time_since_delivered", 0))
         return int(entry[2])
 
+    def _quarantine_entry(
+        self,
+        message_id: Any,
+        values: Mapping[Any, Any],
+        error: Exception,
+    ) -> None:
+        entry_id = self._text(message_id)
+        raw_fields = {self._text(key): self._text(value) for key, value in values.items()}
+        self.redis.xadd(
+            self.dead_letter_stream,
+            {
+                "source_message_id": entry_id,
+                "error": f"{type(error).__name__}: {error}",
+                "raw_fields": json.dumps(raw_fields, ensure_ascii=False, sort_keys=True),
+            },
+        )
+        self.redis.xack(self.stream, self.group, entry_id)
+        self.quarantined_count = getattr(self, "quarantined_count", 0) + 1
+
+    def _decode_or_quarantine(
+        self,
+        message_id: Any,
+        values: Mapping[Any, Any],
+    ) -> ClaimedTask | None:
+        try:
+            task = self._decode_task(values)
+        except (ValueError, TypeError, json.JSONDecodeError) as exc:
+            self._quarantine_entry(message_id, values, exc)
+            return None
+        return ClaimedTask(self._text(message_id), task)
+
     def publish(self, task: TaskEnvelope) -> str:
-        return self._text(self.redis.xadd(self.stream, {"task": json.dumps(task.to_dict())}))
+        payload = json.dumps(task.to_dict())
+        # Keep the write boundary strict: anything published must round-trip
+        # through the same decoder used by workers.
+        self._decode_task({"task": payload})
+        return self._text(self.redis.xadd(self.stream, {"task": payload}))
 
     def claim(self) -> ClaimedTask | None:
-        response = self.redis.xreadgroup(
-            self.group,
-            self.consumer,
-            {self.stream: ">"},
-            count=1,
-            block=1000,
-        )
-        if not response:
-            return None
-        _, entries = response[0]
-        message_id, values = entries[0]
-        return ClaimedTask(self._text(message_id), self._decode_task(values))
-
-    def reclaim(self, *, min_idle_ms: int) -> ClaimedTask | None:
-        try:
-            response = self.redis.xautoclaim(
-                self.stream,
+        examined = 0
+        while examined < self._MAX_ENTRIES_PER_CALL:
+            response = self.redis.xreadgroup(
                 self.group,
                 self.consumer,
-                min_idle_ms,
-                "0-0",
+                {self.stream: ">"},
                 count=1,
+                block=1000,
             )
-        except (AttributeError, TypeError):
-            # Very old client libraries without the xautoclaim method.
-            response = None
-        except Exception as exc:
-            if not self._is_xautoclaim_unknown_command(exc):
-                raise
-            response = None
-        if response:
-            entries = response[1] if len(response) > 1 else []
-            if entries:
-                message_id, values = entries[0]
-                return ClaimedTask(self._text(message_id), self._decode_task(values))
+            if not response:
+                return None
+            _, entries = response[0]
+            if not entries:
+                return None
+            message_id, values = entries[0]
+            examined += 1
+            claimed = self._decode_or_quarantine(message_id, values)
+            if claimed is not None:
+                return claimed
+        return None
+
+    def reclaim(self, *, min_idle_ms: int) -> ClaimedTask | None:
+        examined = 0
+        cursor = "0-0"
+        xautoclaim_supported = True
+        while examined < self._MAX_ENTRIES_PER_CALL:
+            try:
+                response = self.redis.xautoclaim(
+                    self.stream,
+                    self.group,
+                    self.consumer,
+                    min_idle_ms,
+                    cursor,
+                    count=1,
+                )
+            except (AttributeError, TypeError):
+                # Very old client libraries without the xautoclaim method.
+                xautoclaim_supported = False
+                break
+            except Exception as exc:
+                if not self._is_xautoclaim_unknown_command(exc):
+                    raise
+                xautoclaim_supported = False
+                break
+
+            entries = response[1] if response and len(response) > 1 else []
+            if not entries:
+                return None
+            next_cursor = self._text(response[0]) if response else "0-0"
+            message_id, values = entries[0]
+            examined += 1
+            claimed = self._decode_or_quarantine(message_id, values)
+            if claimed is not None:
+                return claimed
+            cursor = next_cursor if next_cursor != "0-0" else self._next_stream_id(message_id)
+
+        if xautoclaim_supported:
+            return None
 
         start = "-"
-        while True:
+        while examined < self._MAX_ENTRIES_PER_CALL:
+            request_count = min(
+                self._LEGACY_PENDING_BATCH,
+                self._MAX_ENTRIES_PER_CALL - examined,
+            )
             try:
                 pending = self.redis.xpending_range(
                     self.stream,
                     self.group,
                     min=start,
                     max="+",
-                    count=self._LEGACY_PENDING_BATCH,
+                    count=request_count,
                     idle=min_idle_ms,
                 )
             except TypeError:
@@ -506,7 +722,7 @@ class RedisStreamQueue:
                     self.group,
                     min=start,
                     max="+",
-                    count=self._LEGACY_PENDING_BATCH,
+                    count=request_count,
                 )
             except Exception as exc:
                 if not self._is_xpending_idle_unsupported(exc):
@@ -516,28 +732,34 @@ class RedisStreamQueue:
                     self.group,
                     min=start,
                     max="+",
-                    count=self._LEGACY_PENDING_BATCH,
+                    count=request_count,
                 )
-            eligible = [entry for entry in pending if self._idle_ms(entry) >= min_idle_ms][:1]
+            examined += len(pending)
+            eligible = [entry for entry in pending if self._idle_ms(entry) >= min_idle_ms]
             if eligible:
                 entry = eligible[0]
                 message_id = entry["message_id"] if isinstance(entry, dict) else entry[0]
-                claimed = self.redis.xclaim(
+                claimed_entries = self.redis.xclaim(
                     self.stream,
                     self.group,
                     self.consumer,
                     min_idle_ms,
                     [message_id],
                 )
-                if not claimed:
+                if not claimed_entries:
                     return None
-                claimed_id, values = claimed[0]
-                return ClaimedTask(self._text(claimed_id), self._decode_task(values))
-            if not pending or len(pending) < self._LEGACY_PENDING_BATCH:
+                claimed_id, values = claimed_entries[0]
+                claimed = self._decode_or_quarantine(claimed_id, values)
+                if claimed is not None:
+                    return claimed
+                start = self._next_stream_id(claimed_id)
+                continue
+            if not pending or len(pending) < request_count:
                 return None
             last = pending[-1]
             last_id = last["message_id"] if isinstance(last, dict) else last[0]
             start = self._next_stream_id(last_id)
+        return None
 
     def ack(self, message_id: str) -> None:
         self.redis.xack(self.stream, self.group, message_id)

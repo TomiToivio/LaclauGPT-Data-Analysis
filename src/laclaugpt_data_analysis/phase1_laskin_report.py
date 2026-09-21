@@ -94,7 +94,7 @@ def generate_latest_reports(
 
     client = _mongo_client(settings)
     collection = client[settings.mongo_database][
-        settings.distributed_namespace.mongo_collection("periodic_reports")
+        settings.distributed_namespace.mongo_collection("periodic_summaries")
     ]
     existing = list(
         collection.find(

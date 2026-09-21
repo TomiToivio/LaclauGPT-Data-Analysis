@@ -18,6 +18,32 @@ The framework is developed around Ernesto Laclau and Chantal Mouffe's discourse 
 > [!WARNING]
 > **Human-in-the-loop academic research only.** LaclauGPT's machine-generated summaries, classifications, discourse-theoretical codes, populism analyses, signifier roles, ideological formations, affects and other interpretations are **preliminary analyses to be verified by a human researcher**. They must not be treated as final findings, ground truth or autonomous scholarly judgement. Human verification of source evidence and interpretation is required before results are reported, published or cited as research conclusions. LaclauGPT is designed for academic research, not autonomous operational, administrative, intelligence, moderation, profiling or policy decisions about people or groups.
 
+
+<!-- project-background:start -->
+## Project background and funding
+
+LaclauGPT grew out of research-software work at the **[Helsinki Hub on Emotions, Populism and Polarisation (HEPPsinki)](https://www.helsinki.fi/en/researchgroups/emotions-populism-and-polarisation), University of Helsinki**, and has been developed in connection with the **CO3**, **PLEDGE**, and **ENDURE** international research projects.
+
+<p align="center">
+  <a href="https://www.co3socialcontract.eu/"><img src="https://www.co3socialcontract.eu/favicon.ico" width="88" height="88" alt="CO3 project logo"></a>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.pledgeproject.eu/"><img src="https://www.pledgeproject.eu/favicon.ico" width="88" height="88" alt="PLEDGE project logo"></a>
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://www.endure-project.org/"><img src="https://www.endure-project.org/favicon.ico" width="88" height="88" alt="ENDURE project logo"></a>
+</p>
+
+<p align="center">\n  <a href="https://european-union.europa.eu/principles-countries-history/symbols/european-flag_en"><img src="https://www.pledgeproject.eu/wp-content/uploads/2024/04/co-funded-by-european-union.png" height="64" alt="European Union flag and funding acknowledgement"></a>\n</p>
+
+- **[CO3 — Continuous Construction of Resilient Social Contracts Through Societal Transformations](https://www.co3socialcontract.eu/)** studies how more democratic, inclusive and resilient social contracts can be built and renewed.
+- **[PLEDGE — Politics of Grievance and Democratic Governance](https://www.pledgeproject.eu/)** studies the emotional dynamics of political grievances and democratic governance.
+- **[ENDURE — Inequalities, Community Resilience and New Governance Modalities in a Post-Pandemic World](https://www.endure-project.org/)** examines inequalities, community resilience and governance after COVID-19.
+
+**Funding.** CO3 and PLEDGE have been funded in the **Horizon Europe framework of the European Union (2024–27)**. ENDURE was a **Trans-Atlantic Platform funded consortium**; the work at the **University of Helsinki was funded by the Research Council of Finland (2022–25)**.
+
+The original LaclauGPT pipeline was used in the **2024 European Parliament election** research programme to collect and analyse multimodal TikTok and Instagram material across multiple European countries. The present modular framework generalises that work into reusable Data Collection, Data Analysis and Data Visualization components.
+
+<!-- project-background:end -->
+
 ## Research philosophy: human-in-the-loop as an assemblage
 
 LaclauGPT uses a deliberately assemblage-based working philosophy of AI:

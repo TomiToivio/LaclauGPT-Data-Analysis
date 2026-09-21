@@ -500,22 +500,59 @@ class AI26Handler:
         return analyzed.model_dump(mode="json")
 
 
+def _failure_diagnostics(exc: Exception) -> dict[str, Any]:
+    """Extract structured-output evidence attached at the LLM boundary."""
+    response_raw = getattr(exc, "response_raw", None)
+    finish_reason = getattr(exc, "finish_reason", None)
+    if response_raw is None and finish_reason is None:
+        return {}
+    return {
+        "response_raw": "" if response_raw is None else str(response_raw),
+        "finish_reason": "" if finish_reason is None else str(finish_reason),
+    }
+
+
 class AI26TaskWorker(TaskWorker):
     """Task worker with explicit retry requeue so attempt counters actually advance."""
 
     def run_once(self, *, reclaim_idle_ms: int | None = None) -> str:
         self.last_failure_class: str | None = None
+        quarantine_before = int(getattr(self.queue, "quarantined_count", 0))
+        self.last_quarantined = 0
         claimed = None
         if reclaim_idle_ms is not None:
             claimed = self.queue.reclaim(min_idle_ms=reclaim_idle_ms)
         if claimed is None:
             claimed = self.queue.claim()
+        self.last_quarantined = max(
+            0,
+            int(getattr(self.queue, "quarantined_count", 0)) - quarantine_before,
+        )
         if claimed is None:
             return "idle"
         task = claimed.task
         if self.validator is not None:
-            self.validator(task)
+            try:
+                self.validator(task)
+            except Exception as exc:
+                # Validation failures are terminal for this immutable task envelope.
+                # Persist and quarantine them immediately so a stale revision cannot
+                # poison the head of either the fresh or reclaimed queue.
+                self.last_failure_class = type(exc).__name__
+                error = f"{self.last_failure_class}: {exc}"
+                self.durable_store.write_failure(
+                    task,
+                    error,
+                    self.provenance,
+                    terminal=True,
+                )
+                self.queue.dead_letter(task, error)
+                self.queue.ack(claimed.message_id)
+                return "dead-letter"
         if self.durable_store.has_result(task.idempotency_key):
+            self.queue.ack(claimed.message_id)
+            return "duplicate"
+        if self.durable_store.has_terminal_failure(task.idempotency_key):
             self.queue.ack(claimed.message_id)
             return "duplicate"
         try:
@@ -526,8 +563,15 @@ class AI26TaskWorker(TaskWorker):
         except Exception as exc:
             self.last_failure_class = type(exc).__name__
             error = f"{self.last_failure_class}: {exc}"
-            self.durable_store.write_failure(task, error, self.provenance)
-            if task.attempt >= self.max_attempts:
+            terminal = task.attempt >= self.max_attempts
+            self.durable_store.write_failure(
+                task,
+                error,
+                self.provenance,
+                diagnostics=_failure_diagnostics(exc),
+                terminal=terminal,
+            )
+            if terminal:
                 self.queue.dead_letter(task, error)
                 self.queue.ack(claimed.message_id)
                 return "dead-letter"
@@ -560,6 +604,8 @@ def seed_ready_tasks(
         for envelope in envelopes:
             task = binding.task_from_handoff(envelope)
             if durable_store.has_result(task.idempotency_key):
+                continue
+            if durable_store.has_terminal_failure(task.idempotency_key):
                 continue
             queue.publish(task)
             count += 1
@@ -629,6 +675,13 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-tasks", type=int, default=10)
     parser.add_argument("--reclaim-idle-ms", type=int, default=900_000)
     parser.add_argument("--seed-ready", action="store_true")
+    parser.add_argument(
+        "--rearm-failed",
+        action="append",
+        default=[],
+        metavar="IDEMPOTENCY_KEY",
+        help="Re-arm a terminally failed document so a later seed cycle may retry it.",
+    )
     return parser
 
 
@@ -646,6 +699,9 @@ def main(argv: list[str] | None = None) -> int:
         worker_id=args.worker_id,
     )
     worker, handoff = build_worker(binding, settings)
+    for idempotency_key in args.rearm_failed:
+        rearmed = worker.durable_store.rearm_terminal_failure(idempotency_key)
+        logger.info("Re-armed terminal failure %s: records=%d", idempotency_key, rearmed)
     if args.seed_ready:
         seed_ready_tasks(
             binding,
@@ -654,13 +710,31 @@ def main(argv: list[str] | None = None) -> int:
             worker.durable_store,
             limit=max(args.max_tasks, 0),
         )
-    counts = {"completed": 0, "duplicate": 0, "retry": 0, "dead-letter": 0, "idle": 0}
+    counts = {
+        "completed": 0,
+        "duplicate": 0,
+        "retry": 0,
+        "dead-letter": 0,
+        "quarantined": 0,
+        "idle": 0,
+    }
+    failure_classes: dict[str, int] = {}
     for _ in range(max(args.max_tasks, 0)):
         outcome = worker.run_once(reclaim_idle_ms=args.reclaim_idle_ms)
         counts[outcome] = counts.get(outcome, 0) + 1
+        counts["quarantined"] += int(getattr(worker, "last_quarantined", 0))
+        failure_class = getattr(worker, "last_failure_class", None)
+        if failure_class:
+            failure_classes[failure_class] = failure_classes.get(failure_class, 0) + 1
         if outcome == "idle":
             break
-    logger.info("AI26 worker cycle: %s", counts)
+    failure_summary = worker.durable_store.failure_summary()
+    logger.info(
+        "AI26 worker cycle: %s failure_classes=%s failure_summary=%s",
+        counts,
+        failure_classes,
+        failure_summary,
+    )
     return _cycle_exit_code(counts)
 
 

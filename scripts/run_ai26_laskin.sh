@@ -13,7 +13,7 @@
 #   scripts/run_ai26_laskin.sh                   same as --once (cron-safe)
 #
 # Exit codes: 0 success, 2 configuration/preflight failure, 3 already running,
-#             non-zero propagated from the worker for a genuine task failure.
+#             4 periodic-report failure, otherwise worker status is propagated.
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -205,13 +205,16 @@ set +e
   --seed-ready \
   --reclaim-idle-ms "$RECLAIM_IDLE_MS" \
   --max-tasks "$MAX_TASKS"
-STATUS=$?
+WORKER_STATUS=$?
 set -e
+REPORT_STATUS="not-run"
+FINAL_STATUS=$WORKER_STATUS
 
 # Periodic reports are part of the Phase 1 runtime contract. Recomputing the
 # latest completed window on every successful hourly tick is safe because the
-# report command upserts stable report identities.
-if [[ "$STATUS" -eq 0 && "${LACLAUGPT_PERIODIC_REPORTS:-1}" != "0" ]]; then
+# report command upserts stable report identities. Report-stage failures use
+# exit 4 so monitoring can distinguish them from worker/task failures.
+if [[ "$WORKER_STATUS" -eq 0 && "${LACLAUGPT_PERIODIC_REPORTS:-1}" != "0" ]]; then
   REPORT_BIN="$ROOT_DIR/.venv/bin/laclaugpt-phase1-laskin-report"
   if [[ -x "$REPORT_BIN" ]]; then
     log "AI26 Phase 1 periodic report start run=$LACLAUGPT_RUN_ID"
@@ -221,15 +224,18 @@ if [[ "$STATUS" -eq 0 && "${LACLAUGPT_PERIODIC_REPORTS:-1}" != "0" ]]; then
     set -e
     if [[ "$REPORT_STATUS" -ne 0 ]]; then
       log "AI26 Phase 1 periodic report failed status=$REPORT_STATUS"
-      STATUS=$REPORT_STATUS
+      FINAL_STATUS=4
     else
       log "AI26 Phase 1 periodic report end status=0"
     fi
   else
+    REPORT_STATUS="missing"
     log "AI26 Phase 1 periodic report command missing: $REPORT_BIN"
-    STATUS=2
+    FINAL_STATUS=4
   fi
+elif [[ "${LACLAUGPT_PERIODIC_REPORTS:-1}" == "0" ]]; then
+  REPORT_STATUS="disabled"
 fi
 
-log "AI26 Laskin analysis end status=$STATUS"
-exit "$STATUS"
+log "AI26 Laskin analysis end worker_status=$WORKER_STATUS report_status=$REPORT_STATUS status=$FINAL_STATUS"
+exit "$FINAL_STATUS"

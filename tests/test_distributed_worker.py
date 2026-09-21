@@ -13,6 +13,7 @@ from laclaugpt_data_analysis.distributed_worker import (
     WorkerBinding,
     collection_records_name,
     enforce_local_model,
+    seed_ready_tasks,
 )
 from laclaugpt_data_analysis.task_queue import InMemoryTaskQueue, InMemoryTaskStore, TaskEnvelope
 
@@ -281,8 +282,148 @@ def test_ai26_retry_reaches_dead_letter_instead_of_looping_forever() -> None:
     )
 
     assert worker.run_once() == "retry"
+    assert store.failures[-1]["task"]["attempt"] == 1
     assert worker.run_once() == "retry"
+    assert store.failures[-1]["task"]["attempt"] == 2
     assert worker.run_once() == "dead-letter"
+    assert store.failures[-1]["task"]["attempt"] == 3
+    assert store.failures[-1]["terminal"] is True
+    assert store.has_terminal_failure("id-1")
+    assert store.failure_summary() == {"events": 3, "distinct": 1, "terminal": 1}
     assert len(queue.dead_letters) == 1
     assert queue.dead_letters[0]["task"]["attempt"] == 3
     assert not queue.pending
+
+
+@pytest.mark.parametrize("reclaimed", [False, True], ids=["claim", "reclaim"])
+def test_manifest_validation_failure_is_quarantined_without_blocking_queue(reclaimed: bool) -> None:
+    queue = InMemoryTaskQueue()
+    store = InMemoryTaskStore()
+    handled: list[str] = []
+
+    stale = TaskEnvelope(
+        task_id="stale-task",
+        idempotency_key="stale-id",
+        project_id="ai26",
+        run_id="run-001",
+        task_type="analyze-record",
+        record_ref="https://example.invalid/source/stale",
+        schema_version=SCHEMA_VERSION,
+        config_revision="cfg",
+        codebook_revision="stale-codebook",
+    )
+    current = TaskEnvelope(
+        task_id="current-task",
+        idempotency_key="current-id",
+        project_id="ai26",
+        run_id="run-001",
+        task_type="analyze-record",
+        record_ref="https://example.invalid/source/current",
+        schema_version=SCHEMA_VERSION,
+        config_revision="cfg",
+        codebook_revision="current-codebook",
+    )
+    queue.publish(stale)
+    queue.publish(current)
+
+    if reclaimed:
+        claimed = queue.claim()
+        assert claimed is not None
+        assert claimed.task.task_id == "stale-task"
+
+    def validate(task: TaskEnvelope) -> None:
+        if task.codebook_revision != "current-codebook":
+            raise ValueError("task/run manifest mismatch: codebook_revision")
+
+    def handle(task: TaskEnvelope) -> dict[str, str]:
+        handled.append(task.task_id)
+        return {"task_id": task.task_id}
+
+    worker = AI26TaskWorker(
+        queue=queue,
+        durable_store=store,
+        handler=handle,
+        worker_id="worker-1",
+        provenance={"run_id": "run-001"},
+        validator=validate,
+        max_attempts=3,
+    )
+    reclaim_idle_ms = 0 if reclaimed else None
+
+    assert worker.run_once(reclaim_idle_ms=reclaim_idle_ms) == "dead-letter"
+    assert handled == []
+    assert worker.last_failure_class == "ValueError"
+    assert len(store.failures) == 1
+    assert store.failures[0]["task"]["attempt"] == 1
+    assert store.failures[0]["provenance"]["run_id"] == "run-001"
+    assert "codebook_revision" in store.failures[0]["error"]
+    assert len(queue.dead_letters) == 1
+    assert queue.dead_letters[0]["task"]["attempt"] == 1
+
+    assert worker.run_once(reclaim_idle_ms=reclaim_idle_ms) == "completed"
+    assert handled == ["current-task"]
+    assert store.has_result("current-id")
+    assert not queue.pending
+    assert not queue.claimed
+
+
+
+def test_permanent_failure_is_not_reseeded_across_cycles_until_rearmed() -> None:
+    class Binding:
+        manifest = type("Manifest", (), {"run_id": "run-001"})()
+
+        @staticmethod
+        def task_from_handoff(handoff):
+            return TaskEnvelope(
+                task_id=f"analysis:{handoff['handoff_key']}",
+                idempotency_key=handoff["handoff_key"],
+                project_id="ai26",
+                run_id="run-001",
+                task_type="analyze-record",
+                record_ref=handoff["source_url"],
+                schema_version=SCHEMA_VERSION,
+                config_revision="cfg",
+                codebook_revision="cb",
+            )
+
+    class Handoff:
+        row = {
+            "status": "ready",
+            "run_id": "run-001",
+            "handoff_key": "handoff-permanent",
+            "source_url": "https://example.invalid/permanent",
+        }
+
+        def ready_handoffs(self, run_id: str, *, limit: int, offset: int = 0):
+            assert run_id == "run-001"
+            return [self.row][offset : offset + limit]
+
+    binding = Binding()
+    handoff = Handoff()
+    store = InMemoryTaskStore()
+    queue = InMemoryTaskQueue()
+    worker = AI26TaskWorker(
+        queue=queue,
+        durable_store=store,
+        handler=lambda _: (_ for _ in ()).throw(RuntimeError("permanent")),
+        worker_id="worker-284",
+        provenance={},
+        max_attempts=3,
+    )
+
+    assert seed_ready_tasks(binding, handoff, queue, store, limit=1) == 1
+    assert worker.run_once() == "retry"
+    assert worker.run_once() == "retry"
+    assert worker.run_once() == "dead-letter"
+    assert [row["task"]["attempt"] for row in store.failures] == [1, 2, 3]
+    assert store.has_terminal_failure("handoff-permanent")
+
+    second_cycle_queue = InMemoryTaskQueue()
+    assert seed_ready_tasks(binding, handoff, second_cycle_queue, store, limit=1) == 0
+    assert second_cycle_queue.pending == []
+
+    assert store.rearm_terminal_failure("handoff-permanent") == 1
+    assert not store.has_terminal_failure("handoff-permanent")
+    third_cycle_queue = InMemoryTaskQueue()
+    assert seed_ready_tasks(binding, handoff, third_cycle_queue, store, limit=1) == 1
+    assert third_cycle_queue.pending[0].task.attempt == 1
