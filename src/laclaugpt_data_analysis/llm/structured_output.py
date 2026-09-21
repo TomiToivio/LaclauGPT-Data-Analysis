@@ -153,6 +153,13 @@ def _validation_feedback(exc: Exception, max_chars: int = 1800) -> str:
     return text[:max_chars] if text else type(exc).__name__
 
 
+def _attach_failure_diagnostics(exc: Exception, response: LLMResponse) -> Exception:
+    """Attach provider evidence without changing the public exception type."""
+    setattr(exc, "response_raw", response.content)
+    setattr(exc, "finish_reason", response.finish_reason)
+    return exc
+
+
 def build_structured_prompt(user_prompt: str, model_cls: type[T]) -> str:
     """Append the required-output-JSON-shape contract to a user prompt."""
     shape = _schema_example(model_cls)
@@ -219,11 +226,12 @@ def chat_structured(
                 run_options.get("num_predict"),
             )
             if attempt == 2:
-                raise LLMTruncationError(
+                exc = LLMTruncationError(
                     "structured generation exhausted the output budget "
                     f"(finish_reason={response.finish_reason or 'unknown'}, "
                     f"num_predict={run_options.get('num_predict')})"
                 )
+                raise _attach_failure_diagnostics(exc, response)
             current_budget = int(run_options.get("num_predict", STRUCTURED_NUM_PREDICT))
             next_budget = min(
                 max(current_budget * 2, STRUCTURED_NUM_PREDICT),
@@ -243,7 +251,7 @@ def chat_structured(
         except Exception as exc:
             logger.warning("structured parse failed (attempt %d): %s", attempt, exc)
             if attempt == 2:
-                raise
+                raise _attach_failure_diagnostics(exc, response)
             shape_prompt += (
                 "\n\n### Validation failure from your previous answer\n"
                 f"{_validation_feedback(exc)}\n"
