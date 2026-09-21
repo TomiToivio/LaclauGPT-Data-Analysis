@@ -6,7 +6,6 @@ from pathlib import Path
 
 from laclaugpt_data_analysis.distributed import _MONGO_KINDS, _S3_KINDS, ProjectNamespace
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "laclaugpt_data_analysis"
 
