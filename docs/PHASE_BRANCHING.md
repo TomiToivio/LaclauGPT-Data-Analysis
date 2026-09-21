@@ -28,6 +28,19 @@ phase-2..phase-4 = isolated future work
 
 When the project advances to a later phase, promotion into `main` requires explicit human approval.
 
+## Drift guard
+
+`main` and `phase-1` may have different commit ancestry (for example, a merge commit that preserves
+phase-specific history), but their checked-out trees must be identical while Phase 1 is active.
+
+A scheduled/manual GitHub Actions check in `.github/workflows/phase-branch-drift.yml` fetches both refs
+and fails if `git diff origin/main origin/phase-1` is non-empty. Any change merged to one active ref
+must therefore be synchronized to the other immediately.
+
+`phase-0` is intentionally different: it is the preserved Phase 0 baseline, is an ancestor of current
+`main`, and is not expected to track Phase 1 runtime fixes. Its divergence is isolation, not drift.
+Phase 0 maintenance must continue to target `phase-0` explicitly.
+
 Repository: `TomiToivio/LaclauGPT-Data-Analysis`.
 
 Agents must read `AGENTS.md` and this file before issue-driven changes. Working on the wrong phase branch is an incorrect implementation.
