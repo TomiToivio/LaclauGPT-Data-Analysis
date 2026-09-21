@@ -27,6 +27,16 @@ If a worker dies before step 6, another worker may reclaim the pending entry. Th
 
 Failures are written to durable storage. Redis only receives a compact dead-letter event after `max_attempts`; it is not the audit log.
 
+A failure event whose attempt reaches `max_attempts` is marked `terminal=true` in durable storage. Ready handoffs with an unrearmed terminal failure are skipped by subsequent seed cycles, so permanently failing documents cannot be reintroduced forever. Failure monitoring reports three separate counts: total failure events, distinct idempotency keys that have failed, and currently terminal distinct documents.
+
+Terminal quarantine is reversible. After a model, codebook, configuration, or parser fix, re-arm a document by running the AI26 worker with:
+
+```text
+--rearm-failed <IDEMPOTENCY_KEY>
+```
+
+The option may be repeated. Re-arming preserves the historical failure events and records a `rearmed_at` timestamp on the terminal event; a later `--seed-ready` cycle can then enqueue the handoff again from attempt 1.
+
 ## Environment
 
 Use runtime environment/private configuration only:
