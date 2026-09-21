@@ -14,11 +14,20 @@ from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
-from laclaugpt_data_analysis.llm.base import ChatRequest, LLMProvider, LLMResponse
+from laclaugpt_data_analysis.llm.base import (
+    ChatRequest,
+    LLMProvider,
+    LLMResponse,
+    LLMTruncationError,
+)
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T", bound=BaseModel)
+
+STRUCTURED_NUM_PREDICT = 4096
+STRUCTURED_NUM_CTX = 16384
+MAX_STRUCTURED_NUM_PREDICT = 8192
 
 _FENCE_RE = re.compile(r"^```[a-zA-Z0-9_-]*\n?|\n?```$")
 
@@ -180,18 +189,54 @@ def chat_structured(
     schema: dict[str, Any] | None = None,
     allow_cloud_fallback: bool | None = None,
 ) -> tuple[T, LLMResponse]:
-    """Structured output with one validation-aware retry."""
+    """Structured output with one retry for truncation or validation failure.
+
+    Structured calls default to a 4096-token output budget inside a 16K context.
+    If the provider explicitly reports a length stop, the retry doubles only the
+    output budget (up to 8192) and does not add schema-correction feedback.
+    """
     shape_prompt = build_structured_prompt(user_prompt, model_cls)
+    run_options = dict(options or {})
+    run_options.setdefault("num_predict", STRUCTURED_NUM_PREDICT)
+    run_options["num_ctx"] = max(int(run_options.get("num_ctx", 0) or 0), STRUCTURED_NUM_CTX)
+
     for attempt in (1, 2):
         request = ChatRequest(
             model=model,
             system=system_prompt,
             user=shape_prompt,
-            options=options or {},
+            options=dict(run_options),
             schema=schema,
             allow_cloud_fallback=allow_cloud_fallback,
         )
         response = provider.chat(request)
+
+        if response.truncated:
+            logger.warning(
+                "structured generation truncated (attempt %d, finish_reason=%s, num_predict=%s)",
+                attempt,
+                response.finish_reason or "unknown",
+                run_options.get("num_predict"),
+            )
+            if attempt == 2:
+                raise LLMTruncationError(
+                    "structured generation exhausted the output budget "
+                    f"(finish_reason={response.finish_reason or 'unknown'}, "
+                    f"num_predict={run_options.get('num_predict')})"
+                )
+            current_budget = int(run_options.get("num_predict", STRUCTURED_NUM_PREDICT))
+            next_budget = min(
+                max(current_budget * 2, STRUCTURED_NUM_PREDICT),
+                MAX_STRUCTURED_NUM_PREDICT,
+            )
+            run_options["num_predict"] = next_budget
+            run_options["num_ctx"] = max(
+                int(run_options.get("num_ctx", 0) or 0),
+                STRUCTURED_NUM_CTX,
+                next_budget * 2,
+            )
+            continue
+
         try:
             parsed = parse_structured(response.content, model_cls)
             return parsed, response
