@@ -41,9 +41,13 @@ class FakeQueue:
 class FakeDurableStore:
     def __init__(self):
         self.completed: set[str] = set()
+        self.terminal: set[str] = set()
 
     def has_result(self, idempotency_key: str) -> bool:
         return idempotency_key in self.completed
+
+    def has_terminal_failure(self, idempotency_key: str) -> bool:
+        return idempotency_key in self.terminal
 
 
 def test_repeated_seed_cycles_advance_past_completed_head_page():
@@ -73,3 +77,15 @@ def test_repeated_seed_cycles_advance_past_completed_head_page():
     queue = FakeQueue()
     assert seed_ready_tasks(binding, handoff, queue, durable, limit=3) == 0
     assert queue.published == []
+
+
+
+def test_terminal_failures_do_not_consume_seed_limit() -> None:
+    binding = FakeBinding()
+    handoff = FakeHandoff(5)
+    durable = FakeDurableStore()
+    durable.terminal.update({"handoff-0", "handoff-1"})
+
+    queue = FakeQueue()
+    assert seed_ready_tasks(binding, handoff, queue, durable, limit=2) == 2
+    assert [task.idempotency_key for task in queue.published] == ["handoff-2", "handoff-3"]
