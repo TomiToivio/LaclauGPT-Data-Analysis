@@ -114,80 +114,6 @@ class DurableTaskStore(Protocol):
 
     def failure_summary(self) -> dict[str, int]: ...
 
-    def has_terminal_failure(self, idempotency_key: str) -> bool:
-        with sqlite3.connect(self.path) as connection:
-            row = connection.execute(
-                "SELECT 1 FROM task_failures "
-                "WHERE idempotency_key = ? AND terminal = 1 AND rearmed_at IS NULL LIMIT 1",
-                (idempotency_key,),
-            ).fetchone()
-        return row is not None
-
-    def rearm_terminal_failure(self, idempotency_key: str) -> int:
-        with sqlite3.connect(self.path) as connection:
-            cursor = connection.execute(
-                "UPDATE task_failures SET rearmed_at = ? "
-                "WHERE idempotency_key = ? AND terminal = 1 AND rearmed_at IS NULL",
-                (time.time(), idempotency_key),
-            )
-            return int(cursor.rowcount)
-
-    def failure_summary(self) -> dict[str, int]:
-        with sqlite3.connect(self.path) as connection:
-            events = int(connection.execute("SELECT COUNT(*) FROM task_failures").fetchone()[0])
-            distinct = int(
-                connection.execute(
-                    "SELECT COUNT(DISTINCT idempotency_key) FROM task_failures"
-                ).fetchone()[0]
-            )
-            terminal = int(
-                connection.execute(
-                    "SELECT COUNT(DISTINCT idempotency_key) FROM task_failures "
-                    "WHERE terminal = 1 AND rearmed_at IS NULL"
-                ).fetchone()[0]
-            )
-        return {"events": events, "distinct": distinct, "terminal": terminal}
-
-    def has_terminal_failure(self, idempotency_key: str) -> bool:
-        return (
-            self.failures.find_one(
-                {
-                    "project_id": self.project_id,
-                    "run_id": self.run_id,
-                    "idempotency_key": idempotency_key,
-                    "terminal": True,
-                    "rearmed_at": {"$exists": False},
-                },
-                {"_id": 1},
-            )
-            is not None
-        )
-
-    def rearm_terminal_failure(self, idempotency_key: str) -> int:
-        result = self.failures.update_many(
-            {
-                "project_id": self.project_id,
-                "run_id": self.run_id,
-                "idempotency_key": idempotency_key,
-                "terminal": True,
-                "rearmed_at": {"$exists": False},
-            },
-            {"$set": {"rearmed_at": time.time()}},
-        )
-        return int(result.modified_count)
-
-    def failure_summary(self) -> dict[str, int]:
-        base = {"project_id": self.project_id, "run_id": self.run_id}
-        events = int(self.failures.count_documents(base))
-        distinct = len(self.failures.distinct("idempotency_key", base))
-        terminal_query = {
-            **base,
-            "terminal": True,
-            "rearmed_at": {"$exists": False},
-        }
-        terminal = len(self.failures.distinct("idempotency_key", terminal_query))
-        return {"events": events, "distinct": distinct, "terminal": terminal}
-
     def write_result(
         self,
         task: TaskEnvelope,
@@ -359,6 +285,40 @@ class SqliteTaskStore:
             ).fetchone()
         return row is not None
 
+    def has_terminal_failure(self, idempotency_key: str) -> bool:
+        with sqlite3.connect(self.path) as connection:
+            row = connection.execute(
+                "SELECT 1 FROM task_failures "
+                "WHERE idempotency_key = ? AND terminal = 1 AND rearmed_at IS NULL LIMIT 1",
+                (idempotency_key,),
+            ).fetchone()
+        return row is not None
+
+    def rearm_terminal_failure(self, idempotency_key: str) -> int:
+        with sqlite3.connect(self.path) as connection:
+            cursor = connection.execute(
+                "UPDATE task_failures SET rearmed_at = ? "
+                "WHERE idempotency_key = ? AND terminal = 1 AND rearmed_at IS NULL",
+                (time.time(), idempotency_key),
+            )
+            return int(cursor.rowcount)
+
+    def failure_summary(self) -> dict[str, int]:
+        with sqlite3.connect(self.path) as connection:
+            events = int(connection.execute("SELECT COUNT(*) FROM task_failures").fetchone()[0])
+            distinct = int(
+                connection.execute(
+                    "SELECT COUNT(DISTINCT idempotency_key) FROM task_failures"
+                ).fetchone()[0]
+            )
+            terminal = int(
+                connection.execute(
+                    "SELECT COUNT(DISTINCT idempotency_key) FROM task_failures "
+                    "WHERE terminal = 1 AND rearmed_at IS NULL"
+                ).fetchone()[0]
+            )
+        return {"events": events, "distinct": distinct, "terminal": terminal}
+
     def write_result(
         self,
         task: TaskEnvelope,
@@ -470,6 +430,42 @@ class MongoTaskStore:
             )
             is not None
         )
+
+    def has_terminal_failure(self, idempotency_key: str) -> bool:
+        return (
+            self.failures.find_one(
+                {
+                    "project_id": self.project_id,
+                    "run_id": self.run_id,
+                    "idempotency_key": idempotency_key,
+                    "terminal": True,
+                    "rearmed_at": {"$exists": False},
+                },
+                {"_id": 1},
+            )
+            is not None
+        )
+
+    def rearm_terminal_failure(self, idempotency_key: str) -> int:
+        result = self.failures.update_many(
+            {
+                "project_id": self.project_id,
+                "run_id": self.run_id,
+                "idempotency_key": idempotency_key,
+                "terminal": True,
+                "rearmed_at": {"$exists": False},
+            },
+            {"$set": {"rearmed_at": time.time()}},
+        )
+        return int(result.modified_count)
+
+    def failure_summary(self) -> dict[str, int]:
+        base = {"project_id": self.project_id, "run_id": self.run_id}
+        events = int(self.failures.count_documents(base))
+        distinct = len(self.failures.distinct("idempotency_key", base))
+        terminal_query = {**base, "terminal": True, "rearmed_at": {"$exists": False}}
+        terminal = len(self.failures.distinct("idempotency_key", terminal_query))
+        return {"events": events, "distinct": distinct, "terminal": terminal}
 
     def write_result(
         self,
