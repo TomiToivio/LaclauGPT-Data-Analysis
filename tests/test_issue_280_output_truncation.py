@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
 import pytest
+from pydantic import BaseModel
 
 from laclaugpt_data_analysis.llm.base import (
     ChatRequest,
