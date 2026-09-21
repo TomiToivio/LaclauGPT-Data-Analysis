@@ -10,7 +10,6 @@ from typing import Any, Callable, Mapping, Protocol
 
 from .config import Settings
 
-
 FAILURE_RESPONSE_RAW_MAX_CHARS = 16_384
 
 
