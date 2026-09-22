@@ -6,14 +6,14 @@ import pytest
 from pydantic import ValidationError
 
 from laclaugpt_data_analysis.social_semiotic import (
-    assert_preanalysis_boundary,
+    PROHIBITED_PREANALYSIS_KEYS,
     EvidencePointer,
     IntermodalRelation,
     MultimodalSummaryProposal,
-    PROHIBITED_PREANALYSIS_KEYS,
     SemioticResource,
     SignObservation,
     UncertaintyObservation,
+    assert_preanalysis_boundary,
 )
 
 
