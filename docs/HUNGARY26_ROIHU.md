@@ -198,8 +198,7 @@ Keep runtime logs, checkpoints, audits, comparisons and researcher exports outsi
 
 ## Issue #243: local SQLite/CSV Roihu validation path
 
-For the concrete CSC deployment under `/scratch/project_2009497`, Hungary26 now also has a
-minimal local test/reprocessing path that deliberately does **not** require MongoDB or Redis.
+For CSC deployment, Hungary26 also has a minimal local test/reprocessing path that deliberately does **not** require MongoDB or Redis. Keep the concrete CSC project ID and scratch path in private runtime configuration.
 
 The public launcher is:
 
@@ -218,23 +217,18 @@ extracts deterministic ffmpeg keyframes, sends actual frame image files to the m
 model, then performs a conservative item synthesis and Laclau/Mouffe/Palonen discourse pass.
 Per-stage state is stored in private SQLite and projected to private Pandas CSV files.
 
-The default private root is:
+Set the private root explicitly at runtime:
 
-```text
-/scratch/project_2009497/LaclauGPT-Private/analysis/hungary26
+```bash
+export LACLAUGPT_HUNGARY26_PRIVATE_ROOT=/private/path/to/analysis/hungary26
 ```
 
 After the one-time ARM64 venv and private runtime have been built, the normal workflow is:
 
 ```bash
-cd /scratch/project_2009497/LaclauGPT-Data-Analysis
+cd /path/to/LaclauGPT-Data-Analysis
 git pull --ff-only
-
-cd /scratch/project_2009497/LaclauGPT-Private
-git pull --ff-only
-
-cd /scratch/project_2009497/LaclauGPT-Data-Analysis
-sbatch scripts/hungary26/hungary26_roihu_test.sbatch
+sbatch --account=<CSC_PROJECT> scripts/hungary26/hungary26_roihu_test.sbatch
 ```
 
 The default mode is a deterministic two-record smoke test (one Instagram and one TikTok
