@@ -1,9 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=hungary26_test
-#SBATCH --account=project_2009497
-# Slurm opens these before the body runs; this directory must already exist.
-#SBATCH --output=/scratch/project_2009497/LaclauGPT-Private/analysis/hungary26/logs/test_%j.out
-#SBATCH --error=/scratch/project_2009497/LaclauGPT-Private/analysis/hungary26/logs/test_%j.err
+#SBATCH --output=hungary26-test-%j.out
+#SBATCH --error=hungary26-test-%j.err
 #SBATCH --partition=gpumedium
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -15,17 +13,15 @@
 
 set -euo pipefail
 
-PROJECT_ROOT=${PROJECT_ROOT:-/scratch/project_2009497}
-APP_DIR=${APP_DIR:-${PROJECT_ROOT}/LaclauGPT-Data-Analysis}
-PRIVATE_REPO=${PRIVATE_REPO:-${PROJECT_ROOT}/LaclauGPT-Private}
-export LACLAUGPT_HUNGARY26_PRIVATE_ROOT=${LACLAUGPT_HUNGARY26_PRIVATE_ROOT:-${PRIVATE_REPO}/analysis/hungary26}
+APP_DIR=${APP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
+: "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT:?Set LACLAUGPT_HUNGARY26_PRIVATE_ROOT to the private Hungary26 runtime directory}"
 MODE=${MODE:-smoke}
 
 export OLLAMA_MODEL=gemma4:12b
 export LLM_MODE=local
 export LLM_ALLOW_CLOUD_FALLBACK=0
-export OLLAMA_MODELS=${OLLAMA_MODELS:-${PROJECT_ROOT}/ollama/models}
-export OLLAMA_INSTALL_ROOT=${OLLAMA_INSTALL_ROOT:-${PROJECT_ROOT}/ollama-arm64}
+export OLLAMA_MODELS=${OLLAMA_MODELS:-${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/.ollama/models}
+export OLLAMA_INSTALL_ROOT=${OLLAMA_INSTALL_ROOT:-${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/.ollama}
 export OLLAMA_AUTO_INSTALL=${OLLAMA_AUTO_INSTALL:-1}
 export OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-32768}
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}
