@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from difflib import SequenceMatcher
+
 import pytest
 from pydantic import ValidationError
 
@@ -7,6 +9,8 @@ from laclaugpt_data_analysis.social_semiotic import (
     EvidencePointer,
     IntermodalRelation,
     MultimodalSummaryProposal,
+    PROHIBITED_PREANALYSIS_KEYS,
+    SemioticResource,
     SignObservation,
     UncertaintyObservation,
     assert_preanalysis_boundary,
@@ -75,6 +79,65 @@ def test_evidence_pointer_still_rejects_unknown_extra_fields() -> None:
                 "source___ref": "content.text",
             }
         )
+
+
+def test_taxonomy_literals_normalise_nulls_and_unambiguous_near_misses() -> None:
+    item = MultimodalSummaryProposal.model_validate(
+        {
+            "modalities_present": ["typography", "visual", None, "lingustic"],
+            "semiotic_resources": [
+                {
+                    "mode": None,
+                    "description": "Synthetic resource reconstructed from a stored failure.",
+                    "confidence": "medum",
+                }
+            ],
+            "salient_signs": [
+                {
+                    "sign_id": "sign:synthetic:1",
+                    "source_form": "synthetic",
+                    "modes": ["lingustic", None],
+                    "confidence": None,
+                }
+            ],
+        }
+    )
+
+    assert item.modalities_present == ["typographic", "visual", "linguistic"]
+    assert item.semiotic_resources[0].mode == "other"
+    assert item.semiotic_resources[0].confidence == "medium"
+    assert item.salient_signs[0].modes == ["linguistic"]
+    assert item.salient_signs[0].confidence == "unknown"
+
+
+def test_taxonomy_literals_do_not_guess_distant_values() -> None:
+    with pytest.raises(ValidationError):
+        MultimodalSummaryProposal.model_validate({"modalities_present": ["zoological"]})
+
+
+def test_taxonomy_tolerance_keeps_required_fields_and_types_strict() -> None:
+    with pytest.raises(ValidationError):
+        SemioticResource.model_validate({"mode": "visual"})
+
+    with pytest.raises(ValidationError):
+        SemioticResource.model_validate({"mode": "visual", "description": None})
+
+    with pytest.raises(ValidationError):
+        SemioticResource.model_validate({"mode": {"unexpected": "shape"}, "description": "x"})
+
+
+def test_prohibited_boundary_keys_are_outside_literal_similarity_floor() -> None:
+    allowed_fields = set(MultimodalSummaryProposal.model_fields)
+    highest = max(
+        SequenceMatcher(None, prohibited, allowed).ratio()
+        for prohibited in PROHIBITED_PREANALYSIS_KEYS
+        for allowed in allowed_fields
+    )
+    assert highest < 0.85
+
+    with pytest.raises(ValueError):
+        assert_preanalysis_boundary({"political_subjects": ["synthetic"]})
+
 
 def test_cross_modal_conflict_survives_in_schema() -> None:
     item = MultimodalSummaryProposal(
