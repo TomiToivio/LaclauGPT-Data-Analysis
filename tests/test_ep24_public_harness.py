@@ -5,8 +5,10 @@ def test_roihu_harness_matches_issue_245_deployment_contract() -> None:
     root = Path(__file__).resolve().parents[1]
     batch = (root / "scripts/ep24/ep24_roihu_reprocess.sbatch").read_text(encoding="utf-8")
 
-    assert "#SBATCH --account=project_2009497" in batch
-    assert "/scratch/project_2009497/LaclauGPT-Private/analysis/ep24/logs/" in batch
+    assert "#SBATCH --account=" not in batch
+    assert "project_2009497" not in batch
+    assert "/scratch/" not in batch
+    assert 'LACLAUGPT_EP24_PRIVATE_ROOT:?' in batch
     assert "gemma4:12b" in batch
     assert "LLM_MODE=local" in batch
     assert "LLM_ALLOW_CLOUD_FALLBACK=0" in batch
