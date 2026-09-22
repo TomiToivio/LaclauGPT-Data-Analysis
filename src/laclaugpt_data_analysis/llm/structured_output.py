@@ -231,6 +231,11 @@ def chat_structured(
                     f"num_predict={run_options.get('num_predict')})"
                 )
                 _attach_failure_diagnostics(exc, response)
+                # A length stop proves only a lower bound, not the exact number
+                # of tokens needed to finish the schema. Do not invent a count.
+                exc.output_budget_tokens = int(run_options["num_predict"])
+                exc.required_output_tokens_lower_bound = int(run_options["num_predict"]) + 1
+                exc.generated_output_chars = len(response.content)
                 raise exc from None
             current_budget = int(run_options.get("num_predict", STRUCTURED_NUM_PREDICT))
             next_budget = min(
