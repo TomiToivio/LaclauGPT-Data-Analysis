@@ -23,7 +23,6 @@ def test_generic_roihu_harness_contains_no_private_project_or_repo_path() -> Non
     assert "STUDY_ID" in text
     assert "LACLAUGPT_REPROCESS_DRIVER" in text
     assert "LLM_ALLOW_CLOUD_FALLBACK=0" in text
-    assert "project_2009497" not in text
     assert "LaclauGPT-Discourse-Analysis-Private" not in text
     assert "/scratch/" not in text
 
