@@ -10,22 +10,15 @@ The active research data and codebooks live only in `LaclauGPT-Private/analysis/
 
 ## Deployment
 
-```text
-/scratch/project_2009497/LaclauGPT-Data-Analysis
-/scratch/project_2009497/LaclauGPT-Private
-```
+Keep the public checkout and private runtime in site-specific locations that are not committed. Supply the CSC account at submission time and the private EP24 root through the environment.
 
 Normal run:
 
 ```bash
-cd /scratch/project_2009497/LaclauGPT-Data-Analysis
+export LACLAUGPT_EP24_PRIVATE_ROOT=/private/path/to/analysis/ep24
+cd /path/to/LaclauGPT-Data-Analysis
 git pull --ff-only
-
-cd /scratch/project_2009497/LaclauGPT-Private
-git pull --ff-only
-
-cd /scratch/project_2009497/LaclauGPT-Data-Analysis
-sbatch scripts/ep24/ep24_roihu_reprocess.sbatch
+sbatch --account=<CSC_PROJECT> scripts/ep24/ep24_roihu_reprocess.sbatch
 ```
 
 Set `EP24_RUN_MODE=smoke`, `pilot`, `full`, or `resume`. Pilot is the default.
