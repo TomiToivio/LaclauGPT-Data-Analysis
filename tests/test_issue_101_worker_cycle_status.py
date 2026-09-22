@@ -1,5 +1,9 @@
 from laclaugpt_data_analysis.canonical import SCHEMA_VERSION
-from laclaugpt_data_analysis.distributed_worker import AI26TaskWorker, _cycle_exit_code
+from laclaugpt_data_analysis.distributed_worker import (
+    AI26TaskWorker,
+    _cycle_exit_code,
+    _run_bounded_cycle,
+)
 from laclaugpt_data_analysis.task_queue import InMemoryTaskQueue, InMemoryTaskStore, TaskEnvelope
 
 
@@ -78,3 +82,46 @@ def test_failure_class_is_cleared_on_next_non_failure() -> None:
     assert worker.last_failure_class == "ValueError"
     assert worker.run_once() == "completed"
     assert worker.last_failure_class is None
+
+
+class _OutcomeWorker:
+    def __init__(self, outcomes: list[str]):
+        self.outcomes = iter(outcomes)
+        self.last_failure_class = None
+        self.last_quarantined = 0
+
+    def run_once(self, *, reclaim_idle_ms=None) -> str:
+        del reclaim_idle_ms
+        return next(self.outcomes)
+
+
+def test_duplicate_backlog_does_not_consume_work_budget() -> None:
+    worker = _OutcomeWorker(["duplicate"] * 120 + ["completed"] * 5)
+    counts, failures = _run_bounded_cycle(
+        worker,
+        max_tasks=5,
+        reclaim_idle_ms=900_000,
+        seeded=5,
+    )
+
+    assert counts["duplicate"] == 120
+    assert counts["completed"] == 5
+    assert counts["claims"] == 125
+    assert failures == {}
+    assert _cycle_exit_code(counts) == 0
+
+
+def test_seeded_but_no_progress_is_visible_as_failure() -> None:
+    worker = _OutcomeWorker(["duplicate"] * 10)
+    counts, _ = _run_bounded_cycle(
+        worker,
+        max_tasks=5,
+        reclaim_idle_ms=900_000,
+        max_claims=10,
+        seeded=5,
+    )
+
+    assert counts["completed"] == 0
+    assert counts["duplicate"] == 10
+    assert counts["claims"] == 10
+    assert _cycle_exit_code(counts) == 1
