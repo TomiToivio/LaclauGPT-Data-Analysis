@@ -647,7 +647,85 @@ def _cycle_exit_code(counts: dict[str, int]) -> int:
     failures = counts.get("retry", 0) + counts.get("dead-letter", 0)
     if counts.get("completed", 0) == 0 and failures > 0:
         return 1
+    # A cycle that spent its whole claim budget without reaching any actionable
+    # work is not a healthy empty cycle: a backlog of already-completed entries
+    # is sitting at the queue head and the corpus cannot advance (issue #295).
+    if counts.get("blocked_by_backlog", 0) > 0:
+        return 1
     return 0
+
+
+#: Outcomes that represent work actually performed for a record. ``duplicate``
+#: deliberately does not count: acked-but-already-done entries consumed no work.
+_WORK_OUTCOMES = frozenset({"completed", "retry", "dead-letter"})
+
+#: Claim budget default. Each duplicate claim is a cheap queue round trip while
+#: real work is bounded by ``--max-tasks``, so the claim budget is generous but
+#: still bounded, guaranteeing a cycle terminates.
+_CLAIM_BUDGET_MULTIPLIER = 20
+_MIN_CLAIM_BUDGET = 200
+_MAX_CLAIM_BUDGET = 5000
+
+
+def _claim_budget(max_tasks: int, max_claims: int | None) -> int:
+    """Resolve how many queue entries a single bounded cycle may examine."""
+    if max_claims is not None:
+        return max(max_claims, 0)
+    scaled = max(max_tasks, 0) * _CLAIM_BUDGET_MULTIPLIER
+    return min(max(_MIN_CLAIM_BUDGET, scaled), _MAX_CLAIM_BUDGET)
+
+
+def run_bounded_cycle(
+    worker: Any,
+    *,
+    work_limit: int,
+    claim_limit: int,
+    reclaim_idle_ms: int | None = None,
+) -> tuple[dict[str, int], dict[str, int], bool]:
+    """Claim until ``work_limit`` units of real work or ``claim_limit`` claims.
+
+    Duplicates do not consume the work budget. The queue head may carry a
+    backlog of entries whose results already exist (they were published by an
+    earlier revision and never consumed); charging that backlog against
+    ``--max-tasks`` starves every actionable record behind it and the cycle
+    silently reports success while doing nothing (issue #295).
+
+    Returns ``(counts, failure_classes, drained)`` where ``drained`` is True when
+    the queue yielded nothing more to claim, distinguishing a genuinely empty
+    cycle from one cut short by the claim budget.
+    """
+    counts: dict[str, int] = {
+        "completed": 0,
+        "duplicate": 0,
+        "retry": 0,
+        "dead-letter": 0,
+        "quarantined": 0,
+        "idle": 0,
+    }
+    failure_classes: dict[str, int] = {}
+    claims = 0
+    work = 0
+    drained = False
+    work_budget = max(work_limit, 0)
+    claim_budget = max(claim_limit, 0)
+    while claims < claim_budget and work < work_budget:
+        outcome = worker.run_once(reclaim_idle_ms=reclaim_idle_ms)
+        claims += 1
+        counts[outcome] = counts.get(outcome, 0) + 1
+        counts["quarantined"] += int(getattr(worker, "last_quarantined", 0))
+        failure_class = getattr(worker, "last_failure_class", None)
+        if failure_class:
+            failure_classes[failure_class] = failure_classes.get(failure_class, 0) + 1
+        if outcome == "idle":
+            drained = True
+            break
+        if outcome in _WORK_OUTCOMES:
+            work += 1
+    counts["claims"] = claims
+    counts["work"] = work
+    if not drained and claims > 0 and work == 0:
+        counts["blocked_by_backlog"] = 1
+    return counts, failure_classes, drained
 
 
 def _cycle_exit_status(
@@ -673,6 +751,16 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--codebook", required=True)
     parser.add_argument("--worker-id")
     parser.add_argument("--max-tasks", type=int, default=10)
+    parser.add_argument(
+        "--max-claims",
+        type=int,
+        default=None,
+        help=(
+            "Maximum queue entries a single cycle may examine. Defaults to a bounded "
+            "multiple of --max-tasks so a backlog of already-completed entries cannot "
+            "starve actionable work (issue #295)."
+        ),
+    )
     parser.add_argument("--reclaim-idle-ms", type=int, default=900_000)
     parser.add_argument("--seed-ready", action="store_true")
     parser.add_argument(
@@ -710,31 +798,30 @@ def main(argv: list[str] | None = None) -> int:
             worker.durable_store,
             limit=max(args.max_tasks, 0),
         )
-    counts = {
-        "completed": 0,
-        "duplicate": 0,
-        "retry": 0,
-        "dead-letter": 0,
-        "quarantined": 0,
-        "idle": 0,
-    }
-    failure_classes: dict[str, int] = {}
-    for _ in range(max(args.max_tasks, 0)):
-        outcome = worker.run_once(reclaim_idle_ms=args.reclaim_idle_ms)
-        counts[outcome] = counts.get(outcome, 0) + 1
-        counts["quarantined"] += int(getattr(worker, "last_quarantined", 0))
-        failure_class = getattr(worker, "last_failure_class", None)
-        if failure_class:
-            failure_classes[failure_class] = failure_classes.get(failure_class, 0) + 1
-        if outcome == "idle":
-            break
+    counts, failure_classes, drained = run_bounded_cycle(
+        worker,
+        work_limit=max(args.max_tasks, 0),
+        claim_limit=_claim_budget(max(args.max_tasks, 0), args.max_claims),
+        reclaim_idle_ms=args.reclaim_idle_ms,
+    )
     failure_summary = worker.durable_store.failure_summary()
     logger.info(
-        "AI26 worker cycle: %s failure_classes=%s failure_summary=%s",
+        "AI26 worker cycle: %s failure_classes=%s failure_summary=%s drained=%s",
         counts,
         failure_classes,
         failure_summary,
+        drained,
     )
+    if counts.get("blocked_by_backlog"):
+        # Operator-visible: this is not a healthy empty cycle. A stale backlog of
+        # already-completed entries is consuming the claim budget at the queue head.
+        logger.warning(
+            "AI26 worker cycle analyzed nothing while actionable work may remain: "
+            "%d claims, 0 units of work. The analysis queue head carries a backlog "
+            "of already-completed entries; raise --max-claims or drain the backlog "
+            "(issue #295).",
+            counts["claims"],
+        )
     return _cycle_exit_code(counts)
 
 
