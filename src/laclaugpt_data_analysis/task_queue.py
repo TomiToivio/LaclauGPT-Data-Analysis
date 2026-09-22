@@ -21,15 +21,23 @@ def bounded_failure_diagnostics(
         return {}
     raw = str(diagnostics.get("response_raw") or "")
     finish_reason = str(diagnostics.get("finish_reason") or "")
-    if not raw and not finish_reason:
+    outcome = str(diagnostics.get("terminal_reason") or "")
+    if not raw and not finish_reason and not outcome:
         return {}
-    return {
+    result = {
         "response_raw": raw[:FAILURE_RESPONSE_RAW_MAX_CHARS],
         "response_raw_chars": len(raw),
         "response_raw_truncated": len(raw) > FAILURE_RESPONSE_RAW_MAX_CHARS,
         "finish_reason": finish_reason,
         "diagnostic_only": True,
     }
+    if outcome == "unanalysable_within_budget":
+        result["terminal_reason"] = outcome
+        for key in ("output_budget_tokens", "required_output_tokens_lower_bound", "generated_output_chars"):
+            value = diagnostics.get(key)
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                result[key] = value
+    return result
 
 
 @dataclass(frozen=True, slots=True)
