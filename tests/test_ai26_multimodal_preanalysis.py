@@ -270,7 +270,7 @@ def test_ai26_pipeline_accepts_model_null_frame_and_known_source_ref_typo() -> N
     )
 
     assert result.analysis.status == "analyzed"
-    proposal = result.intermediate.stage_outputs["multimodal_synthesis"]["proposal"]
+    proposal = result.intermediate.stage_outputs["multimodal_synthesis"][-1]["proposal"]
     assert proposal["evidence"][0]["source_ref"] == "content.text"
     assert proposal["evidence"][0]["frame_id"] == ""
     assert proposal["evidence"][0]["uncertainty"] == (
