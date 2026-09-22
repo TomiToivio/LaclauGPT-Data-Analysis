@@ -42,6 +42,40 @@ def test_schema_handles_text_only_and_preserves_source_form() -> None:
     assert item.modalities_missing == ["visual", "auditory"]
 
 
+
+def test_evidence_pointer_normalises_null_optional_fields_and_known_source_ref_typo() -> None:
+    item = MultimodalSummaryProposal.model_validate(
+        {
+            "evidence": [
+                {
+                    "evidence_id": "text:legacy:1",
+                    "modality": "linguistic",
+                    "source__ref": "content.text",
+                    "exact_text": None,
+                    "frame_id": None,
+                    "uncertainty": "Legacy-derived text has no frame pointer.",
+                }
+            ]
+        }
+    )
+
+    pointer = item.evidence[0]
+    assert pointer.source_ref == "content.text"
+    assert pointer.exact_text == ""
+    assert pointer.frame_id == ""
+    assert pointer.uncertainty == "Legacy-derived text has no frame pointer."
+
+
+def test_evidence_pointer_still_rejects_unknown_extra_fields() -> None:
+    with pytest.raises(ValidationError):
+        EvidencePointer.model_validate(
+            {
+                "evidence_id": "text:1",
+                "modality": "linguistic",
+                "source___ref": "content.text",
+            }
+        )
+
 def test_cross_modal_conflict_survives_in_schema() -> None:
     item = MultimodalSummaryProposal(
         modalities_present=["linguistic", "visual"],
