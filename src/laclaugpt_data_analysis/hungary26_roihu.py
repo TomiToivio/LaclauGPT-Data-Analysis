@@ -25,7 +25,7 @@ from .staging import MediaStager, StagingPolicy
 from .storage import S3ArtifactStore
 
 DEFAULT_MODEL = "gemma4:12b"
-DEFAULT_PRIVATE_ROOT = Path("/scratch/project_2009497/LaclauGPT-Private/analysis/hungary26")
+DEFAULT_PRIVATE_ROOT = Path("data/private/hungary26")
 STAGES = ("download", "frames", "vision", "summary", "discourse")
 
 
