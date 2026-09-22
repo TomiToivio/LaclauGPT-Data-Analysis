@@ -23,6 +23,7 @@ def test_roihu_harness_uses_private_canonical_root() -> None:
     batch = (root / "scripts/ep24/ep24_roihu_reprocess.sbatch").read_text(encoding="utf-8")
 
     assert "LACLAUGPT_EP24_PRIVATE_ROOT" in batch
-    assert "LaclauGPT-Private/analysis/ep24" in batch
+    assert "LaclauGPT-Private/analysis/ep24" not in batch
+    assert "Set LACLAUGPT_EP24_PRIVATE_ROOT" in batch
     assert "LaclauGPT-Discourse-Analysis-Private" not in batch
     assert "EP24_PIPELINE_SCRIPT" not in batch
