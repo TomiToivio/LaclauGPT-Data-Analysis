@@ -516,7 +516,9 @@ def _failure_diagnostics(exc: Exception) -> dict[str, Any]:
             "terminal_reason": "unanalysable_within_budget",
             "output_budget_tokens": getattr(exc, "output_budget_tokens", 0),
             "required_output_tokens_lower_bound": getattr(exc, "required_output_tokens_lower_bound", 0),
-            "generated_output_chars": getattr(exc, "generated_output_chars", len(diagnostics["response_raw"])),
+            "generated_output_chars": getattr(
+                exc, "generated_output_chars", len(diagnostics["response_raw"])
+            ),
         })
     return diagnostics
 
