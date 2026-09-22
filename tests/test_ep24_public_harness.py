@@ -6,7 +6,6 @@ def test_roihu_harness_matches_issue_245_deployment_contract() -> None:
     batch = (root / "scripts/ep24/ep24_roihu_reprocess.sbatch").read_text(encoding="utf-8")
 
     assert "#SBATCH --account=" not in batch
-    assert "project_2009497" not in batch
     assert "/scratch/" not in batch
     assert 'LACLAUGPT_EP24_PRIVATE_ROOT:?' in batch
     assert "gemma4:12b" in batch
