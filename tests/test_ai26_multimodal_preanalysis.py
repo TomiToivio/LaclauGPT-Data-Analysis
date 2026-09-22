@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 
 from laclaugpt_data_analysis.canonical import CanonicalRecord
@@ -29,7 +30,7 @@ class SequencedProvider:
         self.requests.append(request)
         payload = self.payloads.pop(0)
         return LLMResponse(
-            content=payload.model_dump_json(),
+            content=payload.model_dump_json() if hasattr(payload, "model_dump_json") else json.dumps(payload),
             provenance=LLMCallProvenance(
                 requested_mode="local",
                 requested_model="fake-model",
@@ -239,3 +240,39 @@ def test_ai26_pipeline_persists_social_semiotics_and_run_provenance() -> None:
         assert len(run["project_config_sha256"]) == 64
         assert run["prompt_resources"]
         assert run["actual_model"] == "fake-model"
+
+
+def test_ai26_pipeline_accepts_model_null_frame_and_known_source_ref_typo() -> None:
+    summary_payload = {
+        "summary": "A text-derived AI claim with no frame evidence.",
+        "modalities_present": ["linguistic"],
+        "evidence": [
+            {
+                "evidence_id": "text:legacy:1",
+                "modality": "linguistic",
+                "source__ref": "content.text",
+                "exact_text": "A speaker discusses an AI system while a chart is shown.",
+                "frame_id": None,
+                "uncertainty": "This pointer is text-derived rather than frame-derived.",
+            }
+        ],
+    }
+    provider = SequencedProvider([MultimodalFrameProposal(), summary_payload, DiscourseProposal()])
+
+    result = run_canonical_pipeline(
+        multimodal_record(),
+        provider=provider,
+        context=PipelineContext(
+            project_config={"project": "ai26", "multimodal": True},
+        ),
+        model="fake-model",
+        project_profile="ai26",
+    )
+
+    assert result.analysis.status == "analyzed"
+    proposal = result.intermediate.stage_outputs["multimodal_synthesis"]["proposal"]
+    assert proposal["evidence"][0]["source_ref"] == "content.text"
+    assert proposal["evidence"][0]["frame_id"] == ""
+    assert proposal["evidence"][0]["uncertainty"] == (
+        "This pointer is text-derived rather than frame-derived."
+    )
