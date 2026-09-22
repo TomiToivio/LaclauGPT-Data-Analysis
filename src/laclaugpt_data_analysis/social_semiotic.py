@@ -11,7 +11,8 @@ demonstrated on static educational texts and therefore requires validation.
 """
 from __future__ import annotations
 
-from typing import Literal
+from difflib import SequenceMatcher
+from typing import Literal, get_args, get_origin
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -21,9 +22,73 @@ Mode = Literal[
 ]
 Confidence = Literal["high", "medium", "low", "unknown"]
 
+_LITERAL_SIMILARITY_FLOOR = 0.85
+
+
+def _normalise_literal_member(value, members: tuple[str, ...]):
+    """Normalise only unambiguous model-formatting drift for a closed taxonomy."""
+    if value is None:
+        for fallback in ("other", "unknown"):
+            if fallback in members:
+                return fallback
+        return value
+    if not isinstance(value, str) or value in members:
+        return value
+
+    folded = value.casefold()
+    ranked = sorted(
+        (
+            (SequenceMatcher(None, folded, member.casefold()).ratio(), member)
+            for member in members
+        ),
+        reverse=True,
+    )
+    if not ranked or ranked[0][0] < _LITERAL_SIMILARITY_FLOOR:
+        return value
+
+    best_score = ranked[0][0]
+    best = [member for score, member in ranked if score == best_score]
+    return best[0] if len(best) == 1 else value
+
+
+def _normalise_literal_field(annotation, value):
+    """Apply narrow tolerance to direct Literal fields and lists of Literals."""
+    if get_origin(annotation) is Literal:
+        members = tuple(member for member in get_args(annotation) if isinstance(member, str))
+        return _normalise_literal_member(value, members)
+
+    if get_origin(annotation) is list:
+        args = get_args(annotation)
+        if len(args) == 1 and get_origin(args[0]) is Literal and isinstance(value, list):
+            members = tuple(
+                member for member in get_args(args[0]) if isinstance(member, str)
+            )
+            return [
+                _normalise_literal_member(item, members)
+                for item in value
+                if item is not None
+            ]
+
+    return value
+
 
 class StrictMethodModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalise_taxonomy_formatting(cls, value):
+        """Tolerate null/unambiguous spelling drift without weakening strict schemas."""
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        for field_name, field in cls.model_fields.items():
+            if field_name in normalized:
+                normalized[field_name] = _normalise_literal_field(
+                    field.annotation,
+                    normalized[field_name],
+                )
+        return normalized
 
 
 class EvidencePointer(StrictMethodModel):
