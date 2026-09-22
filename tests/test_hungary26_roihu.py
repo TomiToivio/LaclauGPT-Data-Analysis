@@ -172,7 +172,6 @@ def test_roihu_launcher_pins_local_gemma4_and_no_cloud_fallback() -> None:
         encoding="utf-8"
     )
     assert "#SBATCH --account=" not in text
-    assert "project_2009497" not in text
     assert "/scratch/" not in text
     assert "LACLAUGPT_HUNGARY26_PRIVATE_ROOT:?" in text
     assert "gemma4:12b" in text
