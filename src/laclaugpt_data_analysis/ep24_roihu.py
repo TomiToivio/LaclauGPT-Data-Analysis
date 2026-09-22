@@ -35,7 +35,7 @@ from .social_semiotic import (
 from .staging import MediaStager, StagingPolicy
 
 DEFAULT_MODEL = "gemma4:12b"
-DEFAULT_PRIVATE_ROOT = Path("/scratch/project_2009497/LaclauGPT-Private/analysis/ep24")
+DEFAULT_PRIVATE_ROOT = Path("data/private/ep24")
 PROMPT_VERSION = "ep24-phase1-multimodal-v2"
 PREANALYSIS_PROMPT_VERSION = "social-semiotic-preanalysis.v2"
 STAGES = ("normalize", "media", "representations", "preanalysis", "analysis", "postprocess")
