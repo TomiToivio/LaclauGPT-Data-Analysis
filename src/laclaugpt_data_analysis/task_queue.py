@@ -33,7 +33,11 @@ def bounded_failure_diagnostics(
     }
     if outcome == "unanalysable_within_budget":
         result["terminal_reason"] = outcome
-        for key in ("output_budget_tokens", "required_output_tokens_lower_bound", "generated_output_chars"):
+        for key in (
+            "output_budget_tokens",
+            "required_output_tokens_lower_bound",
+            "generated_output_chars",
+        ):
             value = diagnostics.get(key)
             if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
                 result[key] = value
