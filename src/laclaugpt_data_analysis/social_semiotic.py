@@ -11,9 +11,16 @@ demonstrated on static educational texts and therefore requires validation.
 """
 from __future__ import annotations
 
-from typing import Literal
+import difflib
+from typing import Any, Literal, get_args, get_origin
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 Mode = Literal[
     "linguistic", "visual", "auditory", "gestural", "spatial", "typographic",
@@ -21,9 +28,117 @@ Mode = Literal[
 ]
 Confidence = Literal["high", "medium", "low", "unknown"]
 
+# Similarity floor for absorbing a near-miss spelling of an enum value.  The
+# closest pair of legitimate names in this module is
+# ``typographic``/``symbolic_graphic`` at 0.667, while the spellings the model
+# actually produced (``typography`` 0.857, ``lingustic`` 0.947, ``source__ref``
+# 0.933) all sit above 0.85.  The floor therefore separates routine misspelling
+# from a value the model genuinely did not choose.  Pinned by
+# tests/test_issue_296_preanalysis_tolerance.py.
+_NEAR_MISS_CUTOFF = 0.85
+
+# Taxonomy members that mean "this does not classify the item".  Used when the
+# model emits an explicit null for a Literal instead of one of the values.
+_UNCLASSIFIED_MEMBERS = ("unknown", "other")
+
+
+def _literal_options(annotation: Any) -> tuple[str, ...] | None:
+    """Declared string options for a ``Literal[...]`` annotation, else None."""
+    if get_origin(annotation) is Literal:
+        options = get_args(annotation)
+        if options and all(isinstance(option, str) for option in options):
+            return tuple(options)
+    return None
+
+
+def _unclassified_member(options: tuple[str, ...]) -> str:
+    for candidate in _UNCLASSIFIED_MEMBERS:
+        if candidate in options:
+            return candidate
+    return options[-1]
+
+
+def _closest_option(value: str, options: tuple[str, ...]) -> str | None:
+    matches = difflib.get_close_matches(
+        value, list(options), n=1, cutoff=_NEAR_MISS_CUTOFF
+    )
+    return matches[0] if matches else None
+
+
+def _tolerate_literal(value: Any, annotation: Any) -> Any:
+    """Absorb ``null`` and near-miss spellings for Literal-typed fields.
+
+    Null list elements are dropped because they carry no information.  A null
+    Literal becomes the taxonomy's own unclassified member.  A spelling that is
+    not close to any option is returned untouched, so it still fails loudly
+    instead of being silently mapped onto a category the model never chose.
+    """
+    if get_origin(annotation) is list:
+        args = get_args(annotation)
+        if len(args) != 1 or not isinstance(value, list):
+            return value
+        return [
+            _tolerate_literal(item, args[0]) for item in value if item is not None
+        ]
+    options = _literal_options(annotation)
+    if options is None:
+        return value
+    if value is None:
+        return _unclassified_member(options)
+    if isinstance(value, str) and value not in options:
+        return _closest_option(value, options) or value
+    return value
+
 
 class StrictMethodModel(BaseModel):
+    """Strict base for descriptive pre-analysis records.
+
+    ``extra="forbid"`` stays: an unknown key still fails.  What is tolerated is
+    routine *formatting* from the model, not analysis error.  Pre-analysis asks a
+    local model to echo a seeded skeleton, so it predictably emits ``null`` for
+    optional fields it has nothing to say about, and near-miss spellings of both
+    keys and taxonomy values.  Rejecting those discards an otherwise usable
+    record and burns a full model round trip (issues #100, #296).
+
+    Tolerated: near-miss key spellings; ``null`` on an optional field (the
+    default applies); ``null`` inside a list; ``null`` or a typo for a Literal.
+    Still rejected: unknown keys, wrong types, missing required fields.
+    """
+
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _tolerate_model_formatting(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        fields = cls.model_fields
+
+        kept: dict[str, Any] = {}
+        renamed: dict[str, Any] = {}
+        for key, value in data.items():
+            if key in fields:
+                kept[key] = value
+                continue
+            alias = _closest_option(str(key), tuple(fields))
+            if alias is not None and alias not in data:
+                renamed[alias] = value
+            else:
+                # Keep it so extra="forbid" reports it rather than dropping it.
+                kept[key] = value
+
+        tolerated: dict[str, Any] = {}
+        for key, value in {**kept, **renamed}.items():
+            declared = fields.get(key)
+            if declared is None:
+                tolerated[key] = value
+                continue
+            normalised = _tolerate_literal(value, declared.annotation)
+            if normalised is None and not declared.is_required():
+                # An explicit null on an optional field means "not provided".
+                continue
+            tolerated[key] = normalised
+        return tolerated
 
 
 class EvidencePointer(StrictMethodModel):
