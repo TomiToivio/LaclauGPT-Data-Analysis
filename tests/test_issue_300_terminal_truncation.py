@@ -6,7 +6,9 @@ from pydantic import BaseModel
 from laclaugpt_data_analysis.canonical import SCHEMA_VERSION
 from laclaugpt_data_analysis.distributed_worker import AI26TaskWorker, seed_ready_tasks
 from laclaugpt_data_analysis.llm.base import (
-    ChatRequest, LLMCallProvenance, LLMResponse, LLMTruncationError,
+    ChatRequest,
+    LLMCallProvenance,
+    LLMResponse,
 )
 from laclaugpt_data_analysis.llm.structured_output import chat_structured
 from laclaugpt_data_analysis.task_queue import InMemoryTaskQueue, InMemoryTaskStore, TaskEnvelope
