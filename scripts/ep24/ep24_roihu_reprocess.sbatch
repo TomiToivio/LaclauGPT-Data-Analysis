@@ -1,8 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=ep24_reprocess
-#SBATCH --account=project_2009497
-#SBATCH --output=/scratch/project_2009497/LaclauGPT-Private/analysis/ep24/logs/reprocess_%j.out
-#SBATCH --error=/scratch/project_2009497/LaclauGPT-Private/analysis/ep24/logs/reprocess_%j.err
+#SBATCH --output=ep24-reprocess-%j.out
+#SBATCH --error=ep24-reprocess-%j.err
 #SBATCH --partition=gpumedium
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -14,12 +13,13 @@
 
 set -euo pipefail
 
-PUBLIC_ROOT=${LACLAUGPT_REPO_ROOT:-/scratch/project_2009497/LaclauGPT-Data-Analysis}
-PRIVATE_ROOT=${LACLAUGPT_EP24_PRIVATE_ROOT:-/scratch/project_2009497/LaclauGPT-Private/analysis/ep24}
+PUBLIC_ROOT=${LACLAUGPT_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
+: "${LACLAUGPT_EP24_PRIVATE_ROOT:?Set LACLAUGPT_EP24_PRIVATE_ROOT to the private EP24 runtime directory}"
+PRIVATE_ROOT=${LACLAUGPT_EP24_PRIVATE_ROOT}
 MODE=${EP24_RUN_MODE:-pilot}
 MODEL=${EP24_ANALYSIS_MODEL:-gemma4:12b}
-VENV=${EP24_ROIHU_VENV:-/scratch/project_2009497/LaclauGPT-Private/.venv-roihu}
-OLLAMA_INSTALL_ROOT=${OLLAMA_INSTALL_ROOT:-/scratch/project_2009497/LaclauGPT-Private/.ollama}
+VENV=${EP24_ROIHU_VENV:-${PRIVATE_ROOT}/.venv-roihu}
+OLLAMA_INSTALL_ROOT=${OLLAMA_INSTALL_ROOT:-${PRIVATE_ROOT}/.ollama}
 
 mkdir -p "${PRIVATE_ROOT}"/{data,media,keyframes,logs,outputs,qa,provenance}
 cd "${PUBLIC_ROOT}"
