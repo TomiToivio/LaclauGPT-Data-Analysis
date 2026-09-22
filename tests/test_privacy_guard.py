@@ -6,6 +6,7 @@ fixtures are synthetic.
 """
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -78,3 +79,26 @@ def test_no_hard_coded_mapbox_token_in_tracked_python():
             assert prefix not in text, (
                 f"{path.relative_to(REPO_ROOT)} appears to contain a hard-coded Mapbox token"
             )
+
+
+def test_no_concrete_csc_project_ids_or_scratch_paths_in_tracked_text():
+    """Public files must use placeholders for site-specific CSC deployment identifiers."""
+    project_id = re.compile(r"\bproject_[0-9]{4,}\b", re.IGNORECASE)
+    scratch_path = re.compile(r"/scratch/project_[0-9]+(?:/|\b)", re.IGNORECASE)
+    tracked = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+    ).stdout.split(b"\0")
+    for raw in tracked:
+        if not raw:
+            continue
+        path = REPO_ROOT / raw.decode("utf-8")
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        rel = path.relative_to(REPO_ROOT)
+        assert project_id.search(text) is None, f"{rel} contains a concrete CSC project identifier"
+        assert scratch_path.search(text) is None, f"{rel} contains a concrete CSC scratch path"
