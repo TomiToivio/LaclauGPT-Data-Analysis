@@ -652,6 +652,52 @@ def _cycle_exit_code(counts: dict[str, int]) -> int:
     return 0
 
 
+def _run_bounded_cycle(
+    worker: TaskWorker,
+    *,
+    max_tasks: int,
+    reclaim_idle_ms: int | None,
+    max_claims: int | None = None,
+    seeded: int = 0,
+) -> tuple[dict[str, int], dict[str, int]]:
+    """Run a bounded cycle where duplicate claims do not consume the work budget.
+
+    max_tasks bounds non-duplicate outcomes (completed/retry/dead-letter).
+    max_claims independently caps queue scanning so a pathological stale stream
+    cannot create an unbounded cycle.
+    """
+    work_limit = max(max_tasks, 0)
+    claim_limit = (
+        max(max_claims, 0)
+        if max_claims is not None
+        else max(1000, work_limit * 100)
+    )
+    counts = {
+        "completed": 0,
+        "duplicate": 0,
+        "retry": 0,
+        "dead-letter": 0,
+        "quarantined": 0,
+        "idle": 0,
+        "seeded": max(seeded, 0),
+        "claims": 0,
+    }
+    failure_classes: dict[str, int] = {}
+    work_units = 0
+    while work_units < work_limit and counts["claims"] < claim_limit:
+        outcome = worker.run_once(reclaim_idle_ms=reclaim_idle_ms)
+        counts["claims"] += 1
+        counts[outcome] = counts.get(outcome, 0) + 1
+        counts["quarantined"] += int(getattr(worker, "last_quarantined", 0))
+        failure_class = getattr(worker, "last_failure_class", None)
+        if failure_class:
+            failure_classes[failure_class] = failure_classes.get(failure_class, 0) + 1
+        if outcome == "idle":
+            break
+        if outcome != "duplicate":
+            work_units += 1
+    return counts, failure_classes
+
 def _cycle_exit_status(
     *,
     attempted: int,
@@ -722,36 +768,13 @@ def main(argv: list[str] | None = None) -> int:
             worker.durable_store,
             limit=max(args.max_tasks, 0),
         )
-    counts = {
-        "completed": 0,
-        "duplicate": 0,
-        "retry": 0,
-        "dead-letter": 0,
-        "quarantined": 0,
-        "idle": 0,
-        "seeded": seeded,
-        "claims": 0,
-    }
-    failure_classes: dict[str, int] = {}
-    max_tasks = max(args.max_tasks, 0)
-    max_claims = (
-        max(args.max_claims, 0)
-        if args.max_claims is not None
-        else max(1000, max_tasks * 100)
+    counts, failure_classes = _run_bounded_cycle(
+        worker,
+        max_tasks=args.max_tasks,
+        reclaim_idle_ms=args.reclaim_idle_ms,
+        max_claims=args.max_claims,
+        seeded=seeded,
     )
-    work_units = 0
-    while work_units < max_tasks and counts["claims"] < max_claims:
-        outcome = worker.run_once(reclaim_idle_ms=args.reclaim_idle_ms)
-        counts["claims"] += 1
-        counts[outcome] = counts.get(outcome, 0) + 1
-        counts["quarantined"] += int(getattr(worker, "last_quarantined", 0))
-        failure_class = getattr(worker, "last_failure_class", None)
-        if failure_class:
-            failure_classes[failure_class] = failure_classes.get(failure_class, 0) + 1
-        if outcome == "idle":
-            break
-        if outcome != "duplicate":
-            work_units += 1
     if (
         seeded > 0
         and counts["completed"] == 0
@@ -760,11 +783,10 @@ def main(argv: list[str] | None = None) -> int:
     ):
         logger.warning(
             "AI26 worker made no analysis progress despite %d newly seeded ready task(s); "
-            "claims=%d duplicates=%d max_claims=%d",
+            "claims=%d duplicates=%d",
             seeded,
             counts["claims"],
             counts["duplicate"],
-            max_claims,
         )
     failure_summary = worker.durable_store.failure_summary()
     logger.info(
