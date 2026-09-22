@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 Mode = Literal[
     "linguistic", "visual", "auditory", "gestural", "spatial", "typographic",
@@ -36,6 +36,27 @@ class EvidencePointer(StrictMethodModel):
     timestamp_end: float | None = Field(default=None, ge=0)
     confidence: Confidence = "unknown"
     uncertainty: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalise_model_emitted_pointer_fields(cls, value):
+        """Tolerate narrow, known formatting drift in model-emitted evidence pointers.
+
+        The pre-analysis contract remains strict for unknown fields. Only the
+        observed source__ref near-miss is canonicalised, and optional text
+        pointer fields accept explicit JSON null as equivalent to omission.
+        """
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        if "source__ref" in normalized:
+            if not normalized.get("source_ref"):
+                normalized["source_ref"] = normalized["source__ref"]
+            normalized.pop("source__ref", None)
+        for field_name in ("source_ref", "exact_text", "frame_id", "uncertainty"):
+            if normalized.get(field_name) is None:
+                normalized[field_name] = ""
+        return normalized
 
 
 class EventCandidate(StrictMethodModel):
