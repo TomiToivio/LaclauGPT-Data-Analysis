@@ -21,6 +21,7 @@ from .canonical import SCHEMA_VERSION, CanonicalRecord
 from .canonical_pipeline import PipelineContext, run_canonical_pipeline
 from .codebooks import load_codebook
 from .config import Settings, load_settings
+from .llm.base import LLMTruncationError
 from .llm.ollama import (
     LLM_ENDPOINT_ENV_ALIAS,
     LLM_HOST_ENV,
@@ -506,10 +507,18 @@ def _failure_diagnostics(exc: Exception) -> dict[str, Any]:
     finish_reason = getattr(exc, "finish_reason", None)
     if response_raw is None and finish_reason is None:
         return {}
-    return {
+    diagnostics = {
         "response_raw": "" if response_raw is None else str(response_raw),
         "finish_reason": "" if finish_reason is None else str(finish_reason),
     }
+    if isinstance(exc, LLMTruncationError):
+        diagnostics.update({
+            "terminal_reason": "unanalysable_within_budget",
+            "output_budget_tokens": getattr(exc, "output_budget_tokens", 0),
+            "required_output_tokens_lower_bound": getattr(exc, "required_output_tokens_lower_bound", 0),
+            "generated_output_chars": getattr(exc, "generated_output_chars", len(diagnostics["response_raw"])),
+        })
+    return diagnostics
 
 
 class AI26TaskWorker(TaskWorker):
@@ -563,7 +572,10 @@ class AI26TaskWorker(TaskWorker):
         except Exception as exc:
             self.last_failure_class = type(exc).__name__
             error = f"{self.last_failure_class}: {exc}"
-            terminal = task.attempt >= self.max_attempts
+            # A second length stop has already exhausted the structured call's
+            # escalation. Replaying the same immutable task cannot help; require
+            # explicit re-arm after changing the prompt/model/configuration.
+            terminal = isinstance(exc, LLMTruncationError) or task.attempt >= self.max_attempts
             self.durable_store.write_failure(
                 task,
                 error,
