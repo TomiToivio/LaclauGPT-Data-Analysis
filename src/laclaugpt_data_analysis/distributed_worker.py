@@ -647,6 +647,8 @@ def _cycle_exit_code(counts: dict[str, int]) -> int:
     failures = counts.get("retry", 0) + counts.get("dead-letter", 0)
     if counts.get("completed", 0) == 0 and failures > 0:
         return 1
+    if counts.get("seeded", 0) > 0 and counts.get("completed", 0) == 0:
+        return 1
     return 0
 
 
@@ -673,6 +675,15 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--codebook", required=True)
     parser.add_argument("--worker-id")
     parser.add_argument("--max-tasks", type=int, default=10)
+    parser.add_argument(
+        "--max-claims",
+        type=int,
+        default=None,
+        help=(
+            "Safety cap on queue entries examined in one cycle. "
+            "--max-tasks counts non-duplicate work, not stale duplicate claims."
+        ),
+    )
     parser.add_argument("--reclaim-idle-ms", type=int, default=900_000)
     parser.add_argument("--seed-ready", action="store_true")
     parser.add_argument(
@@ -702,8 +713,9 @@ def main(argv: list[str] | None = None) -> int:
     for idempotency_key in args.rearm_failed:
         rearmed = worker.durable_store.rearm_terminal_failure(idempotency_key)
         logger.info("Re-armed terminal failure %s: records=%d", idempotency_key, rearmed)
+    seeded = 0
     if args.seed_ready:
-        seed_ready_tasks(
+        seeded = seed_ready_tasks(
             binding,
             handoff,
             worker.queue,
@@ -717,10 +729,20 @@ def main(argv: list[str] | None = None) -> int:
         "dead-letter": 0,
         "quarantined": 0,
         "idle": 0,
+        "seeded": seeded,
+        "claims": 0,
     }
     failure_classes: dict[str, int] = {}
-    for _ in range(max(args.max_tasks, 0)):
+    max_tasks = max(args.max_tasks, 0)
+    max_claims = (
+        max(args.max_claims, 0)
+        if args.max_claims is not None
+        else max(1000, max_tasks * 100)
+    )
+    work_units = 0
+    while work_units < max_tasks and counts["claims"] < max_claims:
         outcome = worker.run_once(reclaim_idle_ms=args.reclaim_idle_ms)
+        counts["claims"] += 1
         counts[outcome] = counts.get(outcome, 0) + 1
         counts["quarantined"] += int(getattr(worker, "last_quarantined", 0))
         failure_class = getattr(worker, "last_failure_class", None)
@@ -728,6 +750,22 @@ def main(argv: list[str] | None = None) -> int:
             failure_classes[failure_class] = failure_classes.get(failure_class, 0) + 1
         if outcome == "idle":
             break
+        if outcome != "duplicate":
+            work_units += 1
+    if (
+        seeded > 0
+        and counts["completed"] == 0
+        and counts["retry"] == 0
+        and counts["dead-letter"] == 0
+    ):
+        logger.warning(
+            "AI26 worker made no analysis progress despite %d newly seeded ready task(s); "
+            "claims=%d duplicates=%d max_claims=%d",
+            seeded,
+            counts["claims"],
+            counts["duplicate"],
+            max_claims,
+        )
     failure_summary = worker.durable_store.failure_summary()
     logger.info(
         "AI26 worker cycle: %s failure_classes=%s failure_summary=%s",
