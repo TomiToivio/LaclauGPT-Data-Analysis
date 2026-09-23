@@ -6,30 +6,51 @@ on:
     - cron: "17 4 * * *"
   push:
     branches:
+      - main
       - phase-1
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  phase-1-tree-alignment:
+  phase-1-mirror-and-alignment:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
+      - name: Check out trusted active-phase branch
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
       - name: Fetch active Phase 1 refs
         run: git fetch origin main phase-1 --no-tags
 
-      - name: Require identical active-phase trees
+      - name: Fast-forward passive mirror from main
+        if: github.event_name != 'push' || github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
+          if ! git merge-base --is-ancestor origin/phase-1 origin/main; then
+            echo "::error::phase-1 has divergent commits; refusing to rewrite published history."
+            exit 1
+          fi
+          # Fetch current main, not the triggering event SHA, so overlapping runs
+          # cannot roll the mirror back to an older commit.
+          git push origin refs/remotes/origin/main:refs/heads/phase-1
+
+      - name: Require identical active-phase commits and trees
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main phase-1 --no-tags
+          if [ "$(git rev-parse origin/main)" != "$(git rev-parse origin/phase-1)" ]; then
+            echo "::error::main and phase-1 point to different commits while Phase 1 is active."
+            git log --oneline --left-right origin/main...origin/phase-1
+            exit 1
+          fi
           if ! git diff --quiet origin/main origin/phase-1 --; then
-            echo "::error::main and phase-1 differ while Phase 1 is active."
+            echo "::error::main and phase-1 trees differ while Phase 1 is active."
             git diff --stat origin/main origin/phase-1
             exit 1
           fi
-          echo "main and phase-1 trees are aligned."
+          echo "main and phase-1 resolve to the same commit and tree."
