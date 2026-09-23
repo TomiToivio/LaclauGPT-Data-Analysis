@@ -27,6 +27,13 @@ phase-0 = preserved Phase 0 baseline
 phase-2..phase-4 = isolated future work
 ```
 
+
+## Passive mirror maintenance
+
+The `Phase branch drift guard` workflow fast-forwards `phase-1` from the latest fetched `main` on each `main` push, on its nightly schedule, and when manually dispatched. It then verifies that both refs point to the same commit and tree. A direct push to `phase-1` runs the verification without copying that branch back to `main`. Synchronization uses a normal fast-forward push, never a force push: if `phase-1` contains divergent commits, the workflow fails and requires maintainer review. Do not develop on the mirror.
+
+If the workflow cannot push because of branch protection or Actions permissions, grant the repository's GitHub Actions identity the narrow permission needed to update this passive branch, or use a separately approved branch-sync mechanism. Do not disable the drift check to hide a failed sync. The scheduled run also repairs missed updates, but alignment should be checked on the actual workflow run before marking a regression resolved.
+
 When the project advances to a later phase, promotion into `main` requires explicit human approval.
 
 Repository: `TomiToivio/LaclauGPT-Data-Analysis`.
