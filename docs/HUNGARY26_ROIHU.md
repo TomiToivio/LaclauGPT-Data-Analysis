@@ -17,20 +17,27 @@ cd LaclauGPT-Data-Analysis
 git pull --ff-only
 cd ../LaclauGPT-Private
 git pull --ff-only
-git submodule update --init --recursive
 ```
 
-## 2. Migrate the private Hungary26 layer
+## 2. Promote Hungary26 into ordinary private Git files
 
-From `LaclauGPT-Private`:
+Run once from `LaclauGPT-Private` on an authenticated login/development node:
 
 ```bash
-python analysis/hungary26/migrate_from_legacy.py \
-  --legacy-root legacy/LaclauGPT-Discourse-Analysis-Private \
-  --target-root analysis/hungary26
+bash analysis/hungary26/promote_legacy_inputs.sh --commit
+git push origin "$(git branch --show-current)"
 ```
 
-The migration intentionally looks under historical `data/hungrary2026/`. It is checksum-aware and safe to rerun. It refuses conflicting targets unless `--replace` is explicit. Review `analysis/hungary26/provenance/migration.json` after migration.
+The promoter verifies the source objects from the pinned legacy snapshot,
+using a temporary sparse checkout when necessary. The historical
+`data/hungrary2026/` spelling is handled. On future deployments, ordinary
+`git pull --ff-only` supplies both original workbooks directly from
+`LaclauGPT-Private/analysis/hungary26/source/`. Roihu jobs never need
+submodule initialization. Review the private SHA-256 provenance manifest.
+
+After both EP24 and Hungary26 datasets have been promoted and pushed,
+`bash scripts/finalize_native_research_data.sh` in the private repository
+checks both projects before removing the legacy submodule gitlink.
 
 Expected private layout:
 
