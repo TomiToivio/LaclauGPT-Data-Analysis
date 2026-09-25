@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=ep24_reprocess
 #SBATCH --account=project_2009497
-#SBATCH --output=/scratch/project_2009497/LaclauGPT-Data-Analysis/ep24-reprocess-%j.out
-#SBATCH --error=/scratch/project_2009497/LaclauGPT-Data-Analysis/ep24-reprocess-%j.err
+#SBATCH --output=/scratch/project_2009497/LaclauGPT-Private/analysis/ep24/logs/reprocess_%j.out
+#SBATCH --error=/scratch/project_2009497/LaclauGPT-Private/analysis/ep24/logs/reprocess_%j.err
 #SBATCH --partition=gpumedium
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
