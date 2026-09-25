@@ -171,9 +171,9 @@ def test_roihu_launcher_pins_local_gemma4_and_no_cloud_fallback() -> None:
     text = (root / "scripts" / "hungary26" / "hungary26_roihu_test.sbatch").read_text(
         encoding="utf-8"
     )
-    assert "#SBATCH --account=" not in text
-    assert "/scratch/" not in text
-    assert "LACLAUGPT_HUNGARY26_PRIVATE_ROOT:?" in text
+    assert "#SBATCH --account=project_2009497" in text
+    assert "/scratch/project_2009497/LaclauGPT-Data-Analysis" in text
+    assert "/scratch/project_2009497/LaclauGPT-Private/analysis/hungary26" in text
     assert "gemma4:12b" in text
     assert "LLM_ALLOW_CLOUD_FALLBACK=0" in text
     assert "module load ffmpeg" in text
