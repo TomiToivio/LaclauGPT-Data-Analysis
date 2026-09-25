@@ -40,15 +40,21 @@ unset PYTHONHOME
 }
 source "${VENV}/bin/activate"
 
-# One-time source migration is automatic when the pinned legacy submodule is locally available.
-if [[ ! -s "${PRIVATE_ROOT}/source/ep24_finland_dashboard_9_1_2026.csv" || ! -s "${PRIVATE_ROOT}/source/ep24_poland_dashboard_9_1_2026.csv" || ! -s "${PRIVATE_ROOT}/codebooks/ep24_common_private.json" ]]; then
-  if [[ -f "${PRIVATE_REPO}/analysis/ep24/migrate_from_legacy.sh" ]]; then
-    (cd "${PRIVATE_REPO}" && bash analysis/ep24/migrate_from_legacy.sh)
-  else
-    echo "EP24 source/codebooks missing. On a login node: cd ${PRIVATE_REPO} && git submodule update --init --recursive && bash analysis/ep24/migrate_from_legacy.sh" >&2
+# Canonical research inputs must be native private Git files, not submodules.
+for name in research_notes.xlsx entities.xlsx themes.xlsx \
+  ep24_finland_dashboard_9_1_2026.csv ep24_poland_dashboard_9_1_2026.csv; do
+  if [[ ! -s "${PRIVATE_ROOT}/source/${name}" ]]; then
+    echo "Missing canonical EP24 input: ${PRIVATE_ROOT}/source/${name}" >&2
+    echo "On a trusted login node: cd ${PRIVATE_REPO} && bash analysis/ep24/promote_legacy_inputs.sh --commit && git push origin $(git -C "${PRIVATE_REPO}" branch --show-current)" >&2
     exit 2
   fi
-fi
+done
+for name in ep24_common_private.json ep24_finland_private.json ep24_poland_private.json; do
+  [[ -s "${PRIVATE_ROOT}/codebooks/${name}" ]] || {
+    echo "Missing canonical EP24 codebook: ${PRIVATE_ROOT}/codebooks/${name}" >&2
+    exit 2
+  }
+done
 
 python - <<'PY'
 import sys, numpy, pandas, openpyxl, yaml
