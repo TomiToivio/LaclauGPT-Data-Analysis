@@ -1,8 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=hungary26_test
 #SBATCH --account=project_2009497
-#SBATCH --output=/scratch/project_2009497/LaclauGPT-Data-Analysis/hungary26-test-%j.out
-#SBATCH --error=/scratch/project_2009497/LaclauGPT-Data-Analysis/hungary26-test-%j.err
+#SBATCH --output=/scratch/project_2009497/LaclauGPT-Private/analysis/hungary26/logs/test_%j.out
+#SBATCH --error=/scratch/project_2009497/LaclauGPT-Private/analysis/hungary26/logs/test_%j.err
 #SBATCH --partition=gpumedium
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
