@@ -1,7 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=ep24_reprocess
-#SBATCH --output=ep24-reprocess-%j.out
-#SBATCH --error=ep24-reprocess-%j.err
+#SBATCH --account=project_2009497
+#SBATCH --output=/scratch/project_2009497/LaclauGPT-Data-Analysis/ep24-reprocess-%j.out
+#SBATCH --error=/scratch/project_2009497/LaclauGPT-Data-Analysis/ep24-reprocess-%j.err
 #SBATCH --partition=gpumedium
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -13,14 +14,15 @@
 
 set -euo pipefail
 
-PUBLIC_ROOT=${LACLAUGPT_REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
-: "${LACLAUGPT_EP24_PRIVATE_ROOT:?Set LACLAUGPT_EP24_PRIVATE_ROOT to the private EP24 runtime directory}"
-PRIVATE_ROOT=${LACLAUGPT_EP24_PRIVATE_ROOT}
+PUBLIC_ROOT=${LACLAUGPT_REPO_ROOT:-/scratch/project_2009497/LaclauGPT-Data-Analysis}
+PRIVATE_REPO=${LACLAUGPT_PRIVATE_REPO:-/scratch/project_2009497/LaclauGPT-Private}
+PRIVATE_ROOT=${LACLAUGPT_EP24_PRIVATE_ROOT:-${PRIVATE_REPO}/analysis/ep24}
 MODE=${EP24_RUN_MODE:-pilot}
 MODEL=${EP24_ANALYSIS_MODEL:-gemma4:12b}
-VENV=${EP24_ROIHU_VENV:-${PRIVATE_ROOT}/.venv-roihu}
+VENV=${EP24_ROIHU_VENV:-${PUBLIC_ROOT}/.venv-roihu-gpu}
 OLLAMA_INSTALL_ROOT=${OLLAMA_INSTALL_ROOT:-${PRIVATE_ROOT}/.ollama}
 
+[[ -d "${PUBLIC_ROOT}" && -d "${PRIVATE_REPO}" ]] || { echo "Missing public/private checkout under /scratch/project_2009497; pull both repositories first" >&2; exit 2; }
 mkdir -p "${PRIVATE_ROOT}"/{data,media,keyframes,logs,outputs,qa,provenance}
 cd "${PUBLIC_ROOT}"
 
@@ -37,6 +39,16 @@ unset PYTHONHOME
   exit 2
 }
 source "${VENV}/bin/activate"
+
+# One-time source migration is automatic when the pinned legacy submodule is locally available.
+if [[ ! -s "${PRIVATE_ROOT}/source/ep24_finland_dashboard_9_1_2026.csv" || ! -s "${PRIVATE_ROOT}/source/ep24_poland_dashboard_9_1_2026.csv" || ! -s "${PRIVATE_ROOT}/codebooks/ep24_common_private.json" ]]; then
+  if [[ -f "${PRIVATE_REPO}/legacy/LaclauGPT-Discourse-Analysis-Private/data/research_notes.xlsx" ]]; then
+    (cd "${PRIVATE_REPO}" && bash analysis/ep24/migrate_from_legacy.sh)
+  else
+    echo "EP24 source/codebooks missing. On a login node: cd ${PRIVATE_REPO} && git submodule update --init --recursive && bash analysis/ep24/migrate_from_legacy.sh" >&2
+    exit 2
+  fi
+fi
 
 python - <<'PY'
 import sys, numpy, pandas, openpyxl, yaml
@@ -74,6 +86,8 @@ if ! command -v ollama >/dev/null 2>&1; then
 fi
 
 OLLAMA_PORT=$((20000 + SLURM_JOB_ID % 20000))
+export OLLAMA_MODELS=${OLLAMA_MODELS:-${PRIVATE_ROOT}/.ollama/models}
+mkdir -p "${OLLAMA_MODELS}"
 export OLLAMA_HOST="http://127.0.0.1:${OLLAMA_PORT}"
 export LLM_MODE=local
 export LLM_ALLOW_CLOUD_FALLBACK=0
