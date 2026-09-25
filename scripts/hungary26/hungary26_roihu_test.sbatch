@@ -52,15 +52,15 @@ source "${VENV}/bin/activate"
 
 cd "${APP_DIR}"
 
-# Stage from the already-initialized private legacy submodule only if needed.
-if [[ ! -s "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/source/hungary2026_instagram.xlsx" || ! -s "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/source/hungary2026_tiktok.xlsx" ]]; then
-  if [[ -f "${PRIVATE_REPO}/legacy/LaclauGPT-Discourse-Analysis-Private/data/hungrary2026/hungary2026_instagram.xlsx" ]]; then
-    (cd "${PRIVATE_REPO}" && "${VENV}/bin/python" analysis/hungary26/migrate_from_legacy.py)
-  else
-    echo "Hungary26 workbooks missing. On a login node: cd ${PRIVATE_REPO} && git submodule update --init --recursive && python analysis/hungary26/migrate_from_legacy.py" >&2
+# Canonical research workbooks must be ordinary files in LaclauGPT-Private.
+# Do not initialize a legacy submodule or fetch private data from compute nodes.
+for workbook in hungary2026_instagram.xlsx hungary2026_tiktok.xlsx; do
+  if [[ ! -s "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/source/${workbook}" ]]; then
+    echo "Missing canonical Hungary26 workbook: ${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/source/${workbook}" >&2
+    echo "On a trusted login node: cd ${PRIVATE_REPO} && bash analysis/hungary26/promote_legacy_inputs.sh --commit && git push origin $(git -C "${PRIVATE_REPO}" branch --show-current)" >&2
     exit 2
   fi
-fi
+done
 if [[ ! -s "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/run/hungary26_roihu.yaml" || ! -s "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/codebooks/hungary26_private.json" ]]; then
   (cd "${PRIVATE_REPO}" && "${VENV}/bin/python" analysis/hungary26/build_runtime.py --root "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}")
 fi
