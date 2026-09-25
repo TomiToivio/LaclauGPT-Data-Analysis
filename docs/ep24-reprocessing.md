@@ -29,7 +29,7 @@ EP24_RUN_MODE=smoke sbatch --account="$CSC_ACCOUNT" \\
 
 The launcher requires `LACLAUGPT_EP24_PRIVATE_ROOT`, defaults its public checkout to the submission directory and derives the private checkout from the private root unless overridden. Do not commit allocation IDs or absolute private paths.
 
-The private repository tracks `analysis/ep24/logs/.gitkeep` so Slurm can open its log files before the job body runs. If canonical source files/codebooks are missing, the job migrates them automatically when the pinned legacy private submodule is already initialized. Otherwise it fails with the exact one-time migration command. A Roihu ARM64 venv at `.venv-roihu-gpu` (or `EP24_ROIHU_VENV`) and local model availability/download access remain necessary. Run `EP24_RUN_MODE=pilot` or `full` only after reviewing smoke outputs; pilot is the default.
+The private repository tracks `analysis/ep24/logs/.gitkeep` so Slurm can open its log files before the job body runs. The job requires the five authoritative workbooks/CSVs and the three codebooks as ordinary tracked files in the canonical private repository. It never initializes a submodule or fetches legacy data on a compute node. One-time private promotion is `bash analysis/ep24/promote_legacy_inputs.sh --commit` followed by `git push origin main`. Only after both EP24 and Hungary26 inputs have been committed and pushed, run `bash scripts/finalize_native_research_data.sh` to remove the legacy gitlink safely. A Roihu ARM64 venv at `.venv-roihu-gpu` (or `EP24_ROIHU_VENV`) and local model availability/download access remain necessary. Run `EP24_RUN_MODE=pilot` or `full` only after reviewing smoke outputs; pilot is the default.
 
 ## Phase 1 analytical order
 
