@@ -10,18 +10,16 @@ The active research data and codebooks live only in `LaclauGPT-Private/analysis/
 
 ## Deployment
 
-Keep the public checkout and private runtime in site-specific locations that are not committed. Supply the CSC account at submission time and the private EP24 root through the environment.
-
-Normal run:
+The default CSC deployment is self-discovering, with no exports or `--account` flag required. Pull both repositories before submitting:
 
 ```bash
-export LACLAUGPT_EP24_PRIVATE_ROOT=/private/path/to/analysis/ep24
-cd /path/to/LaclauGPT-Data-Analysis
-git pull --ff-only
-sbatch --account=<CSC_PROJECT> scripts/ep24/ep24_roihu_reprocess.sbatch
+cd /scratch/project_2009497/LaclauGPT-Data-Analysis && git pull --ff-only
+cd /scratch/project_2009497/LaclauGPT-Private && git pull --ff-only
+cd /scratch/project_2009497/LaclauGPT-Data-Analysis
+EP24_RUN_MODE=smoke sbatch scripts/ep24/ep24_roihu_reprocess.sbatch
 ```
 
-Set `EP24_RUN_MODE=smoke`, `pilot`, `full`, or `resume`. Pilot is the default.
+The private repository tracks `analysis/ep24/logs/.gitkeep` so Slurm can open its log files before the job body runs. If canonical source files/codebooks are missing, the job migrates them automatically when the pinned legacy private submodule is already initialized. Otherwise it fails with the exact one-time migration command. A Roihu ARM64 venv at `.venv-roihu-gpu` (or `EP24_ROIHU_VENV`) and local model availability/download access remain necessary. Run `EP24_RUN_MODE=pilot` or `full` only after reviewing smoke outputs; pilot is the default.
 
 ## Phase 1 analytical order
 
