@@ -24,12 +24,14 @@ def test_canonical_launchers_are_self_discovering():
         assert "srun --ntasks=1" in body
 
 
-def test_canonical_launchers_stage_missing_private_inputs_without_overwriting_present_inputs():
+def test_canonical_launchers_require_native_private_inputs_without_submodules():
     ep = (ROOT / "scripts/ep24/ep24_roihu_reprocess.sbatch").read_text()
     hu = (ROOT / "scripts/hungary26/hungary26_roihu_test.sbatch").read_text()
-    assert "migrate_from_legacy.sh" in ep
-    assert "git submodule update --init --recursive" in ep
-    assert "migrate_from_legacy.py" in hu
+    for body in (ep, hu):
+        assert "git submodule" not in body
+        assert "legacy/LaclauGPT-Discourse-Analysis-Private" not in body
+    assert "Missing canonical EP24 input" in ep
+    assert "promote_legacy_inputs.sh" in ep
+    assert "Missing canonical Hungary26 workbook" in hu
+    assert "promote_legacy_inputs.sh" in hu
     assert "build_runtime.py" in hu
-    assert "git submodule update --init --recursive" in hu
-    assert "hungrary2026" in hu
