@@ -1,7 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=hungary26_test
-#SBATCH --output=hungary26-test-%j.out
-#SBATCH --error=hungary26-test-%j.err
+#SBATCH --account=project_2009497
+#SBATCH --output=/scratch/project_2009497/LaclauGPT-Data-Analysis/hungary26-test-%j.out
+#SBATCH --error=/scratch/project_2009497/LaclauGPT-Data-Analysis/hungary26-test-%j.err
 #SBATCH --partition=gpumedium
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -13,9 +14,11 @@
 
 set -euo pipefail
 
-APP_DIR=${APP_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
-: "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT:?Set LACLAUGPT_HUNGARY26_PRIVATE_ROOT to the private Hungary26 runtime directory}"
+APP_DIR=${APP_DIR:-/scratch/project_2009497/LaclauGPT-Data-Analysis}
+PRIVATE_REPO=${LACLAUGPT_PRIVATE_REPO:-/scratch/project_2009497/LaclauGPT-Private}
+export LACLAUGPT_HUNGARY26_PRIVATE_ROOT=${LACLAUGPT_HUNGARY26_PRIVATE_ROOT:-${PRIVATE_REPO}/analysis/hungary26}
 MODE=${MODE:-smoke}
+[[ -d "${APP_DIR}" && -d "${PRIVATE_REPO}" ]] || { echo "Missing public/private checkout under /scratch/project_2009497; pull both repositories first" >&2; exit 2; }
 
 export OLLAMA_MODEL=gemma4:12b
 export LLM_MODE=local
@@ -48,6 +51,19 @@ fi
 source "${VENV}/bin/activate"
 
 cd "${APP_DIR}"
+
+# Stage from the already-initialized private legacy submodule only if needed.
+if [[ ! -s "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/source/hungary2026_instagram.xlsx" || ! -s "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/source/hungary2026_tiktok.xlsx" ]]; then
+  if [[ -f "${PRIVATE_REPO}/legacy/LaclauGPT-Discourse-Analysis-Private/data/hungrary2026/hungary2026_instagram.xlsx" ]]; then
+    (cd "${PRIVATE_REPO}" && "${VENV}/bin/python" analysis/hungary26/migrate_from_legacy.py)
+  else
+    echo "Hungary26 workbooks missing. On a login node: cd ${PRIVATE_REPO} && git submodule update --init --recursive && python analysis/hungary26/migrate_from_legacy.py" >&2
+    exit 2
+  fi
+fi
+if [[ ! -s "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/run/hungary26_roihu.yaml" || ! -s "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/codebooks/hungary26_private.json" ]]; then
+  (cd "${PRIVATE_REPO}" && "${VENV}/bin/python" analysis/hungary26/build_runtime.py --root "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}")
+fi
 
 "${VENV}/bin/python" - <<'PY'
 import os
@@ -98,9 +114,9 @@ for _ in {1..60}; do
 done
 ollama list >/dev/null 2>&1 || { echo "Ollama did not start: ${OLLAMA_LOG}" >&2; exit 3; }
 
-ollama pull gemma4:12b
-ollama show gemma4:12b >/dev/null
+ollama pull "${OLLAMA_MODEL}"
+ollama show "${OLLAMA_MODEL}" >/dev/null
 
 # Private settings may point boto3 at CSC Allas through environment or config.
 # No MongoDB or Redis variables are required by this workflow.
-srun --ntasks=1 "${VENV}/bin/python" -m laclaugpt_data_analysis.hungary26_roihu   "${MODE}"   --private-root "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}"   --model gemma4:12b
+srun --ntasks=1 "${VENV}/bin/python" -m laclaugpt_data_analysis.hungary26_roihu   "${MODE}"   --private-root "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}"   --model "${OLLAMA_MODEL}"
