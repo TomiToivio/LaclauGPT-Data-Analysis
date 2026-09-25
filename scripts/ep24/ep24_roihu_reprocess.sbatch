@@ -42,7 +42,7 @@ source "${VENV}/bin/activate"
 
 # One-time source migration is automatic when the pinned legacy submodule is locally available.
 if [[ ! -s "${PRIVATE_ROOT}/source/ep24_finland_dashboard_9_1_2026.csv" || ! -s "${PRIVATE_ROOT}/source/ep24_poland_dashboard_9_1_2026.csv" || ! -s "${PRIVATE_ROOT}/codebooks/ep24_common_private.json" ]]; then
-  if [[ -f "${PRIVATE_REPO}/legacy/LaclauGPT-Discourse-Analysis-Private/data/research_notes.xlsx" ]]; then
+  if [[ -f "${PRIVATE_REPO}/analysis/ep24/migrate_from_legacy.sh" ]]; then
     (cd "${PRIVATE_REPO}" && bash analysis/ep24/migrate_from_legacy.sh)
   else
     echo "EP24 source/codebooks missing. On a login node: cd ${PRIVATE_REPO} && git submodule update --init --recursive && bash analysis/ep24/migrate_from_legacy.sh" >&2
