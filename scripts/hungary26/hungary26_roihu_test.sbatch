@@ -1,8 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=hungary26_test
-#SBATCH --account=project_2009497
-#SBATCH --output=/scratch/project_2009497/LaclauGPT-Private/analysis/hungary26/logs/test_%j.out
-#SBATCH --error=/scratch/project_2009497/LaclauGPT-Private/analysis/hungary26/logs/test_%j.err
+#SBATCH --output=hungary26_test_%j.out
+#SBATCH --error=hungary26_test_%j.err
 #SBATCH --partition=gpumedium
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -14,11 +13,12 @@
 
 set -euo pipefail
 
-APP_DIR=${APP_DIR:-/scratch/project_2009497/LaclauGPT-Data-Analysis}
-PRIVATE_REPO=${LACLAUGPT_PRIVATE_REPO:-/scratch/project_2009497/LaclauGPT-Private}
-export LACLAUGPT_HUNGARY26_PRIVATE_ROOT=${LACLAUGPT_HUNGARY26_PRIVATE_ROOT:-${PRIVATE_REPO}/analysis/hungary26}
+APP_DIR=${APP_DIR:-${SLURM_SUBMIT_DIR:-$PWD}}
+: "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT:?Set LACLAUGPT_HUNGARY26_PRIVATE_ROOT before submitting}"
+export LACLAUGPT_HUNGARY26_PRIVATE_ROOT
+PRIVATE_REPO=${LACLAUGPT_PRIVATE_REPO:-$(dirname "$(dirname "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}")")}
 MODE=${MODE:-smoke}
-[[ -d "${APP_DIR}" && -d "${PRIVATE_REPO}" ]] || { echo "Missing public/private checkout under /scratch/project_2009497; pull both repositories first" >&2; exit 2; }
+[[ -d "${APP_DIR}" && -d "${PRIVATE_REPO}" ]] || { echo "Missing public/private checkout; set APP_DIR and LACLAUGPT_PRIVATE_REPO" >&2; exit 2; }
 
 export OLLAMA_MODEL=gemma4:12b
 export LLM_MODE=local

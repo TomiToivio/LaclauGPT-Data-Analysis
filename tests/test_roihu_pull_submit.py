@@ -5,7 +5,6 @@ No private data, Slurm, Allas, or Ollama is needed for these assertions.
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRATCH = "/scratch/project_2009497"
 
 
 def test_canonical_launchers_are_self_discovering():
@@ -14,11 +13,11 @@ def test_canonical_launchers_are_self_discovering():
         ("hungary26", "scripts/hungary26/hungary26_roihu_test.sbatch"),
     ):
         body = (ROOT / script).read_text()
-        assert f"#SBATCH --account=project_2009497" in body
-        assert f"{SCRATCH}/LaclauGPT-Private/analysis/{study}/logs/" in body
-        assert "Set LACLAUGPT_" not in body
-        assert f"{SCRATCH}/LaclauGPT-Data-Analysis" in body
-        assert f"{SCRATCH}/LaclauGPT-Private" in body
+        assert "#SBATCH --account=" not in body
+        assert "/scratch/" not in body
+        assert f"LACLAUGPT_{study.upper()}_PRIVATE_ROOT:?" in body
+        assert "SLURM_SUBMIT_DIR" in body
+        assert "LACLAUGPT_PRIVATE_REPO" in body
         assert "LLM_ALLOW_CLOUD_FALLBACK=0" in body
         assert "127.0.0.1" in body
         assert "SLURM_JOB_ID" in body

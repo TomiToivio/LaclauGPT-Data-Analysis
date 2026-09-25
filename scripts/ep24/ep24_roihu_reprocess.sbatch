@@ -1,8 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=ep24_reprocess
-#SBATCH --account=project_2009497
-#SBATCH --output=/scratch/project_2009497/LaclauGPT-Private/analysis/ep24/logs/reprocess_%j.out
-#SBATCH --error=/scratch/project_2009497/LaclauGPT-Private/analysis/ep24/logs/reprocess_%j.err
+#SBATCH --output=ep24_reprocess_%j.out
+#SBATCH --error=ep24_reprocess_%j.err
 #SBATCH --partition=gpumedium
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
@@ -14,15 +13,16 @@
 
 set -euo pipefail
 
-PUBLIC_ROOT=${LACLAUGPT_REPO_ROOT:-/scratch/project_2009497/LaclauGPT-Data-Analysis}
-PRIVATE_REPO=${LACLAUGPT_PRIVATE_REPO:-/scratch/project_2009497/LaclauGPT-Private}
-PRIVATE_ROOT=${LACLAUGPT_EP24_PRIVATE_ROOT:-${PRIVATE_REPO}/analysis/ep24}
+PUBLIC_ROOT=${LACLAUGPT_REPO_ROOT:-${SLURM_SUBMIT_DIR:-$PWD}}
+: "${LACLAUGPT_EP24_PRIVATE_ROOT:?Set LACLAUGPT_EP24_PRIVATE_ROOT before submitting}"
+PRIVATE_ROOT=${LACLAUGPT_EP24_PRIVATE_ROOT}
+PRIVATE_REPO=${LACLAUGPT_PRIVATE_REPO:-$(dirname "$(dirname "${PRIVATE_ROOT}")")}
 MODE=${EP24_RUN_MODE:-pilot}
 MODEL=${EP24_ANALYSIS_MODEL:-gemma4:12b}
 VENV=${EP24_ROIHU_VENV:-${PUBLIC_ROOT}/.venv-roihu-gpu}
 OLLAMA_INSTALL_ROOT=${OLLAMA_INSTALL_ROOT:-${PRIVATE_ROOT}/.ollama}
 
-[[ -d "${PUBLIC_ROOT}" && -d "${PRIVATE_REPO}" ]] || { echo "Missing public/private checkout under /scratch/project_2009497; pull both repositories first" >&2; exit 2; }
+[[ -d "${PUBLIC_ROOT}" && -d "${PRIVATE_REPO}" ]] || { echo "Missing public/private checkout; set LACLAUGPT_REPO_ROOT and LACLAUGPT_PRIVATE_REPO" >&2; exit 2; }
 mkdir -p "${PRIVATE_ROOT}"/{data,media,keyframes,logs,outputs,qa,provenance}
 cd "${PUBLIC_ROOT}"
 

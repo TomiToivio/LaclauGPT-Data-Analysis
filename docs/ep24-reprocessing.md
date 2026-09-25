@@ -10,14 +10,24 @@ The active research data and codebooks live only in `LaclauGPT-Private/analysis/
 
 ## Deployment
 
-The default CSC deployment is self-discovering, with no exports or `--account` flag required. Pull both repositories before submitting:
+Set allocation and private roots in your local shell. Slurm account and private log destinations belong to the submission command, not tracked scripts:
 
 ```bash
-cd /scratch/project_2009497/LaclauGPT-Data-Analysis && git pull --ff-only
-cd /scratch/project_2009497/LaclauGPT-Private && git pull --ff-only
-cd /scratch/project_2009497/LaclauGPT-Data-Analysis
-EP24_RUN_MODE=smoke sbatch scripts/ep24/ep24_roihu_reprocess.sbatch
+export CSC_ACCOUNT="<your-csc-allocation>"
+export LACLAUGPT_REPO_ROOT="<path-to-public-checkout>"
+export LACLAUGPT_PRIVATE_REPO="<path-to-private-checkout>"
+export LACLAUGPT_EP24_PRIVATE_ROOT="${LACLAUGPT_PRIVATE_REPO}/analysis/ep24"
+cd "$LACLAUGPT_REPO_ROOT" && git pull --ff-only
+cd "$LACLAUGPT_PRIVATE_REPO" && git pull --ff-only
+mkdir -p "$LACLAUGPT_EP24_PRIVATE_ROOT/logs"
+cd "$LACLAUGPT_REPO_ROOT"
+EP24_RUN_MODE=smoke sbatch --account="$CSC_ACCOUNT" \\
+  --output="$LACLAUGPT_EP24_PRIVATE_ROOT/logs/reprocess_%j.out" \\
+  --error="$LACLAUGPT_EP24_PRIVATE_ROOT/logs/reprocess_%j.err" \\
+  scripts/ep24/ep24_roihu_reprocess.sbatch
 ```
+
+The launcher requires `LACLAUGPT_EP24_PRIVATE_ROOT`, defaults its public checkout to the submission directory and derives the private checkout from the private root unless overridden. Do not commit allocation IDs or absolute private paths.
 
 The private repository tracks `analysis/ep24/logs/.gitkeep` so Slurm can open its log files before the job body runs. If canonical source files/codebooks are missing, the job migrates them automatically when the pinned legacy private submodule is already initialized. Otherwise it fails with the exact one-time migration command. A Roihu ARM64 venv at `.venv-roihu-gpu` (or `EP24_ROIHU_VENV`) and local model availability/download access remain necessary. Run `EP24_RUN_MODE=pilot` or `full` only after reviewing smoke outputs; pilot is the default.
 
