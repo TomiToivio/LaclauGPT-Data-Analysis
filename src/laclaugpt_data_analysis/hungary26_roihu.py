@@ -485,9 +485,15 @@ def select_records(records: list[WorkbookRecord], mode: str) -> list[WorkbookRec
     if mode == "smoke":
         selected = []
         for platform in ("instagram", "tiktok"):
-            candidates = sorted((r for r in records if r.platform == platform), key=lambda r: r.document_id)
-            if candidates:
-                selected.append(candidates[0])
+            candidates = sorted(
+                (r for r in records if r.platform == platform),
+                key=lambda r: r.document_id,
+            )
+            if not candidates:
+                raise RuntimeError(
+                    f"Hungary26 Phase 2 smoke requires at least one {platform} record"
+                )
+            selected.append(candidates[0])
         return selected
     if mode == "pilot":
         return deterministic_pilot(records, per_platform=6)
@@ -500,6 +506,13 @@ def preflight(root: Path, model: str) -> dict[str, Any]:
         raise ValueError(f"model must be {DEFAULT_MODEL}")
     for binary in ("ffmpeg", "ffprobe"):
         subprocess.run([binary, "-version"], check=True, capture_output=True)
+    try:
+        import networkx  # noqa: F401
+        import rdflib  # noqa: F401
+    except ImportError as exc:
+        raise RuntimeError(
+            "Hungary26 Phase 2 Roihu venv requires networkx and rdflib"
+        ) from exc
     codebook_hash = sha256_file(paths["codebook"])
     config_hash = sha256_file(paths["config"])
     state = Hungary26State(paths["db"])
