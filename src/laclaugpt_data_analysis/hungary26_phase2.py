@@ -273,46 +273,64 @@ def _build_graphs(
     statements: list[DiscourseStatement],
     *,
     graphs_dir: Path,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, str]]:
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]], dict[str, str]]:
     try:
         import networkx as nx
     except ImportError as exc:  # pragma: no cover
         raise RuntimeError("Hungary26 Phase 2 requires networkx") from exc
 
     graphs_dir.mkdir(parents=True, exist_ok=True)
+    matrix = dna_binary_actor_concept(statements)
     congruence = dna_actor_projection(statements)
     conflict = dna_actor_projection(statements, conflict=True)
     concept = dna_concept_projection(statements)
 
-    graph_specs = {
+    graph_objects: dict[str, Any] = {}
+
+    actor_concept = nx.Graph(name="dna_actor_concept")
+    for actor_id, concepts in sorted(matrix.items()):
+        actor_node = f"actor:{actor_id}"
+        actor_concept.add_node(actor_node, bipartite="actor", layer="dna", project="hungary26")
+        for concept_id, values in sorted(concepts.items()):
+            concept_node = f"concept:{concept_id}"
+            actor_concept.add_node(
+                concept_node, bipartite="concept", layer="dna", project="hungary26"
+            )
+            actor_concept.add_edge(
+                actor_node,
+                concept_node,
+                support_count=int(values[True]),
+                oppose_count=int(values[False]),
+                weight=int(values[True]) + int(values[False]),
+                kind="actor_concept",
+            )
+    graph_objects["dna_actor_concept"] = actor_concept
+
+    for name, projection in {
         "dna_actor_congruence": congruence,
         "dna_actor_conflict": conflict,
         "dna_concept_congruence": concept,
-    }
-    node_rows: list[dict[str, Any]] = []
-    edge_rows: list[dict[str, Any]] = []
-    outputs: dict[str, str] = {}
-    for name, projection in graph_specs.items():
+    }.items():
         graph = nx.Graph(name=name)
         for (left, right), data in projection.items():
-            graph.add_edge(left, right, **data)
+            attrs = {
+                key: stable_json(value) if isinstance(value, (list, dict)) else value
+                for key, value in data.items()
+            }
+            graph.add_edge(left, right, **attrs)
         for node in graph.nodes:
             graph.nodes[node]["layer"] = "dna"
             graph.nodes[node]["project"] = "hungary26"
+        graph_objects[name] = graph
+
+    node_rows: list[dict[str, Any]] = []
+    edge_rows: list[dict[str, Any]] = []
+    outputs: dict[str, str] = {}
+    for name, graph in graph_objects.items():
         for node, attrs in graph.nodes(data=True):
             node_rows.append({"graph": name, "node_id": node, **attrs})
         for left, right, attrs in graph.edges(data=True):
-            edge_rows.append(
-                {
-                    "graph": name,
-                    "source": left,
-                    "target": right,
-                    **{
-                        key: stable_json(value) if isinstance(value, (list, dict)) else value
-                        for key, value in attrs.items()
-                    },
-                }
-            )
+            edge_rows.append({"graph": name, "source": left, "target": right, **attrs})
         graphml = graphs_dir / f"{name}.graphml"
         gexf = graphs_dir / f"{name}.gexf"
         nx.write_graphml(graph, graphml)
@@ -320,18 +338,17 @@ def _build_graphs(
         outputs[f"{name}_graphml"] = str(graphml)
         outputs[f"{name}_gexf"] = str(gexf)
 
-    # Conventional metrics on actor congruence graph.
-    graph = nx.Graph()
-    for (left, right), data in congruence.items():
-        graph.add_edge(left, right, weight=float(data.get("weight", 1.0)))
+    graph = graph_objects["dna_actor_congruence"]
     metrics: list[dict[str, Any]] = []
     if graph.number_of_nodes():
         degree = dict(graph.degree(weight="weight"))
         betweenness = nx.betweenness_centrality(graph, weight="weight")
         closeness = nx.closeness_centrality(graph)
-        pagerank = nx.pagerank(graph, weight="weight") if graph.number_of_edges() else {
-            node: 1.0 / graph.number_of_nodes() for node in graph
-        }
+        pagerank = (
+            nx.pagerank(graph, weight="weight")
+            if graph.number_of_edges()
+            else {node: 1.0 / graph.number_of_nodes() for node in graph}
+        )
         clustering = nx.clustering(graph, weight="weight")
         for node in sorted(graph.nodes):
             metrics.append(
@@ -343,14 +360,16 @@ def _build_graphs(
                     "closeness": closeness.get(node, 0.0),
                     "pagerank": pagerank.get(node, 0.0),
                     "clustering": clustering.get(node, 0.0),
-                    "interpretation_guardrail": "network measurement, not a political/theoretical verdict",
+                    "interpretation_guardrail": (
+                        "network measurement, not a political/theoretical verdict"
+                    ),
                 }
             )
-    return node_rows, edge_rows, {**outputs, "metrics": stable_json(metrics)}
-
+    return node_rows, edge_rows, metrics, outputs
 
 def _write_rdf(
     *,
+    phase1_rows: list[dict[str, Any]],
     statements: list[DiscourseStatement],
     node_rows: list[dict[str, Any]],
     edge_rows: list[dict[str, Any]],
@@ -369,6 +388,35 @@ def _write_rdf(
     graph.bind("lg", LG)
     graph.bind("prov", PROV)
     graph.bind("dcterms", DCT)
+
+    for row in phase1_rows:
+        record_id = str(row.get("document_id") or "")
+        if not record_id:
+            continue
+        source = rdflib.URIRef(f"https://w3id.org/laclaugpt/hungary26/source/{record_id}")
+        graph.add((source, RDF.type, LG.SourceRecord))
+        graph.add((source, LG.layer, rdflib.Literal("source")))
+        graph.add((source, DCT.identifier, rdflib.Literal(record_id)))
+        if row.get("platform"):
+            graph.add((source, LG.platform, rdflib.Literal(str(row["platform"]))))
+        if row.get("source_fingerprint"):
+            graph.add(
+                (source, LG.sourceFingerprint, rdflib.Literal(str(row["source_fingerprint"])))
+            )
+        for stage, rdf_type, layer in (
+            ("vision", LG.MultimodalRepresentation, "source"),
+            ("summary", LG.DescriptiveSummary, "source"),
+            ("discourse", LG.LaclauAnalysis, "laclau"),
+        ):
+            if row.get(f"{stage}_status") != "ok":
+                continue
+            analysis = rdflib.URIRef(
+                f"https://w3id.org/laclaugpt/hungary26/{stage}/{record_id}"
+            )
+            graph.add((analysis, RDF.type, rdf_type))
+            graph.add((analysis, LG.layer, rdflib.Literal(layer)))
+            graph.add((analysis, PROV.wasDerivedFrom, source))
+            graph.add((analysis, LG.stage, rdflib.Literal(stage)))
 
     for statement in statements:
         sid = rdflib.URIRef(f"https://w3id.org/laclaugpt/hungary26/dna/{statement.statement_id}")
@@ -397,6 +445,7 @@ def _write_rdf(
         )
         graph.add((node, RDF.type, LG.SNANode))
         graph.add((node, LG.layer, rdflib.Literal("sna")))
+        graph.add((node, LG.graphName, rdflib.Literal(str(row["graph"]))))
     for index, row in enumerate(edge_rows):
         edge = rdflib.URIRef(f"https://w3id.org/laclaugpt/hungary26/sna/edge/{index}")
         graph.add((edge, RDF.type, LG.SNAEdge))
@@ -409,7 +458,6 @@ def _write_rdf(
 
     target.parent.mkdir(parents=True, exist_ok=True)
     graph.serialize(destination=str(target), format="turtle")
-    # Minimal structural validation: every DNA statement must retain source, actor and concept.
     dna_nodes = set(graph.subjects(RDF.type, LG.DNAStatement))
     valid = all(
         (node, PROV.wasDerivedFrom, None) in graph
@@ -417,8 +465,13 @@ def _write_rdf(
         and (node, LG.concept, None) in graph
         for node in dna_nodes
     )
-    return {"triples": len(graph), "dna_statements": len(dna_nodes), "valid": valid}
-
+    layers = sorted({str(value) for value in graph.objects(None, LG.layer)})
+    return {
+        "triples": len(graph),
+        "dna_statements": len(dna_nodes),
+        "layers": layers,
+        "valid": valid and {"source", "laclau", "dna", "sna"}.issubset(set(layers)),
+    }
 
 def _persist_sqlite(
     db_path: Path,
@@ -548,14 +601,13 @@ def run_phase2(
         }[key]
         _write_csv(target, payload)
 
-    node_rows, edge_rows, graph_outputs = _build_graphs(statements, graphs_dir=graphs_dir)
-    metrics = json.loads(graph_outputs.pop("metrics"))
-    _write_csv(data_dir / "sna_nodes.csv", node_rows)
+    node_rows, edge_rows, metrics, graph_outputs = _build_graphs(\n        statements, graphs_dir=graphs_dir\n    )\n    _write_csv(data_dir / "sna_nodes.csv", node_rows)
     _write_csv(data_dir / "sna_edges.csv", edge_rows)
     _write_csv(data_dir / "sna_metrics.csv", metrics)
 
     rdf_target = graphs_dir / "hungary26.ttl"
     rdf_report = _write_rdf(
+        phase1_rows=rows,
         statements=statements,
         node_rows=node_rows,
         edge_rows=edge_rows,
