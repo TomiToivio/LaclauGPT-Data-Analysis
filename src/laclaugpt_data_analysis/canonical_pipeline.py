@@ -25,11 +25,6 @@ from .canonical import (
 from .codebooks import CodebookEntry
 from .context_envelope import PromptEnvelope, build_prompt_envelope
 from .llm.structured_output import chat_structured
-from .modality_routing import (
-    build_modality_plan,
-    ensure_still_image_frames,
-    legacy_multimodal_projection,
-)
 from .models import Topic
 from .prompt_library import load_prompt, prompt_provenance
 from .research_record import ensure_research_layers
@@ -686,78 +681,46 @@ def build_discourse_graph(record: CanonicalRecord) -> dict[str, Any]:
     }
 
 
-def run_canonical_pipeline(record: CanonicalRecord, *, provider, context: PipelineContext | None = None, codebook_entries: list[CodebookEntry] | None = None, preprocessor: Preprocessor | None = None, graph_sink: GraphSink | None = None, vector_sink: VectorSink | None = None, model: str = "auto", project_profile: str = "generic", prompt_version: str = "canonical-pipeline-v1", allow_cloud_fallback: bool | None = None) -> CanonicalRecord:
-    ctx = context or PipelineContext()
-    if project_profile.casefold() == "ai26":
-        _validate_project_analysis_config(ctx)
-    entries = codebook_entries or []
+def run_canonical_pipeline(
+    record: CanonicalRecord,
+    *,
+    provider,
+    context: PipelineContext | None = None,
+    codebook_entries: list[CodebookEntry] | None = None,
+    preprocessor: Preprocessor | None = None,
+    graph_sink: GraphSink | None = None,
+    vector_sink: VectorSink | None = None,
+    model: str = "auto",
+    project_profile: str = "generic",
+    prompt_version: str = "canonical-pipeline-v1",
+    allow_cloud_fallback: bool | None = None,
+) -> CanonicalRecord:
+    """Compatibility entry point for the readable Phase 1 pipeline.
+
+    The execution order now lives in phase1_pipeline/runner.py so a human
+    reader does not need to search this large compatibility module to discover
+    what happens to one source record. Existing imports of
+    run_canonical_pipeline continue to work unchanged.
+    """
+    # Keep the historical canonical projection contract visible here as well:
+    # downstream tests/tools inspect this module to verify that started_at is
+    # owned by the canonical Phase 1 entry point.
     record.analysis.started_at = record.analysis.started_at or datetime.now(UTC)
-    preprocess_record(record, preprocessor=preprocessor)
-    ensure_still_image_frames(record)
-    plan = build_modality_plan(record)
-    _append_stage(record, "modality_plan", {
-        "created_at": datetime.now(UTC).isoformat(),
-        **plan.audit(),
-    })
 
-    if plan.needs_frame_analysis:
-        # Import the image-capable adapter lazily. Text/audio-only records never
-        # need multimodal dependencies or a vision-capable provider wrapper.
-        from .llm.multimodal import FrameAwareProvider
+    # Lazy import avoids a module cycle: the readable stage files intentionally
+    # reuse the validated schemas and helpers defined above.
+    from .phase1_pipeline.runner import run_phase1_pipeline
 
-        frame_provider = FrameAwareProvider(
-            provider,
-            record.content.frames,
-            record.content.media_references,
-        )
-        analyze_frames(
-            record,
-            provider=frame_provider,
-            context=ctx,
-            codebook_entries=entries,
-            model=model,
-            prompt_version=f"{prompt_version}:frame",
-            project_profile=project_profile,
-            allow_cloud_fallback=allow_cloud_fallback,
-        )
-        _append_stage(record, "multimodal_visibility", frame_provider.audit())
-    else:
-        _append_stage(record, "frame_analysis_skipped", {
-            "created_at": datetime.now(UTC).isoformat(),
-            "reason": "no_materialized_image_or_video_frames",
-            "modality_plan": plan.audit(),
-        })
-
-    summary = summarize_record(record, provider=provider, context=ctx, codebook_entries=entries, model=model, prompt_version=f"{prompt_version}:summary", project_profile=project_profile, allow_cloud_fallback=allow_cloud_fallback)
-    discourse = discourse_analysis(record, provider=provider, context=ctx, codebook_entries=entries, model=model, prompt_version=f"{prompt_version}:discourse", project_profile=project_profile, allow_cloud_fallback=allow_cloud_fallback) if _enabled(ctx, "laclau") or project_profile.casefold() != "ai26" else DiscourseProposal()
-    postprocess_record(record, summary, discourse, ctx)
-    record.legacy["multimodal_compatibility"] = legacy_multimodal_projection(record)
-    # Phase 2 / experimental methods remain explicit opt-ins and never enter the
-    # Phase 1 default path. They run only after the five canonical Phase 1 stages.
-    if _enabled(ctx, "critical_ai", default=False):
-        from .critical_ai import run_optional_critical_ai
-        run_optional_critical_ai(
-            record,
-            provider=provider,
-            context=ctx,
-            codebook_entries=entries,
-            model=model,
-            allow_cloud_fallback=allow_cloud_fallback,
-        )
-    elif _enabled(ctx, "dna_statement_coding", default=False):
-        from .dna_statement_coding import run_optional_dna_statement_coding
-        run_optional_dna_statement_coding(
-            record,
-            provider=provider,
-            context=ctx,
-            codebook_entries=entries,
-            model=model,
-            allow_cloud_fallback=allow_cloud_fallback,
-        )
-    graph = build_discourse_graph(record)
-    _append_stage(record, "discourse_graph", graph)
-    if graph_sink:
-        graph_sink.write_graph(record.source_url, graph)
-    if vector_sink:
-        vector_sink.upsert(record.source_url, record.human_readable.markdown or record.content.text, {"source_url": record.source_url, "project_profile": project_profile})
-    return record
+    return run_phase1_pipeline(
+        record,
+        provider=provider,
+        context=context,
+        codebook_entries=codebook_entries,
+        preprocessor=preprocessor,
+        graph_sink=graph_sink,
+        vector_sink=vector_sink,
+        model=model,
+        project_profile=project_profile,
+        prompt_version=prompt_version,
+        allow_cloud_fallback=allow_cloud_fallback,
+    )
