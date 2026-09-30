@@ -1,6 +1,8 @@
-# LaclauGPT Phase 0 Core
+# LaclauGPT Phase 0 Core (historical)
 
-This directory is the new hand-coded core of LaclauGPT Data Analysis.
+> **Historical documentation.** This directory describes the preserved Phase 0 hand-coded core. For the current Phase 1 execution path, read [`docs/DATA_ANALYSIS_PIPELINE.md`](../docs/DATA_ANALYSIS_PIPELINE.md) and `src/laclaugpt_data_analysis/phase1_pipeline/`.
+
+This directory is the preserved hand-coded Phase 0 core of LaclauGPT Data Analysis.
 
 The purpose of Phase 0 is to make the analysis pipeline **simple, explicit, readable, and easy to run from the command line or cron**. The legacy Vasama/LaclauGPT style is intentional. More advanced functionality should be added around this core later without turning the core itself into a large framework.
 
@@ -22,7 +24,7 @@ discourse analysis
 postprocess / indexing
 ```
 
-For AI26, text-first analysis is enough for now. Multimodal support is optional and may be added back later for projects that actually need image/video/audio processing.
+This statement applies only to the historical Phase 0 baseline. Current Phase 1 uses capability-driven routing: records with usable media take the multimodal path, while text-only records use text + metadata.
 
 The conceptual analysis roadmap is:
 
@@ -59,7 +61,7 @@ Infrastructure such as Redis, CSC Allas, dashboards, agents, orchestration frame
 
 ---
 
-# AI26 should be text-first
+# Historical Phase 0 note: AI26 was text-first
 
 The legacy pipeline contains multimodal assumptions because it was written for projects with TikTok, Instagram, Telegram images/video, OCR and Whisper.
 
