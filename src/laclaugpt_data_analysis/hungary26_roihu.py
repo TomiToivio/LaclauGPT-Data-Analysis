@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .hungary26 import WorkbookRecord, deterministic_pilot, load_hungary26_workbook
+from .hungary26_phase2 import run_phase2
 from .staging import MediaStager, StagingPolicy
 from .storage import S3ArtifactStore
 
@@ -229,6 +230,9 @@ def private_paths(root: str | Path) -> dict[str, Path]:
         "keyframes": base / "keyframes",
         "logs": base / "logs",
         "outputs": base / "outputs",
+        "graphs": base / "graphs",
+        "qa": base / "qa",
+        "provenance": base / "provenance",
     }
 
 
@@ -238,7 +242,7 @@ def ensure_private_layout(root: str | Path) -> dict[str, Path]:
     missing = [str(paths[name]) for name in required if not paths[name].exists()]
     if missing:
         raise FileNotFoundError("Hungary26 private runtime missing:\n  - " + "\n  - ".join(missing))
-    for name in ("data", "media", "keyframes", "logs", "outputs"):
+    for name in ("data", "media", "keyframes", "logs", "outputs", "graphs", "qa", "provenance"):
         paths[name].mkdir(parents=True, exist_ok=True)
     return paths
 
@@ -530,6 +534,7 @@ def write_validation_report(
     selected: list[WorkbookRecord],
     csvs: dict[str, str],
     model: str,
+    phase2: dict[str, Any] | None = None,
 ) -> Path:
     rows = state.rows()
     counts: dict[str, dict[str, int]] = {}
@@ -565,6 +570,17 @@ def write_validation_report(
         "",
         *[f"- {name}: {path}" for name, path in sorted(csvs.items())],
         "",
+        "## Phase 2",
+        "",
+        f"- DNA statements: {(phase2 or {}).get('dna_statements', 0)}",
+        f"- Actor congruence edges: {(phase2 or {}).get('actor_congruence_edges', 0)}",
+        f"- Actor conflict edges: {(phase2 or {}).get('actor_conflict_edges', 0)}",
+        f"- Concept congruence edges: {(phase2 or {}).get('concept_congruence_edges', 0)}",
+        f"- SNA nodes: {(phase2 or {}).get('sna_nodes', 0)}",
+        f"- SNA edges: {(phase2 or {}).get('sna_edges', 0)}",
+        f"- RDF valid: {((phase2 or {}).get('rdf') or {}).get('valid', False)}",
+        f"- RDF Turtle: {(phase2 or {}).get('rdf_turtle', '')}",
+        "",
         "## Selected records",
         "",
         *[
@@ -575,7 +591,7 @@ def write_validation_report(
         "Phase 0 isolation is checked by the Slurm launcher before this runner starts.",
         "No source text is reproduced in this report.",
     ]
-    target = paths["outputs"] / f"roihu-test-{job_id}.md"
+    target = paths["outputs"] / f"roihu-phase2-{job_id}.md"
     target.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return target
 
@@ -614,6 +630,14 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     csvs = export_csvs(state, paths)
+    phase2 = run_phase2(
+        rows=state.rows(),
+        private_root=paths["root"],
+        db_path=paths["db"],
+        model=DEFAULT_MODEL,
+        codebook_version=codebook_hash,
+        ollama_chat=ollama_chat,
+    )
     markdown_report = write_validation_report(
         paths=paths,
         state=state,
@@ -621,6 +645,7 @@ def main(argv: list[str] | None = None) -> int:
         selected=records,
         csvs=csvs,
         model=DEFAULT_MODEL,
+        phase2=phase2,
     )
     result = {
         **report,
@@ -628,8 +653,9 @@ def main(argv: list[str] | None = None) -> int:
         "records_selected": len(records),
         "csvs": csvs,
         "validation_report": str(markdown_report),
+        "phase2": phase2,
     }
-    target = paths["outputs"] / f"roihu-test-{os.getenv('SLURM_JOB_ID', 'local')}.json"
+    target = paths["outputs"] / f"roihu-phase2-{os.getenv('SLURM_JOB_ID', 'local')}.json"
     target.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
