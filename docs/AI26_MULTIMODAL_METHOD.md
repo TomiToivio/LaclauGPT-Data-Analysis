@@ -1,10 +1,19 @@
-# Canonical staged analysis pipeline
+# AI26 multimodal method
 
-This document defines the canonical staged Analysis pipeline. The design keeps the original EP24 pipeline's researcher-readable multimodal ladder while enforcing a clearer evidence-first boundary for AI26 and future multimodal studies.
+Study-specific method notes for the AI26 corpus: the social-semiotic grounding,
+the multimodal pre-analysis stages, the theory safeguards, and the data strata
+that must survive.
+
+**For the pipeline itself — stage order, code layout, prompts, configuration and
+how to run it — read [`DATA_ANALYSIS_PIPELINE.md`](DATA_ANALYSIS_PIPELINE.md).**
+That document is canonical; this one records *why* the AI26 study asks the model
+what it asks, and what the theory forbids.
 
 ## Order
 
-The canonical order is:
+AI26's analysis order. The first five steps are the canonical Phase 1 pipeline
+(see [`DATA_ANALYSIS_PIPELINE.md`](DATA_ANALYSIS_PIPELINE.md)); steps 5 onward are
+the study's optional/aggregate stages:
 
 ```text
 0. load canonical source + project context
@@ -12,7 +21,7 @@ The canonical order is:
 2. per-image/per-frame multimodal evidence analysis
 3. item-level multimodal synthesis + light sociological context
 4. Laclau/Mouffe/Palonen discourse analysis
-5. specialised plugins/stages such as DNA or Critical AI Studies
+5. specialised plugins/stages such as DNA or Critical AI Studies   (opt-in)
 6. strict Pydantic postprocessing into the canonical record
 7. discourse-graph/vector persistence hooks
 8. daily/filtered aggregate reports
@@ -20,6 +29,10 @@ The canonical order is:
 ```
 
 Stages are deliberately separate. Do not collapse the pipeline into one giant prompt. Separation keeps retries, caching, validation, researcher inspection and dashboard fields possible, and prevents early multimodal description from silently becoming ideology classification.
+
+Multimodal routing in step 2 is **automatic when the record carries usable media**
+— it is not a flag a researcher has to enable. See
+[Multimodal behaviour](DATA_ANALYSIS_PIPELINE.md#multimodal-behaviour).
 
 ## Prompt envelope
 
@@ -124,6 +137,37 @@ The theory safeguards remain:
 ## Later specialised stages
 
 DNA, Critical AI Studies, Bourdieu, Luhmann and other specialised plugins/stages may consume the same grounded intermediate record after the multimodal synthesis. They must not be folded back into the generic multimodal prompt. This preserves a common evidence layer that multiple theories can inspect independently.
+
+Such stages are **disabled unless project settings explicitly enable them**. An
+ordinary canonical run, or a project for which the stage is irrelevant, receives
+no extra model call and no extra stage output.
+
+Example AI26 settings for the Critical AI stage:
+
+```yaml
+analysis:
+  critical_ai:
+    enabled: true
+    provider: ollama
+    model: gemma4:12b
+    prompt_version: v1
+    include_prior_laclau: true
+    include_prior_dna: true
+    include_rag: true
+    include_periodic_context: true
+    evidence_mode: strict
+```
+
+The runtime still receives an already-configured provider object through the
+repository's provider abstraction. The module never calls Ollama directly and does
+not make any model a global default; the stage-level `model` merely selects which
+configured model that provider should use.
+
+Context is passed through the canonical prompt envelope and retains the
+distinction between current-source evidence, earlier pipeline proposals,
+project/codebook material, RAG material and periodic/situational context. Earlier
+Laclau and DNA results can be compared with Critical AI findings, but cannot
+silently become evidence for them.
 
 ## Data strata that must survive
 

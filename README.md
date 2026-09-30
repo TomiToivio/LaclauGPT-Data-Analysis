@@ -100,13 +100,19 @@ Phase 1 follows the legacy LaclauGPT multimodal stage order while using the curr
 
 ```text
 preprocessing
-  -> frame analysis (only when image/video frames exist)
+  -> frame analysis (automatically, when usable visual media exists)
   -> summary analysis
   -> Laclaudian discourse analysis
   -> postprocessing
 ```
 
-The default AI26 path is text-first. Frame analysis is an **explicit opt-in** through `project_config.analysis.multimodal.enabled=true`; merely receiving a record that contains extracted frame references does not activate vision, OCR, ASR/Whisper, downloads, or additional media dependencies. EP24 is an explicit project profile with its own election-specific prompt templates and can enable the same independently switchable multimodal slice for video-heavy records. When enabled and frames exist, frame analysis runs before summary analysis. Model outputs remain provisional, evidence-linked pre-analysis for human review.
+**Multimodal is the default, decided by the record rather than by a flag.** If a record carries usable visual media — a materialised image, or frames already extracted from video — the frame stage runs automatically and the summary synthesises across every available modality (text, caption, transcript, visible text, frame descriptions). A record with no usable media takes the text path on post text plus metadata, and needs no dummy media fields. A missing *derived* modality (for example audio present but ASR produced nothing) never fails the record.
+
+Two limits are deliberate. A remote URL alone is **not** visual evidence: only a materialised reference (`local_ref`) or already-extracted canonical frames count, so nothing is fetched implicitly. And project configuration may switch modality work **off** explicitly — a project can still constrain expensive processing — but a researcher never has to discover and enable a flag merely because media exists.
+
+EP24 is an explicit project profile with its own election-specific prompt templates. Model outputs remain provisional, evidence-linked pre-analysis for human review.
+
+See **[docs/DATA_ANALYSIS_PIPELINE.md](docs/DATA_ANALYSIS_PIPELINE.md)** for the canonical stage-by-stage description.
 
 DNA, SNA, Critical AI Studies and other advanced methods are Phase 2 / experimental / optional. They are disabled by default and are not allowed to enter the Phase 1 canonical runner silently.
 
