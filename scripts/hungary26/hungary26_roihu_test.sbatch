@@ -31,7 +31,7 @@ export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-1}
 export OMP_PLACES=cores
 export OMP_PROC_BIND=spread
 
-mkdir -p   "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/logs"   "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/data"   "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/media"   "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/keyframes"   "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/outputs"   "${OLLAMA_MODELS}"
+mkdir -p   "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/logs"   "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/data"   "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/media"   "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/keyframes"   "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/outputs"   "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/graphs"   "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/qa"   "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/provenance"   "${OLLAMA_MODELS}"
 
 module --force purge
 module load python-pytorch/2.10
@@ -69,7 +69,11 @@ fi
 import os
 import sys
 import numpy
+import networkx
+import rdflib
 print(f"NumPy preflight OK: {numpy.__version__} from {numpy.__file__}")
+print(f"NetworkX preflight OK: {networkx.__version__}")
+print(f"RDFLib preflight OK: {rdflib.__version__}")
 print(f"Python: {sys.executable}")
 print(f"CWD: {os.getcwd()}")
 PY
