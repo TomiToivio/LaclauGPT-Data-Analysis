@@ -12,6 +12,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+# The two Mapbox token prefixes ("p" and "s"), kept as separate letters so this
+# guard does not need to spell a literal token prefix inside its own source.
+_TOKEN_PREFIX_LETTERS = ("p", "s")
+
 
 def _is_ignored(relpath: str) -> bool:
     proc = subprocess.run(
@@ -64,21 +68,67 @@ def test_public_codebooks_declare_synthetic_or_public_grounding():
         )
 
 
-def test_no_hard_coded_mapbox_token_in_tracked_python():
-    """Mapbox credentials must come from environment/private configuration only."""
-    # Construct the token prefixes so this guard does not flag its own source file.
-    token_prefixes = tuple(prefix + "." for prefix in ("pk", "sk"))
-    for path in REPO_ROOT.rglob("*.py"):
-        if any(part in {".git", ".venv", "venv"} for part in path.parts):
+def _mapbox_token_pattern() -> re.Pattern[str]:
+    """Match a Mapbox access-token literal without writing one into this file.
+
+    Mapbox tokens are ``pk.`` (public) or ``sk.`` (secret) followed by the
+    base64url of a JSON payload, so the body always begins with ``eyJ``. Both
+    prefixes are one of the ``_TOKEN_PREFIX_LETTERS`` followed by a literal
+    ``k`` and a dot. Fragments are assembled at runtime so this guard's own
+    source cannot match its own pattern, and no real token is stored here.
+    """
+    lead = "[" + "".join(_TOKEN_PREFIX_LETTERS) + "]" + "k"
+    payload_lead = "e" + "y" + "J"
+    return re.compile(rf"\b{lead}\.{payload_lead}[A-Za-z0-9_-]{{20,}}")
+
+
+def _tracked_text_files() -> list[Path]:
+    raw = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=REPO_ROOT,
+        check=True,
+        capture_output=True,
+    ).stdout.split(b"\0")
+    return [REPO_ROOT / item.decode("utf-8") for item in raw if item]
+
+
+def test_no_mapbox_token_literal_in_tracked_files() -> None:
+    """No tracked text file may contain a Mapbox token literal.
+
+    Credentials must come from the environment or private configuration only.
+    The check is deliberately shape-based rather than keyword-based: the
+    historical incident this guards against (secret-scanning alert #1) sat in a
+    file whose only hint was a ``geocoder.mapbox(...)`` call. A token pasted into
+    a differently worded file, a notebook, a JSON fixture or a Markdown note
+    would have gone unnoticed by a "must contain the word mapbox" filter, and a
+    ``*.py``-only glob would have missed every other file type.
+
+    This scans every tracked text file at HEAD.
+    """
+    pattern = _mapbox_token_pattern()
+    offenders: list[str] = []
+    for path in _tracked_text_files():
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
             continue
-        text = path.read_text(encoding="utf-8", errors="ignore")
-        lowered = text.lower()
-        if "mapbox" not in lowered:
-            continue
-        for prefix in token_prefixes:
-            assert prefix not in text, (
-                f"{path.relative_to(REPO_ROOT)} appears to contain a hard-coded Mapbox token"
-            )
+        if pattern.search(text):
+            offenders.append(str(path.relative_to(REPO_ROOT)))
+    assert not offenders, (
+        "tracked files contain a hard-coded Mapbox token: "
+        + ", ".join(offenders)
+        + ". Move it to LACLAUGPT_MAPBOX_API_KEY / private configuration and "
+        "rotate the exposed credential."
+    )
+
+
+def test_mapbox_token_guard_detects_a_realistic_literal() -> None:
+    """The guard must actually fire; a silently-passing scan proves nothing."""
+    pattern = _mapbox_token_pattern()
+    synthetic = "key = '" + "pk" + "." + "eyJ" + "a" * 40 + "'"
+    assert pattern.search(synthetic), "guard no longer detects a token literal"
+    assert not pattern.search("key = os.getenv('LACLAUGPT_MAPBOX_API_KEY')")
+    assert not pattern.search(".env.example:LACLAUGPT_MAPBOX_API_KEY=your_mapbox_api_key_here")
 
 
 def test_no_concrete_csc_project_ids_or_scratch_paths_in_tracked_text():
