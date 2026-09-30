@@ -80,8 +80,11 @@ Method prompts may normally be public. Never place credentials, private corpora,
 The initial migration covers:
 
 - `pipeline.py`: system and document-analysis task prompts;
-- `canonical_pipeline.py`: evidence-first system guardrail plus frame, summary and discourse task prompts;
+- `stages/prompt_map.py`: maps each stage to its prompt ids (frame, summary, discourse), and the stage modules in `stages/` load them. Previously this mapping lived in `canonical_pipeline.py`, which is now a compatibility facade;
 - `analysis/luhmann.py`: structured extraction prompt;
 - `plugin_pipeline.py`: prompt-resource declarations and prompt-free plugin compatibility.
+
+The canonical stage-by-stage description, including where prompts live, is
+`docs/DATA_ANALYSIS_PIPELINE.md`.
 
 The repository should still be audited when adding or changing analytical methods: search for `system_prompt=`, prompt builders, and long LLM instruction strings, and migrate new scientific instructions into the canonical library rather than adding fresh inline prompts.

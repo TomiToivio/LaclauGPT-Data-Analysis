@@ -100,7 +100,7 @@ Phase 1 follows the legacy LaclauGPT multimodal stage order while using the curr
 
 ```text
 preprocessing
-  -> frame analysis (only when image/video frames exist)
+  -> frame analysis (automatically, when usable visual media exists)
   -> summary analysis
   -> Laclaudian discourse analysis
   -> postprocessing

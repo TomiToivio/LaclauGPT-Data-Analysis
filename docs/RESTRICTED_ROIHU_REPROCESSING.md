@@ -60,7 +60,7 @@ private canonical manifest
   -> researcher-facing human summary retained in canonical record
 ```
 
-The private `preprocessor_hook` must use the public `Preprocessor` contract from `canonical_pipeline.py`: it receives a `CanonicalRecord` and may return keys such as `asr`, `ocr`, `frames`, `translations`, `legacy`, and `stage_output`. This is the seam for adapting the existing EP24 multimodal implementation without copying protected project code into the public repository.
+The private `preprocessor_hook` must use the public `Preprocessor` contract from `laclaugpt_data_analysis.stages.shared` (re-exported from `canonical_pipeline.py` for compatibility): it receives a `CanonicalRecord` and may return keys such as `asr`, `ocr`, `frames`, `translations`, `legacy`, and `stage_output`. This is the seam for adapting the existing EP24 multimodal implementation without copying protected project code into the public repository.
 
 ## Environment
 
