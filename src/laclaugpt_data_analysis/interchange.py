@@ -323,16 +323,27 @@ def from_collection_record(record: Mapping[str, Any]) -> CanonicalRecord:
     """
     if isinstance(record.get("source"), Mapping):
         prepared = dict(record)
-        # `handoff` is a delivery envelope produced by Collection's build_handoff,
-        # not part of the canonical record; carry it as legacy metadata so nothing
-        # is silently discarded (issue #75).
+        # Collection also emits transport/routing metadata alongside canonical
+        # record content. These keys are useful for delivery and provenance, but
+        # are not Analysis CanonicalRecord fields. Preserve them under legacy
+        # before strict validation rather than weakening extra="forbid" (#75, #309).
         envelope = prepared.pop("handoff", None)
+        routing = {
+            key: prepared.pop(key)
+            for key in ("collection_id", "arena", "run_id")
+            if key in prepared
+        }
         prepared["source_native_ids"] = _collection_native_ids(record)
         prepared["provenance"] = _collection_provenance_values(record)
-        if envelope:
+        if envelope or routing:
             prepared.setdefault("legacy", {})
             if isinstance(prepared["legacy"], Mapping):
-                prepared["legacy"] = {**dict(prepared["legacy"]), "collection_handoff": dict(envelope)}
+                legacy = dict(prepared["legacy"])
+                if envelope:
+                    legacy["collection_handoff"] = dict(envelope)
+                if routing:
+                    legacy["collection_routing"] = routing
+                prepared["legacy"] = legacy
         canonical = normalize_schema_version(prepared)
         if not (canonical.raw_capture and canonical.raw_capture.ref):
             source_data = dict(record.get("source") or {})
