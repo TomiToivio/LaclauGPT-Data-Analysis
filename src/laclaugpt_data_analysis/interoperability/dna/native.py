@@ -166,9 +166,13 @@ def export_dna_project(
                 "metadata_json": json.dumps(metadata, ensure_ascii=False, sort_keys=True),
             }.items():
                 cur.execute("INSERT INTO DATALONGTEXT(StatementId,VariableId,Value) VALUES (?,?,?)", (sid, var_ids[variable], value))
-            # Compatibility-only mapping. Never interpreted as Laclaudian equivalence/frontier.
-            agreement = 1 if statement.stance.value == "support" else 0 if statement.stance.value == "oppose" else 1
-            cur.execute("INSERT INTO DATABOOLEAN(StatementId,VariableId,Value) VALUES (?,?,?)", (sid, var_ids["agreement"], agreement))
+            # DNA agreement is genuinely binary: support=1, reject=0. Missing or
+            # ambiguous agreement remains missing instead of being coerced to support.
+            if statement.agreement is not None:
+                cur.execute(
+                    "INSERT INTO DATABOOLEAN(StatementId,VariableId,Value) VALUES (?,?,?)",
+                    (sid, var_ids["agreement"], 1 if statement.agreement else 0),
+                )
         con.commit()
         return {"documents": len(documents), "statements": len(statements), "entities": len(entities)}
     except Exception:
@@ -219,6 +223,15 @@ def import_dna_statements(path: str | Path, *, human_coded: bool = True) -> list
                 return ""
             row = con.execute("SELECT e.Value FROM DATASHORTTEXT d JOIN ENTITIES e ON e.ID=d.Entity WHERE d.StatementId=? AND d.VariableId=?", (statement_id, vid)).fetchone()
             return str(row[0]) if row else ""
+        def boolean_value(statement_id: int, name: str) -> bool | None:
+            vid = variables.get(name)
+            if vid is None:
+                return None
+            row = con.execute(
+                "SELECT Value FROM DATABOOLEAN WHERE StatementId=? AND VariableId=?",
+                (statement_id, vid),
+            ).fetchone()
+            return bool(row[0]) if row else None
 
         result: list[DiscourseStatement] = []
         query = "SELECT s.ID,s.Start,s.Stop,d.Text,d.Source,d.Date FROM STATEMENTS s JOIN DOCUMENTS d ON d.ID=s.DocumentId ORDER BY s.ID"
@@ -230,6 +243,10 @@ def import_dna_statements(path: str | Path, *, human_coded: bool = True) -> list
             exact = 0 <= row["Start"] < row["Stop"] <= len(row["Text"]) and (not quote or row["Text"][row["Start"]:row["Stop"]] == quote)
             provenance = dict(metadata.get("provenance") or {})
             provenance["dna_import"] = {"schema_version": status["version"], "human_coded": human_coded}
+            agreement = boolean_value(row["ID"], "agreement")
+            stance = short_value(row["ID"], "stance")
+            if not stance and agreement is not None:
+                stance = "support" if agreement else "oppose"
             result.append(DiscourseStatement(
                 statement_id=long_value(row["ID"], "statement_id") or f"dna:{row['ID']}",
                 source_url=source_url,
@@ -239,7 +256,8 @@ def import_dna_statements(path: str | Path, *, human_coded: bool = True) -> list
                 concept_id=metadata.get("concept_id") or short_value(row["ID"], "concept"),
                 concept_label=short_value(row["ID"], "concept"),
                 concept_type=short_value(row["ID"], "concept_type") or "concept",
-                stance=short_value(row["ID"], "stance") or "unknown",
+                stance=stance or "unknown",
+                agreement=agreement,
                 relation_type=short_value(row["ID"], "relation_type") or None,
                 timestamp=datetime.fromtimestamp(row["Date"], tz=timezone.utc) if row["Date"] else None,
                 evidence=EvidenceSpan(quote=quote, start_char=row["Start"], end_char=row["Stop"], exact=exact),
