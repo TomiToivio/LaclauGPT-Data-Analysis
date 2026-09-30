@@ -1,0 +1,77 @@
+# NooPunk machine layer (public-safe template).
+#
+# Declares WHAT THIS MACHINE CAN DO: local inference capability, paths and
+# backend roles. It must not define study semantics (that is the project layer)
+# nor scheduling (that is the execution layer).
+#
+# The real machine profile lives in the private repository; this template
+# documents the shape and carries no credentials, hostnames or private paths.
+#
+# NooPunk is the second AI26 Phase 2 node. It is an INTERACTIVE WORKSTATION that
+# supplies the always-on browser collection and runs analysis only on demand.
+# Laskin remains the always-on execution node. See docs/AI26_NOOPUNK_ANALYSIS.md.
+
+machine: noopunk
+machine_class: laptop
+
+capabilities:
+  gpu: true
+  # One consumer GPU, and the user is sitting in front of it. A bounded batch is
+  # the correct shape here, not a continuous run.
+  local_inference: true
+  browser_capture: true   # this node's always-on duty
+  cron: false             # NO schedule: analysis is user-activated, never periodic
+
+llm:
+  # Two explicit modes. Cloud is opt-in per invocation and is NEVER selected
+  # implicitly -- a run must not silently change inference provider mid-corpus,
+  # and a workstation that quietly reached for a cloud model would also spend
+  # someone else's quota without being asked.
+  mode: local-ollama
+  model: gemma4:e2b            # lighter local model for interactive testing
+  cloud_model: gemma4:31b-cloud
+  endpoint: http://127.0.0.1:11434
+  allow_cloud_fallback: false
+  think: false
+
+storage:
+  # Backend ROLES only. Connection details/credentials are injected by the
+  # private environment; never hard-code them here. These are the SAME roles as
+  # Laskin: NooPunk is not a local corpus, it is a second worker against one
+  # ai26 namespace.
+  records: mongodb
+  objects: s3
+  cache: redis
+  distributed: true
+  object_roles:
+    canonical_records: mongodb
+    large_artifacts: s3
+
+paths:
+  # Relative to the private runtime root on the machine. The public template
+  # names the roles; the private profile binds real absolute paths.
+  data_root: data
+  artifact_root: data/artifacts
+  media_cache: data/cache/media-staging
+  logs: data/logs
+  tmp: data/tmp
+
+# Media staging bounds. NooPunk is a workstation with limited disk, so unlike
+# Laskin the staging cache is bounded by default: an unattended bounded batch
+# must not be able to fill the user's disk. The remote canonical object is never
+# deleted by staging.
+media_staging:
+  max_cache_bytes: 2147483648   # 2 GiB
+  max_age_seconds: 86400        # 24h
+  max_object_bytes: 536870912
+
+concurrency:
+  # NooPunk must not race Laskin for the same work. The default bounded batch is
+  # deliberately small: a testing session should not drain the shared queue.
+  max_tasks_per_run: 3
+  overlap_lock: flock
+  lock_name: ai26-noopunk-analysis.lock
+
+provenance:
+  # Machine identity is execution provenance, never scientific source identity.
+  caller: noopunk-interactive
