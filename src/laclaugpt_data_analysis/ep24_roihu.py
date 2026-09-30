@@ -1,4 +1,7 @@
-"""EP24 Finland/Poland Phase 1 multimodal reprocessing for CSC Roihu.
+"""EP24 Finland/Poland full multimodal Phase 2 reprocessing for CSC Roihu.
+
+Phase 1 remains the evidence-grounded social-semiotic and Laclaudian core.
+Phase 2 consumes its outputs and adds DNA statements, SNA and RDF.
 
 This study-specific runner stays isolated from the Phase 0 core. It uses local
 files + SQLite + CSV, materializes media before inference, preserves original
@@ -21,6 +24,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from .ep24_phase2 import (
+    PHASE2_PROMPT_VERSION,
+    code_dna_statements,
+    ensure_phase2_tables,
+    export_phase2,
+    persist_statements,
+)
 from .hungary26_roihu import (
     build_store,
     extract_keyframes,
@@ -832,6 +842,7 @@ def export(state: EP24State, paths: dict[str, Path], *, phase2_fingerprint: str)
     comparison_path = paths["data"] / "legacy_comparison.csv"
     pd.DataFrame(comparison).to_csv(comparison_path, index=False)
     outputs["legacy_comparison"] = str(comparison_path)
+    outputs.update(export_phase2(state.path, paths, fingerprint=phase2_fingerprint))
     return outputs
 
 
@@ -844,6 +855,7 @@ def preflight(root: str | Path, model: str):
     for binary in ("ffmpeg", "ffprobe"):
         subprocess.run([binary, "-version"], check=True, capture_output=True)
     state = EP24State(paths["db"])
+    ensure_phase2_tables(paths["db"])
     with state.connect() as db:
         tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     return paths, entries, book_hash, config, {
@@ -916,7 +928,7 @@ def main(argv: list[str] | None = None) -> int:
     config_hash = sha256_text(stable_json(config))
     state.metadata("run", {
         "mode": args.mode, "model": args.model, "prompt": PROMPT_VERSION,
-        "preanalysis_prompt": PREANALYSIS_PROMPT_VERSION, "codebook": book_hash,
+        "preanalysis_prompt": PREANALYSIS_PROMPT_VERSION, "phase2_prompt": PHASE2_PROMPT_VERSION, "codebook": book_hash,
         "config": config_hash, "record_count": len(selected),
     })
     for country, row in selected:
@@ -924,7 +936,11 @@ def main(argv: list[str] | None = None) -> int:
             country, row, paths["finland"] if country == "FI" else paths["poland"],
             state, entries, args.model, book_hash, config_hash, config, paths,
         )
-    outputs = export(state, paths)
+    phase2_fingerprint = sha256_text(stable_json({
+        "model": args.model, "codebook": book_hash, "config": config_hash,
+        "phase2_prompt": PHASE2_PROMPT_VERSION,
+    }))
+    outputs = export(state, paths, phase2_fingerprint=phase2_fingerprint)
     validation = write_validation_report(
         paths=paths, state=state, mode=args.mode, model=args.model,
         selected=selected, outputs=outputs,
