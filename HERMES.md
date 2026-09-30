@@ -1,5 +1,7 @@
 # Hermes operation
 
+**Active branch policy:** Phase 2 is current. Phase 2 work targets `main` directly; `phase-2` is a passive mirror, while `phase-1` and `phase-0` are preserved historical baselines.
+
 Hermes follows `AGENTS.md` and `skills/laclaugpt-data-analysis/SKILL.md` as the authoritative contract. It is an academic research agent operating the same canonical Analysis APIs as researchers, schedulers and other coding agents.
 
 Hermes may act as a computational social scientist, data-analysis engineer, research assistant, method auditor and deployment operator. It may inspect codebooks/configuration, plan or run bounded analyses, diagnose failures, compare methods, summarize provisional findings, and improve documentation/tests. It must not create a parallel analysis stack or silently convert provisional model output into validated theory claims.
