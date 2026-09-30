@@ -168,3 +168,85 @@ def test_shared_cross_module_fixture_converts() -> None:
     record = from_collection_record(payload)
     assert record.source_url == payload["source_url"]
     assert record.source_native_ids == payload["source_native_ids"]
+
+
+# --------------------------------------------------------------------------
+# Real collector-shaped routing metadata (#309)
+# --------------------------------------------------------------------------
+
+def test_real_collection_record_preserves_routing_metadata() -> None:
+    """Production-shaped Collection records must survive strict validation.
+
+    Unlike the parity fixture, this uses the normal 1.1.0 schema version and
+    includes the top-level routing keys emitted by localhost/distributed
+    collectors.
+    """
+    payload = {
+        "schema_version": "1.1.0",
+        "source_url": "https://example.invalid/x",
+        "collection_id": "ai26",
+        "arena": "elites",
+        "run_id": "run-309",
+        "source": {
+            "platform": "rss",
+            "source_type": "article",
+            "author": "Example",
+        },
+        "content": {"text": "t"},
+        "raw_capture": {
+            "payload": {"id": "source-native-1"},
+            "metadata": {"preservation": "test"},
+        },
+        "provenance": [
+            {
+                "provenance_id": "collection-test-309",
+                "method": "rss",
+                "metadata": {"stage": "collection"},
+            }
+        ],
+    }
+
+    record = from_collection_record(payload)
+
+    assert record.source_url == payload["source_url"]
+    assert record.legacy["collection_routing"] == {
+        "collection_id": "ai26",
+        "arena": "elites",
+        "run_id": "run-309",
+    }
+
+
+def test_real_brazil26_style_record_preserves_collection_id() -> None:
+    """A local Collection record with only collection_id must also convert."""
+    payload = {
+        "schema_version": "1.1.0",
+        "source_url": "https://example.invalid/brazil26",
+        "collection_id": "brazil26",
+        "source": {"platform": "instagram"},
+        "content": {"text": "texto"},
+        "raw_capture": {
+            "payload": {"pk": "123"},
+            "metadata": {"preservation": "test"},
+        },
+    }
+
+    record = from_collection_record(payload)
+
+    assert record.legacy["collection_routing"] == {"collection_id": "brazil26"}
+
+
+def test_routing_metadata_does_not_weaken_unknown_field_validation() -> None:
+    """Only known Collection routing keys are adapted; other drift stays loud."""
+    payload = {
+        "schema_version": "1.1.0",
+        "source_url": "https://example.invalid/unknown",
+        "collection_id": "ai26",
+        "unexpected_producer_field": "must still fail",
+        "source": {"platform": "rss"},
+        "content": {"text": "t"},
+    }
+
+    with pytest.raises(Exception) as excinfo:
+        from_collection_record(payload)
+
+    assert "unexpected_producer_field" in str(excinfo.value)
