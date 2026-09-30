@@ -34,6 +34,11 @@ _DDL = (
 )
 
 _VARIABLES = {
+    # DNA's conventional actor variables. Keep "actor" as a legacy
+    # LaclauGPT compatibility field so projects exported before #312 remain
+    # readable, but native DNA consumers can code against person/organization.
+    "person": "short text",
+    "organization": "short text",
     "actor": "short text",
     "concept": "short text",
     "stance": "short text",
@@ -137,7 +142,17 @@ def export_dna_project(
             start, stop, exact = _anchor(statement, text)
             cur.execute("INSERT INTO STATEMENTS(StatementTypeId,DocumentId,Start,Stop,Coder) VALUES (?,?,?,?,1)", (st_id, documents[statement.source_url], start, stop))
             sid = int(cur.lastrowid)
+            # DNA's native model distinguishes people and organizations.
+            # Preserve the legacy generic actor field as an additional
+            # LaclauGPT compatibility variable rather than using it in place
+            # of the conventional DNA variables.
+            person_name = statement.person_name or ""
+            organization_name = statement.organization_name or ""
+            if not person_name and not organization_name:
+                person_name = statement.actor_name
             short_values = {
+                "person": person_name,
+                "organization": organization_name,
                 "actor": statement.actor_name,
                 "concept": statement.concept_label,
                 "stance": statement.stance.value,
@@ -145,10 +160,14 @@ def export_dna_project(
                 "relation_type": statement.relation_type or "",
             }
             for variable, value in short_values.items():
+                if not value and variable in {"person", "organization"}:
+                    continue
                 eid = entity(variable, value)
                 cur.execute("INSERT INTO DATASHORTTEXT(StatementId,VariableId,Entity) VALUES (?,?,?)", (sid, var_ids[variable], eid))
             metadata = {
                 "actor_id": statement.actor_id,
+                "person_id": statement.person_id,
+                "organization_id": statement.organization_id,
                 "concept_id": statement.concept_id,
                 "source_record_id": statement.source_record_id,
                 "coder_type": statement.coder_type,
@@ -247,12 +266,20 @@ def import_dna_statements(path: str | Path, *, human_coded: bool = True) -> list
             stance = short_value(row["ID"], "stance")
             if not stance and agreement is not None:
                 stance = "support" if agreement else "oppose"
+            person_name = short_value(row["ID"], "person")
+            organization_name = short_value(row["ID"], "organization")
+            legacy_actor_name = short_value(row["ID"], "actor")
+            actor_name = person_name or organization_name or legacy_actor_name
             result.append(DiscourseStatement(
                 statement_id=long_value(row["ID"], "statement_id") or f"dna:{row['ID']}",
                 source_url=source_url,
                 source_record_id=metadata.get("source_record_id"),
-                actor_id=metadata.get("actor_id") or short_value(row["ID"], "actor"),
-                actor_name=short_value(row["ID"], "actor"),
+                actor_id=metadata.get("actor_id") or actor_name,
+                actor_name=actor_name,
+                person_id=metadata.get("person_id"),
+                person_name=person_name or None,
+                organization_id=metadata.get("organization_id"),
+                organization_name=organization_name or None,
                 concept_id=metadata.get("concept_id") or short_value(row["ID"], "concept"),
                 concept_label=short_value(row["ID"], "concept"),
                 concept_type=short_value(row["ID"], "concept_type") or "concept",
