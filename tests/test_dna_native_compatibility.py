@@ -1,6 +1,6 @@
 import os
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 
 import pytest
 
@@ -97,3 +97,64 @@ def test_imports_a_genuine_dna_project():
         statement.actor_name or statement.person_name or statement.organization_name
         for statement in statements
     )
+
+
+def _project_with_annotation(tmp_path: Path) -> Path:
+    """A synthetic project shaped like leifeld-lab/dna's sample: coded statements
+    plus a separate 'Annotation' statement type carrying document notes."""
+    path = tmp_path / "with-annotation.dna"
+    export_dna_project([_statement()], path)
+    con = sqlite3.connect(path)
+    try:
+        con.execute(
+            "INSERT INTO STATEMENTTYPES(ID,Label) VALUES (3,'Annotation')"
+        )
+        con.execute(
+            "INSERT INTO VARIABLES(Variable,DataType,StatementTypeId) VALUES ('note','long text',3)"
+        )
+        note_var = con.execute(
+            "SELECT ID FROM VARIABLES WHERE Variable='note' AND StatementTypeId=3"
+        ).fetchone()[0]
+        doc = con.execute("SELECT ID FROM DOCUMENTS LIMIT 1").fetchone()[0]
+        con.execute(
+            "INSERT INTO STATEMENTS(StatementTypeId,DocumentId,Start,Stop,Coder) VALUES (3,?,0,5,1)",
+            (doc,),
+        )
+        note_stmt = con.execute("SELECT MAX(ID) FROM STATEMENTS").fetchone()[0]
+        con.execute(
+            "INSERT INTO DATALONGTEXT(StatementId,VariableId,Value) VALUES (?,?,?)",
+            (note_stmt, note_var, "This is a note."),
+        )
+        con.commit()
+    finally:
+        con.close()
+    return path
+
+
+def test_annotation_statement_types_are_not_imported_as_statements(tmp_path: Path):
+    """A project holding an Annotation type must import only the coded statements.
+
+    Regression for the leifeld-lab/dna sample, where the document note is a
+    statement of a different type with no actor variables. Reading it as a coded
+    statement raised a validation error, so the whole genuine project failed to
+    import even though every coded statement was valid.
+    """
+    path = _project_with_annotation(tmp_path)
+
+    statements = import_dna_statements(path)
+
+    assert len(statements) == 1
+    assert statements[0].actor_name == "Joel Bluestein"
+    assert all(statement.actor_name for statement in statements)
+
+
+def test_annotation_type_can_be_requested_and_is_refused_clearly(tmp_path: Path):
+    """Selecting a non-statement type fails with a clear ValueError, not a
+    validation error raised deep inside the model layer."""
+    path = _project_with_annotation(tmp_path)
+
+    with pytest.raises(ValueError, match="no actor variables"):
+        import_dna_statements(path, statement_type="Annotation")
+
+    with pytest.raises(ValueError, match="no statement type"):
+        import_dna_statements(path, statement_type="Does Not Exist")

@@ -15,6 +15,14 @@ from typing import Any
 from ...discourse_network.models import DiscourseStatement, EvidenceSpan
 
 STATEMENT_TYPE = "LaclauGPT Statement"
+
+# DNA numbers the first (default) statement type 1, and that is the type whose
+# variables are the coded statement fields. Other types in the same project —
+# an "Annotation" note attached to a document, for example — carry a different
+# variable namespace and no actor/concept fields, so they must not be imported
+# as statements.
+_CODED_STATEMENT_TYPE_ID = 1
+
 SUPPORTED_SCHEMA_PREFIXES = ("3.0", "3.1")
 
 _DDL = (
@@ -221,15 +229,66 @@ def import_dna_documents(path: str | Path) -> list[dict[str, Any]]:
         con.close()
 
 
-def import_dna_statements(path: str | Path, *, human_coded: bool = True) -> list[DiscourseStatement]:
-    """Import statements from a DNA project, preserving human-edit lineage."""
+def import_dna_statements(
+    path: str | Path,
+    *,
+    human_coded: bool = True,
+    statement_type: str | None = None,
+) -> list[DiscourseStatement]:
+    """Import statements from a DNA project, preserving human-edit lineage.
+
+    A DNA project may hold several statement types (a ``.dna`` file also carries
+    ``Annotation`` notes alongside its coded statements), each with its own
+    variable namespace. Only one statement type is imported at a time: by default
+    the first DNA-coded type found, otherwise the type named by ``statement_type``.
+    Variables are resolved within that type, so identically named variables in
+    other statement types cannot shadow the ones being read.
+    """
     status = validate_dna_project(path)
     if not status["valid"]:
         raise ValueError(f"unsupported or invalid DNA project: {status}")
     con = sqlite3.connect(f"file:{Path(path)}?mode=ro", uri=True)
     con.row_factory = sqlite3.Row
     try:
-        variables = {row["Variable"]: row["ID"] for row in con.execute("SELECT ID,Variable FROM VARIABLES")}
+        statement_types = {
+            row["ID"]: row["Label"]
+            for row in con.execute("SELECT ID, Label FROM STATEMENTTYPES")
+        }
+        present = [
+            row["StatementTypeId"]
+            for row in con.execute(
+                "SELECT DISTINCT StatementTypeId FROM STATEMENTS ORDER BY StatementTypeId"
+            )
+            if row["StatementTypeId"] is not None
+        ]
+        if statement_type is not None:
+            selected = next(
+                (sid for sid, label in statement_types.items() if label == statement_type),
+                None,
+            )
+            if selected is None:
+                raise ValueError(f"DNA project has no statement type {statement_type!r}")
+        else:
+            selected = next((sid for sid in present if sid == _CODED_STATEMENT_TYPE_ID), None)
+            if selected is None:
+                selected = next((sid for sid in present if sid in statement_types), None)
+        if selected is None:
+            return []
+
+        variables = {
+            row["Variable"]: row["ID"]
+            for row in con.execute(
+                "SELECT ID,Variable FROM VARIABLES WHERE StatementTypeId=?", (selected,)
+            )
+        }
+        if not ({"person", "organization", "actor"} & set(variables)):
+            label = statement_types.get(selected, selected)
+            raise ValueError(
+                f"DNA statement type {label!r} has no actor variables "
+                "(person/organization/actor), so it does not describe actor-concept "
+                "statements; import it as documents/annotations instead"
+            )
+
         def long_value(statement_id: int, name: str) -> str:
             vid = variables.get(name)
             if vid is None:
@@ -253,8 +312,11 @@ def import_dna_statements(path: str | Path, *, human_coded: bool = True) -> list
             return bool(row[0]) if row else None
 
         result: list[DiscourseStatement] = []
-        query = "SELECT s.ID,s.Start,s.Stop,d.Text,d.Source,d.Date FROM STATEMENTS s JOIN DOCUMENTS d ON d.ID=s.DocumentId ORDER BY s.ID"
-        for row in con.execute(query):
+        query = (
+            "SELECT s.ID,s.Start,s.Stop,d.Text,d.Source,d.Date FROM STATEMENTS s "
+            "JOIN DOCUMENTS d ON d.ID=s.DocumentId WHERE s.StatementTypeId=? ORDER BY s.ID"
+        )
+        for row in con.execute(query, (selected,)):
             metadata_raw = long_value(row["ID"], "metadata_json")
             metadata = json.loads(metadata_raw) if metadata_raw else {}
             quote = long_value(row["ID"], "evidence")
