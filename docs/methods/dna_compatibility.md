@@ -6,7 +6,7 @@ This document describes the optional LaclauGPT Data Analysis step that proposes 
 
 Discourse Network Analysis combines qualitative content analysis with network analysis. Its basic analytical move is to code statements by actors about reusable concepts or claims, retain the actor's support/opposition qualifier, and project repeated actor-concept positions into affiliation, congruence, conflict and longitudinal networks.
 
-The current DNA source model (`model.Statement`) stores document identity, statement type, coder, selected source text, start/stop character positions, date/time and typed statement-variable values. DNA 3.x supports extensible statement types and variables, while the conventional DNA statement uses person, organization, concept and agreement variables.
+The current DNA source model stores document identity, statement type, coder, selected source text, start/stop character positions, date/time and typed statement-variable values. DNA 3.x supports extensible statement types and variables. The conventional binary `agreement` variable is stored as a boolean data value: support/affirmation = `1`, rejection/opposition = `0`; an uncoded value is represented by the absence of a boolean row rather than a third numeric category.
 
 As verified on 2026-09-17, the current public release is **DNA 3.1.2 / rDNA 3.1.2** (published 2026-07-26). This implementation targets the existing LaclauGPT DNA/rDNA adapters and records 3.1.2 as the reference release for compatibility testing.
 
@@ -43,7 +43,7 @@ analysis:
     include_periodic_context: false
 ```
 
-`enabled: false` is the default and causes zero additional model calls. `require_binary_agreement: false` is the safe default: ambiguous statements are retained as abstentions/proposals and excluded from binary support/opposition use until reviewed. `duplicate_policy: preserve` retains statement-level evidence; downstream DNA/rDNA projection may collapse duplicates according to network-construction settings.
+`enabled: false` is the default and causes zero additional model calls. `require_binary_agreement: false` is the safe default: ambiguous statements are retained as abstentions/proposals and excluded from binary support/opposition use until reviewed. `duplicate_policy: preserve` retains statement-level evidence. For the DNA-compatible binary projection, repeated statements remain stacked counts. Actor congruence is the sum of co-support and co-rejection products, while conflict is the sum of support/rejection cross-products. The compatibility projection deliberately has no LaclauGPT-specific minimum-shared-concepts threshold.
 
 ## Canonical field mapping
 
@@ -147,7 +147,7 @@ This stage produces the statement layer consumed by the existing/planned DNA int
 - issue #42: multi-method analysis and DNA network projections;
 - issue #57: DATS/DNA portable exchange.
 
-The repository already contains `interoperability/dna` adapters and actor/concept network construction helpers. Native `.dna` or rDNA integration should treat this stage's statements as inputs, not reinterpret their semantics.
+The repository contains `interoperability/dna` adapters plus explicit `dna_binary_actor_concept()`, `dna_actor_projection()` and `dna_concept_projection()` helpers. The `dna_*` projection functions reproduce the binary stacked semantics separately from LaclauGPT's older signed-value projection helpers, so compatibility does not rewrite the semantics of existing analyses. Native `.dna` and rDNA integration treat statement coding as input rather than as Laclaudian interpretation.
 
 ## Reproducible example
 
