@@ -152,6 +152,20 @@ Prefer the canonical versioned record at module boundaries. Avoid cross-reposito
 
 Before proposing a merge, inspect the diff for private/runtime leakage and run the repository's configured lint, type, test and public-tree checks. Report unresolved failures rather than hiding them.
 
+## Human-owned analysis steps (issue #315)
+
+The seven scientific step modules below are the canonical human-written Phase 2 analysis pipeline and are **TOMI-LOCKED**:
+
+- `laclaugpt/step_01_preprocess.py`
+- `laclaugpt/step_02_frame.py`
+- `laclaugpt/step_03_summary.py`
+- `laclaugpt/step_04_postprocess.py`
+- `laclaugpt/step_05_laclau.py`
+- `laclaugpt/step_06_dna.py`
+- `laclaugpt/step_07_sna.py`
+
+Agents may implement adapters, storage, prompts, models, RDF, orchestration, tests and other support code around these modules, but MUST NOT modify, rename, merge, replace, regenerate or move the seven step files unless Tomi explicitly authorizes a change to the specific step. If support code exposes a problem in a step, report it instead of silently patching the human-written method.
+
 ## TOMI-LOCKED
 
 Anything marked `TOMI-LOCKED` is a human-controlled invariant.
