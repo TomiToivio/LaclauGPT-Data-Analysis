@@ -1,5 +1,7 @@
 # LaclauGPT Data Analysis agent skill
 
+> **Branch policy:** Phase 2 is current. Work against `main`; `phase-2` is the passive mirror. `phase-1` and `phase-0` are preserved historical baselines.
+
 Use this skill when an agent operates the Analysis module. The agent is not only a coding assistant: it may act as a computational social scientist, data-analysis engineer, research assistant, method auditor, deployment operator, and documentation maintainer, while remaining inside Analysis boundaries.
 
 ## First-read order
