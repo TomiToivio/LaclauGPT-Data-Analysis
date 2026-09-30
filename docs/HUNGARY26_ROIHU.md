@@ -221,8 +221,11 @@ python -m laclaugpt_data_analysis.hungary26_roihu
 
 It is pinned to local Ollama **`gemma4:12b`**. The runner materializes Allas video locally,
 extracts deterministic ffmpeg keyframes, sends actual frame image files to the multimodal
-model, then performs a conservative item synthesis and Laclau/Mouffe/Palonen discourse pass.
-Per-stage state is stored in private SQLite and projected to private Pandas CSV files.
+model, then performs the preserved Phase 1 descriptive + Laclau/Mouffe/Palonen pass. The
+Phase 2 postprocessor then codes evidence-linked DNA statements, builds actor-concept,
+actor congruence/conflict and concept congruence projections, computes conventional SNA
+metrics, exports GraphML/GEXF, and writes a stage-explicit RDF/Turtle research graph.
+Per-stage state remains in private SQLite and researcher outputs remain private.
 
 Set the private root explicitly at runtime:
 
@@ -238,8 +241,11 @@ git pull --ff-only
 sbatch --account=<CSC_PROJECT> scripts/hungary26/hungary26_roihu_test.sbatch
 ```
 
-The default mode is a deterministic two-record smoke test (one Instagram and one TikTok
-record when both platforms are present). Other modes:
+The default mode is a deterministic two-record smoke test and now **requires** one Instagram
+and one TikTok record. The TikTok source workbook may use ISO/IEC 29500 Strict OOXML; the
+public loader normalizes Strict namespaces in memory without modifying the authoritative
+private workbook. A zero-row TikTok load is therefore a hard regression, not an acceptable
+partial smoke result. Other modes:
 
 ```bash
 sbatch --export=ALL,MODE=preflight scripts/hungary26/hungary26_roihu_test.sbatch
@@ -257,13 +263,34 @@ data/instagram.csv
 data/tiktok.csv
 data/combined.csv
 data/failures.csv
+data/dna_statements.csv
+data/dna_actor_concept.csv
+data/dna_actor_congruence.csv
+data/dna_actor_conflict.csv
+data/dna_concept_congruence.csv
+data/sna_nodes.csv
+data/sna_edges.csv
+data/sna_metrics.csv
 media/
 keyframes/
+graphs/*.graphml
+graphs/*.gexf
+graphs/hungary26.ttl
 logs/
-outputs/roihu-test-<job-id>.json
+outputs/phase2-qa-<job-id>.json
+outputs/roihu-phase2-<job-id>.json
+outputs/roihu-phase2-<job-id>.md
 ```
 
 under the private Hungary26 root.
+
+### Phase 2 codebook contract
+
+`LaclauGPT-Private/analysis/hungary26/build_runtime.py` rebuilds the private codebook
+from the actual source workbooks. Entries carry stable actor/concept IDs, provenance/status,
+DNA identifiers, SNA node mappings and RDF URIs. The generated codebook also records its
+fingerprint and writes `codebooks/collisions.json` for review. These mappings normalize
+research objects; they do not pre-code ideology, Laclaudian meaning or DNA agreement.
 
 ### Phase 0 isolation
 
