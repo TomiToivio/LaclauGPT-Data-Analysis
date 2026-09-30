@@ -2,7 +2,7 @@
 
 This module implements the shared LaclauGPT multi-project namespace in `schemas/distributed-project.schema.json`.
 
-Set `LACLAUGPT_PROJECT_ID` to `ai26`, `ep24`, `brazil26`, `hungary26`, or another validated project ID. `Settings.distributed_namespace` derives the same Redis keys, MongoDB collections and S3 prefixes as Collection and Visualization.
+For this repository, `LACLAUGPT_PROJECT_ID` defaults to and should remain `ai26`. EP24, Hungary26 and Brazil26 belong in separate project repositories and are not active deployment targets here. `Settings.distributed_namespace` derives the same Redis keys, MongoDB collections and S3 prefixes as Collection and Visualization.
 
 ## Storage mode and backend precedence
 
