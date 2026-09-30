@@ -77,3 +77,10 @@ incoming CanonicalRecord
 
 The functions currently expose the intended inputs and outputs and raise
 `NotImplementedError` where Tomi's hand-written method belongs.
+## Ownership boundary
+
+<!-- TOMI-LOCKED -->
+The seven `step_*.py` modules listed above are the human-written scientific method. Agents work around them, not inside them. Agent-authored changes may add or repair I/O, Pydantic contracts, prompts, RDF/export layers, orchestration, tests, deployment code and adapters, but must not modify, rename, merge, replace or move the seven scientific step files without Tomi explicitly authorizing that specific step change.
+
+This directory intentionally has one canonical seven-step scaffold. Do not create a second parallel step package or alternate pipeline tree.
+
