@@ -27,7 +27,7 @@ from .storage import S3ArtifactStore
 
 DEFAULT_MODEL = "gemma4:12b"
 DEFAULT_PRIVATE_ROOT = Path("data/private/hungary26")
-STAGES = ("download", "frames", "vision", "summary", "discourse")
+STAGES = ("download", "frames", "asr", "ocr", "vision", "summary", "discourse")
 
 
 def stable_json(value: Any) -> str:
@@ -112,6 +112,30 @@ class Hungary26State:
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS representations (
+                    document_id TEXT NOT NULL, item_id TEXT NOT NULL,
+                    kind TEXT NOT NULL, payload_json TEXT NOT NULL,
+                    PRIMARY KEY (document_id, item_id)
+                );
+                CREATE TABLE IF NOT EXISTS asr (
+                    document_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS ocr (
+                    document_id TEXT NOT NULL, item_id TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    PRIMARY KEY (document_id, item_id)
+                );
+                CREATE TABLE IF NOT EXISTS frames (
+                    document_id TEXT NOT NULL, item_id TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    PRIMARY KEY (document_id, item_id)
+                );
+                CREATE TABLE IF NOT EXISTS social_semiotic_preanalysis (
+                    document_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS laclau_analysis (
+                    document_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL
+                );
                 """
             )
 
@@ -192,6 +216,38 @@ class Hungary26State:
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
                 (key, stable_json(value)),
             )
+
+    def write_evidence(
+        self,
+        table: str,
+        document_id: str,
+        item_id: str,
+        payload: dict[str, Any],
+        *,
+        kind: str = "",
+    ) -> None:
+        allowed = {
+            "representations", "asr", "ocr", "frames",
+            "social_semiotic_preanalysis", "laclau_analysis",
+        }
+        if table not in allowed:
+            raise ValueError(f"unsupported Hungary26 evidence table: {table}")
+        with self.connect() as db:
+            if table == "representations":
+                db.execute(
+                    "INSERT OR REPLACE INTO representations VALUES (?, ?, ?, ?)",
+                    (document_id, item_id, kind, stable_json(payload)),
+                )
+            elif table in {"ocr", "frames"}:
+                db.execute(
+                    f"INSERT OR REPLACE INTO {table} VALUES (?, ?, ?)",
+                    (document_id, item_id, stable_json(payload)),
+                )
+            else:
+                db.execute(
+                    f"INSERT OR REPLACE INTO {table} VALUES (?, ?)",
+                    (document_id, stable_json(payload)),
+                )
 
     def rows(self) -> list[dict[str, Any]]:
         with self.connect() as db:
@@ -314,6 +370,50 @@ def extract_keyframes(video: Path, target_dir: Path, *, max_frames: int = 3) -> 
     return frames
 
 
+def maybe_transcribe_audio(media_path: Path, config: dict[str, Any]) -> dict[str, Any]:
+    """Local ASR with explicit coverage states; never falls back to cloud."""
+    if not bool(config.get("enable_asr", True)):
+        return {"coverage": "not_processed", "text": "", "reason": "enable_asr=false"}
+    try:
+        from faster_whisper import WhisperModel
+    except Exception as exc:
+        return {
+            "coverage": "unsupported",
+            "text": "",
+            "reason": f"faster-whisper unavailable: {exc}",
+        }
+    try:
+        model_name = str(config.get("asr_model", "large-v3-turbo"))
+        compute_type = str(config.get("asr_compute_type", "float16"))
+        whisper = WhisperModel(model_name, device="cuda", compute_type=compute_type)
+        segments, info = whisper.transcribe(str(media_path), beam_size=1, vad_filter=True)
+        spans: list[dict[str, Any]] = []
+        text_parts: list[str] = []
+        for index, segment in enumerate(segments):
+            text = str(segment.text or "").strip()
+            if not text:
+                continue
+            text_parts.append(text)
+            spans.append(
+                {
+                    "segment_id": index,
+                    "start_seconds": float(segment.start),
+                    "end_seconds": float(segment.end),
+                    "text": text,
+                }
+            )
+        return {
+            "coverage": "processed",
+            "text": " ".join(text_parts),
+            "segments": spans,
+            "language": str(getattr(info, "language", "") or ""),
+            "model": model_name,
+            "evidence_type": "asr_from_materialized_audio",
+        }
+    except Exception as exc:
+        return {"coverage": "failed", "text": "", "reason": str(exc)}
+
+
 def ollama_chat(*, model: str, system: str, user: str,
                 images: Iterable[str] = (), num_ctx: int = 32768,
                 num_predict: int = 2048) -> str:
@@ -334,6 +434,11 @@ def ollama_chat(*, model: str, system: str, user: str,
     )
     return str(response["message"]["content"])
 
+
+OCR_SYSTEM = """Transcribe only text directly visible in the supplied Hungary26 frame.
+Return JSON with keys text, language, uncertainty. Preserve Hungarian spelling and diacritics.
+Do not summarize, interpret, classify, translate, or infer political meaning. If no readable
+text is present, return an empty text string."""
 
 VISION_SYSTEM = """You are performing evidence-first multimodal social-science analysis.
 Describe only what is directly visible in the supplied Hungary26 frame. Preserve Hungarian
@@ -407,8 +512,76 @@ def process_record(record: WorkbookRecord, *, state: Hungary26State, paths: dict
             )
             frames_payload = {"frames": frames}
             state.write_stage(StageResult(record.document_id, "frames", fp, "ok", frames_payload))
+            for frame in frames:
+                state.write_evidence(
+                    "frames", record.document_id, frame["frame_id"], frame
+                )
         except Exception as exc:
             state.write_stage(StageResult(record.document_id, "frames", fp, "error", {}, str(exc)))
+            return
+
+    asr = state.cached(record.document_id, "asr", fp)
+    if not asr:
+        asr = maybe_transcribe_audio(Path(download["local_path"]), config)
+        state.write_stage(
+            StageResult(
+                record.document_id,
+                "asr",
+                fp,
+                "ok" if asr.get("coverage") in {"processed", "not_processed", "unsupported"} else "error",
+                asr,
+                "" if asr.get("coverage") != "failed" else str(asr.get("reason") or "ASR failed"),
+            )
+        )
+        state.write_evidence("asr", record.document_id, "asr", asr)
+        state.write_evidence(
+            "representations",
+            record.document_id,
+            f"{record.document_id}:asr",
+            asr,
+            kind="asr",
+        )
+
+    ocr = state.cached(record.document_id, "ocr", fp)
+    if not ocr:
+        try:
+            items = []
+            for frame in frames_payload["frames"]:
+                raw = ollama_chat(
+                    model=model,
+                    system=OCR_SYSTEM,
+                    user=f"Frame {frame['frame_id']} at {frame['timestamp_seconds']} seconds.",
+                    images=[frame["path"]],
+                    num_predict=int(config.get("ocr_num_predict", 512)),
+                )
+                parsed = _parse_object(raw)
+                item = {
+                    "frame_id": frame["frame_id"],
+                    "timestamp_seconds": frame["timestamp_seconds"],
+                    "frame_sha256": frame["sha256"],
+                    "text": str(parsed.get("text") or ""),
+                    "language": str(parsed.get("language") or ""),
+                    "uncertainty": parsed.get("uncertainty"),
+                    "evidence_type": "ocr_from_direct_image_pixels",
+                }
+                items.append(item)
+                state.write_evidence(
+                    "ocr",
+                    record.document_id,
+                    frame["frame_id"],
+                    item,
+                )
+            ocr = {"items": items}
+            state.write_stage(StageResult(record.document_id, "ocr", fp, "ok", ocr))
+            state.write_evidence(
+                "representations",
+                record.document_id,
+                f"{record.document_id}:ocr",
+                ocr,
+                kind="ocr",
+            )
+        except Exception as exc:
+            state.write_stage(StageResult(record.document_id, "ocr", fp, "error", {}, str(exc)))
             return
 
     vision = state.cached(record.document_id, "vision", fp)
@@ -435,6 +608,8 @@ def process_record(record: WorkbookRecord, *, state: Hungary26State, paths: dict
         try:
             prompt = stable_json({
                 "caption_hu": record.caption,
+                "asr": asr,
+                "ocr": ocr,
                 "visual_observations": vision["observations"],
                 "source_provenance": {
                     "workbook": record.workbook, "sheet": record.sheet, "row": record.row_number,
@@ -443,6 +618,18 @@ def process_record(record: WorkbookRecord, *, state: Hungary26State, paths: dict
             raw = ollama_chat(model=model, system=SUMMARY_SYSTEM, user=prompt)
             summary = {"raw": raw, "parsed": _parse_object(raw)}
             state.write_stage(StageResult(record.document_id, "summary", fp, "ok", summary))
+            state.write_evidence(
+                "social_semiotic_preanalysis",
+                record.document_id,
+                "summary",
+                {
+                    "caption": record.caption,
+                    "asr": asr,
+                    "ocr": ocr,
+                    "visual": vision,
+                    "summary": summary,
+                },
+            )
         except Exception as exc:
             state.write_stage(StageResult(record.document_id, "summary", fp, "error", {}, str(exc)))
             return
@@ -451,12 +638,17 @@ def process_record(record: WorkbookRecord, *, state: Hungary26State, paths: dict
         try:
             prompt = stable_json({
                 "caption_hu": record.caption,
+                "asr_evidence": asr,
+                "ocr_evidence": ocr,
                 "multimodal_summary": summary["parsed"],
                 "visual_evidence": vision["observations"],
             })
             raw = ollama_chat(model=model, system=DISCOURSE_SYSTEM, user=prompt)
             discourse = {"raw": raw, "parsed": _parse_object(raw)}
             state.write_stage(StageResult(record.document_id, "discourse", fp, "ok", discourse))
+            state.write_evidence(
+                "laclau_analysis", record.document_id, "discourse", discourse
+            )
         except Exception as exc:
             state.write_stage(StageResult(record.document_id, "discourse", fp, "error", {}, str(exc)))
 
