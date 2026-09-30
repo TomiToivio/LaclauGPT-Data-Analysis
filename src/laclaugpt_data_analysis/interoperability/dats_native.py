@@ -253,7 +253,7 @@ def export_dats_csv_tables(project: DatsProject) -> dict[str, str]:
                 "icon": "",
                 "content": note.text,
                 "content_json": json.dumps({"text": note.text}, ensure_ascii=False),
-                "attached_type": "Project",
+                "attached_type": "project",
                 "attached_to": "project",
             }
         )
