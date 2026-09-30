@@ -6,6 +6,9 @@ from .network import (
     community_assignments,
     concept_projection,
     coverage_summary,
+    dna_actor_projection,
+    dna_binary_actor_concept,
+    dna_concept_projection,
     fixed_windows,
     fragmentation_summary,
 )
@@ -21,6 +24,9 @@ __all__ = [
     "community_assignments",
     "concept_projection",
     "coverage_summary",
+    "dna_actor_projection",
+    "dna_binary_actor_concept",
+    "dna_concept_projection",
     "fixed_windows",
     "fragmentation_summary",
 ]
