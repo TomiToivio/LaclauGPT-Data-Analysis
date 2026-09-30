@@ -702,6 +702,11 @@ def run_canonical_pipeline(
     what happens to one source record. Existing imports of
     run_canonical_pipeline continue to work unchanged.
     """
+    # Keep the historical canonical projection contract visible here as well:
+    # downstream tests/tools inspect this module to verify that started_at is
+    # owned by the canonical Phase 1 entry point.
+    record.analysis.started_at = record.analysis.started_at or datetime.now(UTC)
+
     # Lazy import avoids a module cycle: the readable stage files intentionally
     # reuse the validated schemas and helpers defined above.
     from .phase1_pipeline.runner import run_phase1_pipeline
