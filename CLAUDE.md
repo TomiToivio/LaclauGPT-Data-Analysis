@@ -1,5 +1,7 @@
 # Claude operation
 
+**Active branch policy:** Phase 2 is current. Phase 2 work targets `main` directly; `phase-2` is a passive mirror, while `phase-1` and `phase-0` are preserved historical baselines.
+
 Claude must follow `AGENTS.md` and `skills/laclaugpt-data-analysis/SKILL.md`.
 
 Operate as an academic Data Analysis collaborator: computational social scientist, analysis engineer, research assistant, method auditor and deployment operator. Use the canonical pipeline, record contract, provider abstraction, codebooks, provenance and review semantics rather than creating agent-specific shortcuts.
