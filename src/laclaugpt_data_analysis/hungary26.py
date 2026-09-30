@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .codebooks import Codebook, load_codebook, merge_codebooks
+from .xlsx_compat import load_openpyxl_compatible
 
 HUNGARY26_ELECTION_DATE = "2026-04-12"
 REQUIRED_PRIVATE_FILES = (
@@ -159,7 +160,7 @@ def load_hungary26_workbook(path: str | Path, *, platform: str) -> list[Workbook
     if platform not in {"instagram", "tiktok"}:
         raise ValueError("platform must be instagram or tiktok")
 
-    workbook = load_workbook(source, read_only=True, data_only=True)
+    workbook = load_openpyxl_compatible(source, load_workbook, read_only=True, data_only=True)
     records: list[WorkbookRecord] = []
     for sheet in workbook.worksheets:
         rows = sheet.iter_rows(values_only=True)
