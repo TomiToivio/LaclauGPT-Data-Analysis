@@ -9,7 +9,8 @@ from .metrics import community_assignments, graph_metrics
 from .import_export import read_graphml, read_gexf, write_graphml, write_gexf
 
 __all__ = [
-    "CommunicatorType",\n    "CommunicationMode",
+    "CommunicatorType",
+    "CommunicationMode",
     "SNAEdge",
     "SNANode",
     "build_graph",
