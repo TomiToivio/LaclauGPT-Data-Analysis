@@ -21,6 +21,15 @@ Auxiliary files are intentionally separate from those seven scientific steps:
   operational data in code.
 - `pipeline_rdf.py` - transparent RDF projection helpers.
 
+Support code around the steps (agent-owned; it never contains the method):
+
+- `pipeline_context.py` - what a step is handed beyond the record
+  (`PipelineContext`) and how an attempt is recorded (`StepStatus`, `StepOutcome`).
+- `pipeline_runner.py` - sequencing of the seven steps, runnable from the command
+  line. Reads the incoming database, writes the outgoing one.
+- `pipeline_storage.py` - the concrete local incoming/outgoing databases (SQLite,
+  under ignored `data/`), including the rule deciding which records a step is offered.
+
 ## Design rules
 
 - Keep each scientific step readable in one sitting.
@@ -77,6 +86,30 @@ incoming CanonicalRecord
 
 The functions currently expose the intended inputs and outputs and raise
 `NotImplementedError` where Tomi's hand-written method belongs.
+
+## Running the chain
+
+`pipeline_runner.py` is the only thing that knows the run order, and it contains no
+analysis. It can be run directly, in the same style as the rest of this directory:
+
+```bash
+# inspect the plan for the pending records; calls no step, writes nothing
+python pipeline_runner.py --project ai26 --dry-run
+
+# run the chain
+python pipeline_runner.py --project ai26 --limit 100
+```
+
+Two decisions the runner makes, both of which are scientific rather than mechanical:
+
+- a text-only record **skips** frame analysis; the skip is recorded as a normal
+  result, never as an error, so a text-only study does not look broken;
+- a step that **failed** stops that record's chain. DNA and SNA are never built on a
+  summary that failed. The results of the steps that did succeed are kept.
+
+While the seven step bodies raise `NotImplementedError`, running the chain stops at
+step 1 and says so. That is deliberate: an unfinished step must never look like a
+successful one.
 ## Ownership boundary
 
 <!-- TOMI-LOCKED -->
