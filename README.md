@@ -106,13 +106,9 @@ preprocessing
   -> postprocessing
 ```
 
-**Multimodal is the default, decided by the record rather than by a flag.** If a record carries usable visual media — a materialised image, or frames already extracted from video — the frame stage runs automatically and the summary synthesises across every available modality (text, caption, transcript, visible text, frame descriptions). A record with no usable media takes the text path on post text plus metadata, and needs no dummy media fields. A missing *derived* modality (for example audio present but ASR produced nothing) never fails the record.
+Phase 1 now routes modalities **record-by-record by capability**. When usable materialized images or video frames are present, the visual/multimodal stage runs automatically; when no usable media is available, the record proceeds through the text/caption + metadata path without dummy media fields. Mixed datasets can therefore contain text-only and multimodal records in the same project. Project settings may still constrain unsupported or expensive processing explicitly, but media presence is the ordinary activation signal. Model outputs remain provisional, evidence-linked pre-analysis for human review.
 
-Two limits are deliberate. A remote URL alone is **not** visual evidence: only a materialised reference (`local_ref`) or already-extracted canonical frames count, so nothing is fetched implicitly. And project configuration may switch modality work **off** explicitly — a project can still constrain expensive processing — but a researcher never has to discover and enable a flag merely because media exists.
-
-EP24 is an explicit project profile with its own election-specific prompt templates. Model outputs remain provisional, evidence-linked pre-analysis for human review.
-
-See **[docs/DATA_ANALYSIS_PIPELINE.md](docs/DATA_ANALYSIS_PIPELINE.md)** for the canonical stage-by-stage description.
+For the readable execution order, start with **[docs/DATA_ANALYSIS_PIPELINE.md](docs/DATA_ANALYSIS_PIPELINE.md)** and `src/laclaugpt_data_analysis/stages/runner.py`. The five scientific stages are deliberately exposed as separate files: preprocess, frame/multimodal analysis, descriptive summary, Laclau analysis, and postprocess.
 
 DNA, SNA, Critical AI Studies and other advanced methods are Phase 2 / experimental / optional. They are disabled by default and are not allowed to enter the Phase 1 canonical runner silently.
 
@@ -265,7 +261,7 @@ ruff check .
 pytest --cov=laclaugpt_data_analysis --cov-report=term-missing
 ```
 
-See `AGENTS.md`, `PRIVACY.md`, `docs/RUNTIME_DATA.md`, `docs/ANALYSIS_RUNTIME.md`, `docs/PLUGIN_PIPELINE.md`, and `docs/PHASE1_OPEN_SOURCE_LIBRARIES.md` for the repository contract and the dormant Phase 1 open-source library layer.
+See `AGENTS.md`, `PRIVACY.md`, `docs/DATA_ANALYSIS_PIPELINE.md`, `docs/RUNTIME_DATA.md`, `docs/ANALYSIS_RUNTIME.md`, `docs/PLUGIN_PIPELINE.md`, and `docs/PHASE1_OPEN_SOURCE_LIBRARIES.md` for the repository contract, readable pipeline, runtime architecture, and optional library layer.
 
 ## License
 
