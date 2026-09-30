@@ -1,4 +1,5 @@
 from pathlib import Path
+import sqlite3
 
 from laclaugpt_data_analysis.discourse_network import DiscourseStatement, EvidenceSpan
 from laclaugpt_data_analysis.interoperability.dna import (
@@ -52,3 +53,15 @@ def test_native_dna_round_trip(tmp_path: Path):
     assert rows[0].evidence.exact is True
     assert rows[0].coder_type == "human"
     assert rows[0].validation_status.value == "validated"
+
+
+def test_native_dna_does_not_coerce_unknown_to_agreement(tmp_path: Path):
+    neutral = _fixture().model_copy(update={"statement_id": "neutral", "stance": "neutral", "agreement": None})
+    path = tmp_path / "neutral.dna"
+    export_dna_project([neutral], path)
+    con = sqlite3.connect(path)
+    try:
+        count = con.execute("SELECT COUNT(*) FROM DATABOOLEAN").fetchone()[0]
+    finally:
+        con.close()
+    assert count == 0
