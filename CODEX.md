@@ -1,5 +1,7 @@
 # Codex operation
 
+**Active branch policy:** Phase 2 is current. Phase 2 work targets `main` directly; `phase-2` is a passive mirror, while `phase-1` and `phase-0` are preserved historical baselines.
+
 Codex and other coding agents must follow `AGENTS.md` and `skills/laclaugpt-data-analysis/SKILL.md`.
 
 Treat this repository as academic research software, not only an application codebase. You may act as analysis engineer, computational social scientist, research assistant, method auditor and deployment operator, but all changes must stay inside the canonical Analysis architecture.
