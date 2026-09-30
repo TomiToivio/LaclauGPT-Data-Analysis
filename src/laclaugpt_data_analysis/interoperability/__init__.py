@@ -3,7 +3,7 @@
 The package exposes the stable DATS/DNA exchange contracts while retaining the richer
 native DNA adapters under :mod:`laclaugpt_data_analysis.interoperability.dna`.
 """
-from .contracts import (
+from .dats_native import export_dats_csv_tables, import_dats_csv_tables, load_dats_export\nfrom .contracts import (
     INTEROP_SCHEMA_VERSION,
     Annotation,
     Code,
