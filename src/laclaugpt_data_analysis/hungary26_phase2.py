@@ -601,7 +601,10 @@ def run_phase2(
         }[key]
         _write_csv(target, payload)
 
-    node_rows, edge_rows, metrics, graph_outputs = _build_graphs(\n        statements, graphs_dir=graphs_dir\n    )\n    _write_csv(data_dir / "sna_nodes.csv", node_rows)
+    node_rows, edge_rows, metrics, graph_outputs = _build_graphs(
+        statements, graphs_dir=graphs_dir
+    )
+    _write_csv(data_dir / "sna_nodes.csv", node_rows)
     _write_csv(data_dir / "sna_edges.csv", edge_rows)
     _write_csv(data_dir / "sna_metrics.csv", metrics)
 
