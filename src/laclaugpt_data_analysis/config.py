@@ -40,7 +40,7 @@ def _csv_env(name: str, default: tuple[str, ...]) -> tuple[str, ...]:
 
 @dataclass(frozen=True)
 class Settings:
-    project_id: str = "default"
+    project_id: str = "ai26"
     profile: str = "local"
     machine: str = "laptop"
     execution: str = "cli"
@@ -127,7 +127,7 @@ def load_settings() -> Settings:
     collection_data = _env("COLLECTION_DATA_DIR")
     scratch = _env("SCRATCH_DIR")
     settings = Settings(
-        project_id=_env("PROJECT_ID", "default") or "default",
+        project_id=_env("PROJECT_ID", "ai26") or "ai26",
         profile=_env("PROFILE", "local") or "local",
         machine=_env("MACHINE", "laptop") or "laptop",
         execution=_env("EXECUTION", "cli") or "cli",
