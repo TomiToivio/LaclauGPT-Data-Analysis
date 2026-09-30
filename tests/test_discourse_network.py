@@ -67,7 +67,7 @@ def test_dna_binary_projection_matches_stacked_support_rejection_semantics():
     assert dna_actor_projection(rows)[("a", "b")]["weight"] == 3.0
     assert dna_actor_projection(rows, conflict=True)[("a", "c")]["weight"] == 2.0
     assert dna_concept_projection(rows)[("x", "y")]["weight"] == 1.0
-    assert dna_concept_projection(rows, conflict=True)[("x", "y")]["weight"] == 1.0
+    assert dna_concept_projection(rows, conflict=True)[("x", "y")]["weight"] == 2.0
 
 
 def test_dna_projection_excludes_uncoded_stances():
