@@ -61,7 +61,23 @@ for workbook in hungary2026_instagram.xlsx hungary2026_tiktok.xlsx; do
     exit 2
   fi
 done
+REBUILD_HUNGARY26=0
 if [[ ! -s "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/run/hungary26_roihu.yaml" || ! -s "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}/codebooks/hungary26_private.json" ]]; then
+  REBUILD_HUNGARY26=1
+else
+  if ! "${VENV}/bin/python" - <<'PY'
+import json
+import os
+from pathlib import Path
+root = Path(os.environ["LACLAUGPT_HUNGARY26_PRIVATE_ROOT"])
+payload = json.loads((root / "codebooks" / "hungary26_private.json").read_text(encoding="utf-8"))
+raise SystemExit(0 if payload.get("version") == "phase2-roihu-v2" else 1)
+PY
+  then
+    REBUILD_HUNGARY26=1
+  fi
+fi
+if [[ "${REBUILD_HUNGARY26}" == 1 ]]; then
   (cd "${PRIVATE_REPO}" && "${VENV}/bin/python" analysis/hungary26/build_runtime.py --root "${LACLAUGPT_HUNGARY26_PRIVATE_ROOT}")
 fi
 
@@ -71,9 +87,11 @@ import sys
 import numpy
 import networkx
 import rdflib
+import faster_whisper
 print(f"NumPy preflight OK: {numpy.__version__} from {numpy.__file__}")
 print(f"NetworkX preflight OK: {networkx.__version__}")
 print(f"RDFLib preflight OK: {rdflib.__version__}")
+print("faster-whisper preflight OK")
 print(f"Python: {sys.executable}")
 print(f"CWD: {os.getcwd()}")
 PY
