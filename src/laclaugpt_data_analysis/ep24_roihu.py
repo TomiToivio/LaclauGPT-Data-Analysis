@@ -38,7 +38,7 @@ DEFAULT_MODEL = "gemma4:12b"
 DEFAULT_PRIVATE_ROOT = Path("data/private/ep24")
 PROMPT_VERSION = "ep24-phase1-multimodal-v2"
 PREANALYSIS_PROMPT_VERSION = "social-semiotic-preanalysis.v2"
-STAGES = ("normalize", "media", "representations", "preanalysis", "analysis", "postprocess")
+STAGES = ("normalize", "media", "representations", "preanalysis", "analysis", "phase2", "postprocess")
 TEXT_FIELDS = (
     "caption", "text", "description", "source_recording",
     "whisper_transcript", "whisper_translated", "summary_analysis",
@@ -770,6 +770,26 @@ def process(
             state.write(StageResult(rid, "analysis", fp, "error", {}, str(exc)))
             return
 
+    phase2 = state.cached(rid, "phase2", fp)
+    if phase2 is None:
+        try:
+            statements = code_dna_statements(
+                record_id=rid, country=country, language=language, row=row,
+                preanalysis=preanalysis, analysis=analysis, matches=matches,
+                model=model, config=config,
+            )
+            persist_statements(state.path, rid, statements, fp, time.time())
+            phase2 = {
+                "prompt_version": PHASE2_PROMPT_VERSION,
+                "statement_count": len(statements),
+                "statement_ids": [item["statement_id"] for item in statements],
+                "stage_order": ["phase1_preanalysis", "phase1_laclau", "dna", "sna", "rdf"],
+            }
+            state.write(StageResult(rid, "phase2", fp, "ok", phase2))
+        except Exception as exc:
+            state.write(StageResult(rid, "phase2", fp, "error", {}, str(exc)))
+            return
+
     if state.cached(rid, "postprocess", fp) is None:
         post = {
             "legacy": legacy, "new_entities": analysis["parsed"].get("entities", []),
@@ -786,7 +806,7 @@ def process(
         state.evidence("postprocess", rid, "canonical", post, fp)
 
 
-def export(state: EP24State, paths: dict[str, Path]) -> dict[str, str]:
+def export(state: EP24State, paths: dict[str, Path], *, phase2_fingerprint: str) -> dict[str, str]:
     import pandas as pd
     rows = state.rows()
     frame = pd.DataFrame(rows)
