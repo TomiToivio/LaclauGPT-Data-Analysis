@@ -19,25 +19,25 @@ Imported results belong under `CanonicalRecord.analysis.plugin_results[namespace
 
 ## DATS profile
 
-`src/laclaugpt_data_analysis/interoperability.py` defines a normalized DATS interchange profile:
+DATS is an interoperability target, not a runtime dependency. Its current public export/import surface is CSV, with project and source-document exports packaged in ZIP files. The Phase 2 adapter in `interoperability/dats_native.py` is verified against the upstream DATS v1.11.1 export schemas and maps only structures that both systems can represent honestly:
 
-`DATS document <-> CanonicalRecord`
+`DATS source-document table <-> CanonicalRecord`
 
-`DATS code <-> Code`
+`DATS hierarchical code table <-> Code`
 
-`DATS annotation <-> Evidence + Annotation`
+`DATS span-annotation table <-> Evidence + Annotation`
 
-`DATS human correction <-> HumanReview`
+`DATS memo table <-> ResearchNote`
 
-`DATS concept-over-time <-> TemporalSeries`
+The adapter recognizes the upstream field names such as `filename`, `code_name`, `parent_code_name`, `sdoc_name`, `text_begin_char`, `text_end_char`, `user_email`, `attached_type` and `attached_to`. It can read CSV files or CSV members of ZIP exports. LaclauGPT-only provenance, confidence, review state, entity identity and network semantics are retained on the LaclauGPT side rather than fabricated as DATS columns.
 
-Machine-produced annotations must be exported as `PROVISIONAL` and `provisional_ai: true`. `dats_review.py` provides the explicit proposal/review bridge. Native DATS bundles may evolve; tool-specific readers should normalize them into this stable profile instead of coupling the core to DATS internals.
+The existing normalized `DatsProject` remains the internal boundary object. It is useful for review workflows, but it is not claimed to be a native DATS serialization. Source-document raw-file packaging and destination-user resolution are DATS deployment concerns; the adapter provides the research-table mapping rather than cloning DATS internals.
 
 ## DNA/rDNA profile
 
 `DiscourseStatement` is the theory-neutral bridge. Stable statement, actor, concept, source, evidence, timestamp, producer, confidence, provenance, review status and external DNA IDs are preserved.
 
-The portable table profile supports CSV and can be passed to rDNA. `graph_exchange.py` builds graph projections with graph-level metadata describing node semantics, edge semantics, projection method, weighting method, parameters and source statement IDs. GraphML and node/edge CSV are the preferred network exchange formats.
+The portable statement table supports CSV and can be passed to rDNA. The explicit `dna_*` projection helpers implement DNA's binary stacked congruence/conflict semantics without a minimum-shared-concepts threshold. `portable_exchange.py` writes GraphML/GEXF and node/edge tables with construction metadata, while the native `.dna` adapter preserves boolean agreement as support/reject and leaves ambiguous agreement uncoded.
 
 A downstream Laclau/Mouffe/Palonen interpretation is a **separate stage**:
 
