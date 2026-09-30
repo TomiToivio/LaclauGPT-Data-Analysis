@@ -43,6 +43,19 @@ Never reconstruct authoritative codebooks, labels or deployment settings from mo
 
 This repository owns reusable analysis code: analytical contracts, NLP/embedding/topic/classification/statistical backends, multimodal evidence handling, LLM-assisted analysis, context memory, codebook machinery, analysis orchestration, and boundary adapters for analysis inputs/outputs. Collection and visualization responsibilities belong in sibling modules.
 
+
+## AI26 Phase 2 scope lock
+
+**This repository's `main` branch is now exclusively the AI26 Phase 2 implementation.**
+
+- AI26 is the only active/default study in this repository. New code, configuration, tests, examples, documentation, commands and agent work MUST assume AI26 unless Tomi explicitly says otherwise.
+- EP24, Hungary26 and Brazil26 are out of scope here. They will live in separate project repositories. Do not add new EP24/Hungary26/Brazil26 pipelines, codebooks, launchers, dashboards, adapters, deployment documentation or project-specific defaults here.
+- Historical compatibility code may remain temporarily when removing it would create unnecessary risk, but agents must treat it as dormant legacy. Do not extend, polish, modernize or use it as an architectural target.
+- The human-readable publication/researcher-facing versions belong in the legacy EP24 repositories or other project-specific repositories. These three AI26 repositories do **not** need to optimize for human readability right now.
+- Prefer machine-readable canonical records, provenance, evidence, reproducible Phase 2 processing and operational correctness over prose reports, human-readable summaries, researcher workbenches, exhibition views or legacy dashboards.
+- Do not spend issue scope on making outputs friendlier to humans unless Tomi explicitly requests it. Human-in-the-loop scientific validation remains required; this rule is about software/output presentation, not removing human research responsibility.
+- Phase 2 work goes directly to `main` under the repository's current branch policy. Phase 0/1 branches remain historical baselines and are not defaults for new work.
+
 ## Research practice
 
 Agents should:
