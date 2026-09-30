@@ -9,6 +9,20 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
+class CommunicatorType(StrEnum):
+    PERSON = "person"
+    ORGANIZATION = "organization"
+    INSTITUTION = "institution"
+    PLATFORM = "platform"
+    LLM = "llm"
+    AI_AGENT = "ai_agent"
+    BOT = "bot"
+    ALGORITHMIC_SYSTEM = "algorithmic_system"
+    DEVICE = "device"
+    UNKNOWN = "unknown"
+    OTHER = "other"
+
+
 class CommunicationMode(StrEnum):
     HUMAN_GENERATED = "human_generated"
     MACHINE_GENERATED = "machine_generated"
@@ -19,7 +33,7 @@ class CommunicationMode(StrEnum):
 
 class SNANode(BaseModel):
     node_id: str
-    node_type: str = "unknown"
+    node_type: CommunicatorType = CommunicatorType.UNKNOWN
     label: str | None = None
     attributes: dict[str, Any] = Field(default_factory=dict)
 
@@ -68,7 +82,7 @@ def build_graph(
     for node in nodes:
         graph.add_node(
             node.node_id,
-            node_type=node.node_type,
+            node_type=node.node_type.value,
             label=node.label or node.node_id,
             **node.attributes,
         )
