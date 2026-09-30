@@ -17,7 +17,20 @@ from pathlib import Path
 from laclaugpt_data_analysis.canonical import AnalysisSection
 
 REPO = Path(__file__).resolve().parents[1]
+# The canonical pipeline was split from one module into the `stages/` package
+# (issue #303) so each scientific step is readable on its own. The projections
+# this test guards now live in `stages/postprocess.py`; scan the whole package so
+# the guard follows the implementation wherever a stage declares it.
 PIPELINE = REPO / "src" / "laclaugpt_data_analysis" / "canonical_pipeline.py"
+STAGES = REPO / "src" / "laclaugpt_data_analysis" / "stages"
+
+
+def _pipeline_source() -> str:
+    """Source text of the pipeline implementation (facade + stage modules)."""
+    parts = [PIPELINE.read_text(encoding="utf-8")]
+    for path in sorted(STAGES.glob("*.py")):
+        parts.append(path.read_text(encoding="utf-8"))
+    return "\n".join(parts)
 
 # Fields the canonical AI26 pipeline is expected to project from its stage
 # outputs. Anything added to AnalysisSection must be added here deliberately,
@@ -76,7 +89,7 @@ def _declared_fields() -> set[str]:
 
 def _written_fields() -> set[str]:
     """Fields assigned or extended on ``record.analysis`` in the pipeline."""
-    text = PIPELINE.read_text(encoding="utf-8")
+    text = _pipeline_source()
     written = set(re.findall(r"record\.analysis\.([a-z_]+)\s*=", text))
     written |= set(re.findall(r"record\.analysis\.([a-z_]+)\.extend", text))
     return written
@@ -132,7 +145,7 @@ def test_laclaudian_categories_are_not_left_to_the_generic_lists() -> None:
 
 def test_projection_helpers_are_used_for_chains_and_signifiers() -> None:
     """The dedicated fields are filled by the shared helpers, not ad-hoc code."""
-    text = PIPELINE.read_text(encoding="utf-8")
+    text = _pipeline_source()
     assert "_relation_chains(" in text
     assert '"floating_signifier"' in text
     assert '"empty_signifier"' in text

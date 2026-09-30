@@ -1,6 +1,6 @@
 # LaclauGPT Phase 0 Core (historical)
 
-> **Historical documentation.** This directory describes the preserved Phase 0 hand-coded core. For the current Phase 1 execution path, read [`docs/DATA_ANALYSIS_PIPELINE.md`](../docs/DATA_ANALYSIS_PIPELINE.md) and `src/laclaugpt_data_analysis/phase1_pipeline/`.
+> **Historical documentation.** This directory describes the preserved Phase 0 hand-coded core. For the current Phase 1 execution path, read [`docs/DATA_ANALYSIS_PIPELINE.md`](../docs/DATA_ANALYSIS_PIPELINE.md) and `src/laclaugpt_data_analysis/stages/`.
 
 This directory is the preserved hand-coded Phase 0 core of LaclauGPT Data Analysis.
 
