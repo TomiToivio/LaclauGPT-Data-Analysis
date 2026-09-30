@@ -11,7 +11,7 @@ from collections.abc import Iterable
 from datetime import datetime, timedelta
 from typing import Any
 
-from .models import DiscourseStatement, Stance
+from .models import AgreementStatus, DiscourseStatement, Stance
 
 
 def actor_concept_matrix(
@@ -29,6 +29,119 @@ def actor_concept_matrix(
             value *= statement.confidence
         matrix[statement.actor_id][statement.concept_id] += value
     return {actor: dict(concepts) for actor, concepts in matrix.items()}
+
+
+def dna_binary_actor_concept(
+    statements: Iterable[DiscourseStatement],
+) -> dict[str, dict[str, dict[bool, int]]]:
+    """Build DNA's binary actor-concept array: actor -> concept -> agreement -> count.
+
+    DNA's conventional agreement variable is boolean: support=True, reject=False.
+    Ambiguous, neutral, mixed, unknown and abstained statements are excluded rather
+    than silently coerced into support. Repeated statements remain counts.
+    """
+    matrix: dict[str, dict[str, dict[bool, int]]] = defaultdict(
+        lambda: defaultdict(lambda: {True: 0, False: 0})
+    )
+    for statement in statements:
+        if statement.abstained or statement.agreement_status != AgreementStatus.CODED:
+            continue
+        if statement.agreement is None:
+            continue
+        matrix[statement.actor_id][statement.concept_id][statement.agreement] += 1
+    return {
+        actor: {concept: dict(values) for concept, values in concepts.items()}
+        for actor, concepts in matrix.items()
+    }
+
+
+def dna_actor_projection(
+    statements: Iterable[DiscourseStatement],
+    *,
+    conflict: bool = False,
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """DNA-compatible binary actor congruence/conflict projection.
+
+    Congruence is co-support + co-rejection. Conflict is the two cross-products.
+    There is no minimum-shared-concepts threshold and diagonal entries are omitted.
+    """
+    matrix = dna_binary_actor_concept(statements)
+    actors = sorted(matrix)
+    edges: dict[tuple[str, str], dict[str, Any]] = {}
+    for index, left in enumerate(actors):
+        for right in actors[index + 1 :]:
+            concepts = sorted(set(matrix[left]) & set(matrix[right]))
+            weight = 0.0
+            matches: list[str] = []
+            for concept in concepts:
+                lvalues = matrix[left][concept]
+                rvalues = matrix[right][concept]
+                if conflict:
+                    contribution = (
+                        lvalues[True] * rvalues[False]
+                        + lvalues[False] * rvalues[True]
+                    )
+                else:
+                    contribution = (
+                        lvalues[True] * rvalues[True]
+                        + lvalues[False] * rvalues[False]
+                    )
+                if contribution:
+                    weight += float(contribution)
+                    matches.append(concept)
+            if weight:
+                edges[(left, right)] = {
+                    "weight": weight,
+                    "shared_concepts": matches,
+                    "kind": "conflict" if conflict else "congruence",
+                    "projection_method": "dna_binary_stacked",
+                }
+    return edges
+
+
+def dna_concept_projection(
+    statements: Iterable[DiscourseStatement],
+    *,
+    conflict: bool = False,
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """DNA-compatible binary concept congruence/conflict projection."""
+    matrix = dna_binary_actor_concept(statements)
+    by_concept: dict[str, dict[str, dict[bool, int]]] = defaultdict(dict)
+    for actor, concepts in matrix.items():
+        for concept, values in concepts.items():
+            by_concept[concept][actor] = values
+
+    concepts = sorted(by_concept)
+    edges: dict[tuple[str, str], dict[str, Any]] = {}
+    for index, left in enumerate(concepts):
+        for right in concepts[index + 1 :]:
+            actors = sorted(set(by_concept[left]) & set(by_concept[right]))
+            weight = 0.0
+            matches: list[str] = []
+            for actor in actors:
+                lvalues = by_concept[left][actor]
+                rvalues = by_concept[right][actor]
+                if conflict:
+                    contribution = (
+                        lvalues[True] * rvalues[False]
+                        + lvalues[False] * rvalues[True]
+                    )
+                else:
+                    contribution = (
+                        lvalues[True] * rvalues[True]
+                        + lvalues[False] * rvalues[False]
+                    )
+                if contribution:
+                    weight += float(contribution)
+                    matches.append(actor)
+            if weight:
+                edges[(left, right)] = {
+                    "weight": weight,
+                    "shared_actors": matches,
+                    "kind": "conflict" if conflict else "congruence",
+                    "projection_method": "dna_binary_stacked",
+                }
+    return edges
 
 
 def actor_projection(
