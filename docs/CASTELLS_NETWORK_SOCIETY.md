@@ -16,7 +16,9 @@ For example, betweenness is stored as betweenness. A researcher may later interp
 
 ## Data model
 
-`analysis.castells` provides reusable structures:
+The theory-neutral computational stage lives in `laclaugpt_data_analysis.sna`. It accepts ordinary NetworkX graph kinds, conventional metrics, temporal slices and GraphML/GEXF exchange. Nodes can be typed heterogeneously (`person`, `organization`, `platform`, `llm`, `ai_agent`, `bot`, `algorithmic_system`, `device`, or a project-specific type), while edges can distinguish `human_generated`, `machine_generated`, `machine_mediated`, `mixed` and `unknown` communication. This allows Phase 2 to study human-machine communication without assuming that every communicator is a human actor.
+
+`analysis.castells` is the separate interpretive bridge and provides reusable structures:
 
 - `NetworkNode`
 - `NetworkEdge`
@@ -33,7 +35,7 @@ Observed interaction edges and inferred semantic-similarity edges must never be 
 
 ## Standard network measures
 
-`build_networkx_graph()` and `graph_measures()` provide reproducible descriptive measures:
+`sna.build_graph()` / `sna.graph_metrics()` are the reference descriptive implementation; the older `analysis.castells.build_networkx_graph()` / `graph_measures()` helpers remain compatible theory-bridge utilities. They provide reproducible descriptive measures:
 
 - degree, in-degree, out-degree
 - betweenness
@@ -77,4 +79,4 @@ Derived outputs can be consumed by Data Visualization as ordinary graph/tabular/
 
 ## Current status
 
-This is an experimental library layer only. It does not change the default AI26 pipeline and should later be registered as one optional Analysis plugin in the generic plugin architecture.
+This is an experimental Phase 2 library layer. The SNA computation remains theory-neutral; Castells/Esposito/Luhmann-inspired interpretation is downstream and must cite measured evidence rather than relabel a metric. Phase 1 code paths and schemas remain intact.
