@@ -55,7 +55,17 @@ def test_sqlite_schema_and_cache_roundtrip(tmp_path: Path) -> None:
 
     with sqlite3.connect(state.path) as db:
         tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    assert {"records", "stages", "run_metadata"} <= tables
+    assert {
+        "records",
+        "stages",
+        "run_metadata",
+        "representations",
+        "asr",
+        "ocr",
+        "frames",
+        "social_semiotic_preanalysis",
+        "laclau_analysis",
+    } <= tables
 
 
 def test_runtime_fingerprint_changes_when_model_or_codebook_changes() -> None:
@@ -111,6 +121,42 @@ def test_smoke_selection_is_deterministic_and_cross_platform() -> None:
     ]
     selected = select_records(rows, "smoke")
     assert [r.document_id for r in selected] == ["a", "b"]
+
+
+def test_smoke_requires_both_platforms() -> None:
+    with pytest.raises(RuntimeError, match="tiktok"):
+        select_records([record("a", "instagram")], "smoke")
+
+
+def test_evidence_tables_roundtrip_shape(tmp_path: Path) -> None:
+    state = Hungary26State(tmp_path / "evidence.sqlite3")
+    item = record("evidence")
+    state.upsert_record(item)
+    state.write_evidence(
+        "representations",
+        item.document_id,
+        f"{item.document_id}:asr",
+        {"coverage": "processed", "text": "Magyar beszéd"},
+        kind="asr",
+    )
+    state.write_evidence(
+        "ocr",
+        item.document_id,
+        "f1",
+        {"text": "Magyar felirat", "evidence_type": "ocr_from_direct_image_pixels"},
+    )
+    with sqlite3.connect(state.path) as db:
+        rep = db.execute(
+            "SELECT kind, payload_json FROM representations WHERE document_id=?",
+            (item.document_id,),
+        ).fetchone()
+        ocr = db.execute(
+            "SELECT payload_json FROM ocr WHERE document_id=? AND item_id='f1'",
+            (item.document_id,),
+        ).fetchone()
+    assert rep is not None and rep[0] == "asr"
+    assert "Magyar beszéd" in rep[1]
+    assert ocr is not None and "Magyar felirat" in ocr[0]
 
 
 def test_stable_json_is_deterministic() -> None:
