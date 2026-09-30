@@ -8,16 +8,15 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import html
 import os
 import re
 from datetime import datetime, timezone
+from html.parser import HTMLParser
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import feedparser
 import requests
-
 from ai26_rss import active_sources
 from laclaugpt_mongo import upsert_document
 
@@ -26,13 +25,56 @@ def _text(value: Any) -> str:
     return "" if value is None else str(value).strip()
 
 
+class _VisibleTextExtractor(HTMLParser):
+    """Collect visible text, dropping ``script`` and ``style`` element content.
+
+    A parser is used instead of a tag-stripping regular expression because HTML
+    permits whitespace inside an end tag (``</script >``), which a literal
+    ``</script>`` pattern silently fails to match and so leaks the script body
+    into the extracted text. A parser also stops an unterminated ``<script>``
+    from leaking its content, and handles self-closing forms.
+    """
+
+    _HIDDEN_TAGS = frozenset({"script", "style"})
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self._parts: list[str] = []
+        self._hidden_depth = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        # A tag is a word boundary: without this, "<p>a</p><p>b</p>" would join
+        # into "ab" instead of the previous "a b".
+        self._parts.append(" ")
+        if tag in self._HIDDEN_TAGS:
+            self._hidden_depth += 1
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        # A self-closing <script/> or <style/> carries no body to hide.
+        self._parts.append(" ")
+
+    def handle_endtag(self, tag: str) -> None:
+        self._parts.append(" ")
+        if tag in self._HIDDEN_TAGS and self._hidden_depth:
+            self._hidden_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if not self._hidden_depth:
+            self._parts.append(data)
+
+    def text(self) -> str:
+        return "".join(self._parts)
+
+
 def _strip_html(value: str) -> str:
     if not value:
         return ""
-    text = re.sub(r"<script\b[^>]*>.*?</script>", " ", value, flags=re.I | re.S)
-    text = re.sub(r"<style\b[^>]*>.*?</style>", " ", text, flags=re.I | re.S)
-    text = re.sub(r"<[^>]+>", " ", text)
-    return re.sub(r"\s+", " ", html.unescape(text)).strip()
+    parser = _VisibleTextExtractor()
+    parser.feed(value)
+    parser.close()
+    # convert_charrefs=True has already decoded entities once, matching the
+    # previous single html.unescape pass.
+    return re.sub(r"\s+", " ", parser.text()).strip()
 
 
 TRACKING_QUERY_PREFIXES = ("utm_",)

@@ -224,6 +224,17 @@ def describe_routing(model_hint: str | None = None) -> str:
     return f"local Ollama at {host} -> {model}"
 
 
+def _is_ollama_cloud_host(endpoint: str) -> bool:
+    """Whether an endpoint is Ollama's hosted cloud service.
+
+    Matches the parsed hostname against the ``ollama.com`` domain, so a crafted
+    host such as ``evil.example/?next=ollama.com`` cannot cause the API key to be
+    attached. Subdomains are accepted; lookalikes are not.
+    """
+    hostname = _endpoint_hostname(endpoint)
+    return hostname == "ollama.com" or hostname.endswith(".ollama.com")
+
+
 def _client(host: str | None = None):
     """Build an Ollama client lazily; requires the optional dependency."""
     try:
@@ -236,7 +247,11 @@ def _client(host: str | None = None):
     host = resolve_llm_host(host)
     kwargs: dict[str, Any] = {"host": host} if host else {}
     api_key = os.environ.get("OLLAMA_API_KEY", "").strip()
-    if api_key and "ollama.com" in host:
+    # Only the hosted Ollama cloud gets the credential, and only after the
+    # endpoint's hostname is parsed. A substring test on the raw endpoint would
+    # attach the bearer token to any URL that merely contains the domain, which
+    # is a credential-leak vector.
+    if api_key and _is_ollama_cloud_host(host):
         kwargs["headers"] = {"Authorization": f"Bearer {api_key}"}
     return ollama.Client(**kwargs)
 
