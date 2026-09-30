@@ -56,7 +56,7 @@ def test_native_dna_round_trip(tmp_path: Path):
 
 
 def test_native_dna_does_not_coerce_unknown_to_agreement(tmp_path: Path):
-    neutral = _fixture().model_copy(update={"statement_id": "neutral", "stance": "neutral", "agreement": None})
+    neutral = DiscourseStatement.model_validate(\n        {**_fixture().model_dump(), "statement_id": "neutral", "stance": "neutral", "agreement": None}\n    )
     path = tmp_path / "neutral.dna"
     export_dna_project([neutral], path)
     con = sqlite3.connect(path)
