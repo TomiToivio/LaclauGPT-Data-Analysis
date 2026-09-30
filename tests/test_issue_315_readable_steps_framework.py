@@ -18,10 +18,9 @@ import importlib
 import inspect
 
 import pytest
-from pydantic import BaseModel
-
 import steps
 from models.incoming import IncomingRecord
+from pydantic import BaseModel
 from steps import StepContext, StepStatus
 
 
@@ -89,7 +88,6 @@ def test_unimplemented_step_raises_rather_than_faking_a_result() -> None:
     producing nothing of analytical value.
     """
     from models.incoming import MediaItem
-
     from steps import step1_preprocess
 
     record = IncomingRecord(
