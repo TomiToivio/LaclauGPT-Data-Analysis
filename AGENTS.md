@@ -70,9 +70,9 @@ Agents should:
 
 Agents may summarize or contextualize results, but must not silently promote provisional model output into validated research claims.
 
-## AI26 public reference study
+## AI26 active study
 
-AI26 (`Ideological contestation over AI`) is the preferred realistic public example for this module because the current LaclauGPT method and modular architecture are being developed alongside the public paper. Use `codebooks/public/seed_ai_formations.md` as the publication-safe conceptual reference, while keeping all analysis APIs study-agnostic.
+AI26 (`Ideological contestation over AI`) is the active and default study for this repository. The current `main` pipeline is AI26 Phase 2. Use `codebooks/public/seed_ai_formations.md` as the publication-safe conceptual reference, Do not spend current work making APIs generically multi-study unless Tomi explicitly requests it.
 
 The six AI26 computational formation labels (`accelerationism`, `doomerism`, `left-wing accelerationism`, `ai safety`, `ai critical`, `anti-ai`) are provisional sensitising categories and aggregation anchors, not a closed ontology. Do not infer them from actor identity, source list, keywords or a single statement. Multi-label overlap, uncertainty and abstention are valid.
 
