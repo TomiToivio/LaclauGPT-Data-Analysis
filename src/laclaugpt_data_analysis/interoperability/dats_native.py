@@ -144,10 +144,18 @@ def load_dats_export(path: str | Path) -> dict[str, Any]:
     source = Path(path)
     tables: dict[str, str] = {}
     if source.suffix.casefold() == ".zip":
-        with zipfile.ZipFile(source) as archive:
+        def collect_zip(archive: zipfile.ZipFile, prefix: str = "") -> None:
             for member in archive.namelist():
-                if member.casefold().endswith(".csv"):
-                    tables[member] = archive.read(member).decode("utf-8-sig")
+                name = f"{prefix}{member}"
+                lowered = member.casefold()
+                if lowered.endswith(".csv"):
+                    tables[name] = archive.read(member).decode("utf-8-sig")
+                elif lowered.endswith(".zip"):
+                    nested = io.BytesIO(archive.read(member))
+                    with zipfile.ZipFile(nested) as child:
+                        collect_zip(child, prefix=f"{name}!/")
+        with zipfile.ZipFile(source) as archive:
+            collect_zip(archive)
     else:
         tables[source.name] = source.read_text(encoding="utf-8-sig")
     return import_dats_csv_tables(tables)
