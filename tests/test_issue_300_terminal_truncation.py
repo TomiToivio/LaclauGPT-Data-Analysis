@@ -64,7 +64,7 @@ def test_exhausted_output_is_terminal_queryable_and_does_not_reseed() -> None:
         worker_id="synthetic", provenance={}, max_attempts=3,
     )
     assert worker.run_once() == "dead-letter"
-    assert provider.budgets == [4096, 8192]
+    assert provider.budgets == [4096, 8192, 16384]
     assert worker.last_failure_class == "LLMTruncationError"
     assert store.has_terminal_failure("over-budget")
     assert len(store.failures) == 1
@@ -72,8 +72,8 @@ def test_exhausted_output_is_terminal_queryable_and_does_not_reseed() -> None:
     assert failure["terminal"] is True
     assert failure["terminal_reason"] == "unanalysable_within_budget"
     assert failure["finish_reason"] == "length"
-    assert failure["output_budget_tokens"] == 8192
-    assert failure["required_output_tokens_lower_bound"] == 8193
+    assert failure["output_budget_tokens"] == 16384
+    assert failure["required_output_tokens_lower_bound"] == 16385
     assert failure["generated_output_chars"] == len('{"value":"unfinished')
     assert len(queue.dead_letters) == 1
     assert worker.run_once() == "idle"
