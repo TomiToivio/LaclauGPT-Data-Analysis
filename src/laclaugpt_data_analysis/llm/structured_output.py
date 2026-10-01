@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 from typing import Any, TypeVar
 
@@ -27,7 +28,27 @@ T = TypeVar("T", bound=BaseModel)
 
 STRUCTURED_NUM_PREDICT = 4096
 STRUCTURED_NUM_CTX = 16384
-MAX_STRUCTURED_NUM_PREDICT = 8192
+MAX_STRUCTURED_NUM_PREDICT = 16384
+
+STRUCTURED_NUM_PREDICT_ENV = "LACLAUGPT_STRUCTURED_NUM_PREDICT"
+STRUCTURED_NUM_CTX_ENV = "LACLAUGPT_STRUCTURED_NUM_CTX"
+MAX_STRUCTURED_NUM_PREDICT_ENV = "LACLAUGPT_MAX_STRUCTURED_NUM_PREDICT"
+
+
+def _positive_int_env(name: str, default: int) -> int:
+    """Read a positive integer runtime override without making imports fragile."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        logger.warning("ignoring invalid %s=%r; using %d", name, raw, default)
+        return default
+    if value <= 0:
+        logger.warning("ignoring non-positive %s=%r; using %d", name, raw, default)
+        return default
+    return value
 
 _FENCE_RE = re.compile(r"^```[a-zA-Z0-9_-]*\n?|\n?```$")
 
@@ -195,18 +216,43 @@ def chat_structured(
     schema: dict[str, Any] | None = None,
     allow_cloud_fallback: bool | None = None,
 ) -> tuple[T, LLMResponse]:
-    """Structured output with one retry for truncation or validation failure.
+    """Structured output with bounded validation retry and truncation escalation.
 
-    Structured calls default to a 4096-token output budget inside a 16K context.
-    If the provider explicitly reports a length stop, the retry doubles only the
-    output budget (up to 8192) and does not add schema-correction feedback.
+    The default output ladder is 4096 -> 8192 -> 16384 tokens. A length stop
+    widens only the output budget and grows num_ctx to at least twice that
+    budget. The ladder is bounded within one call, so an exhausted document is
+    still terminalized by the worker instead of poisoning later hourly cycles.
+
+    Runtime overrides:
+    LACLAUGPT_STRUCTURED_NUM_PREDICT,
+    LACLAUGPT_STRUCTURED_NUM_CTX, and
+    LACLAUGPT_MAX_STRUCTURED_NUM_PREDICT.
+    Explicit request options still win for the initial per-call budget/context.
     """
     shape_prompt = build_structured_prompt(user_prompt, model_cls)
     run_options = dict(options or {})
-    run_options.setdefault("num_predict", STRUCTURED_NUM_PREDICT)
-    run_options["num_ctx"] = max(int(run_options.get("num_ctx", 0) or 0), STRUCTURED_NUM_CTX)
 
-    for attempt in (1, 2):
+    default_budget = _positive_int_env(
+        STRUCTURED_NUM_PREDICT_ENV, STRUCTURED_NUM_PREDICT
+    )
+    minimum_ctx = _positive_int_env(STRUCTURED_NUM_CTX_ENV, STRUCTURED_NUM_CTX)
+    configured_ceiling = _positive_int_env(
+        MAX_STRUCTURED_NUM_PREDICT_ENV, MAX_STRUCTURED_NUM_PREDICT
+    )
+
+    run_options.setdefault("num_predict", default_budget)
+    current_budget = int(run_options["num_predict"])
+    ceiling = max(current_budget, configured_ceiling)
+    run_options["num_ctx"] = max(
+        int(run_options.get("num_ctx", 0) or 0),
+        minimum_ctx,
+    )
+
+    validation_failures = 0
+    call_attempt = 0
+
+    while True:
+        call_attempt += 1
         request = ChatRequest(
             model=model,
             system=system_prompt,
@@ -219,33 +265,34 @@ def chat_structured(
 
         if response.truncated:
             logger.warning(
-                "structured generation truncated (attempt %d, finish_reason=%s, num_predict=%s)",
-                attempt,
+                "structured generation truncated (call %d, finish_reason=%s, num_predict=%s)",
+                call_attempt,
                 response.finish_reason or "unknown",
                 run_options.get("num_predict"),
             )
-            if attempt == 2:
+            current_budget = int(run_options.get("num_predict", default_budget))
+            if current_budget >= ceiling:
                 exc = LLMTruncationError(
                     "structured generation exhausted the output budget "
                     f"(finish_reason={response.finish_reason or 'unknown'}, "
-                    f"num_predict={run_options.get('num_predict')})"
+                    f"num_predict={current_budget}, ceiling={ceiling})"
                 )
                 _attach_failure_diagnostics(exc, response)
                 # A length stop proves only a lower bound, not the exact number
                 # of tokens needed to finish the schema. Do not invent a count.
-                exc.output_budget_tokens = int(run_options["num_predict"])
-                exc.required_output_tokens_lower_bound = int(run_options["num_predict"]) + 1
+                exc.output_budget_tokens = current_budget
+                exc.required_output_tokens_lower_bound = current_budget + 1
                 exc.generated_output_chars = len(response.content)
                 raise exc from None
-            current_budget = int(run_options.get("num_predict", STRUCTURED_NUM_PREDICT))
+
             next_budget = min(
-                max(current_budget * 2, STRUCTURED_NUM_PREDICT),
-                MAX_STRUCTURED_NUM_PREDICT,
+                max(current_budget * 2, default_budget),
+                ceiling,
             )
             run_options["num_predict"] = next_budget
             run_options["num_ctx"] = max(
                 int(run_options.get("num_ctx", 0) or 0),
-                STRUCTURED_NUM_CTX,
+                minimum_ctx,
                 next_budget * 2,
             )
             continue
@@ -254,8 +301,13 @@ def chat_structured(
             parsed = parse_structured(response.content, model_cls)
             return parsed, response
         except Exception as exc:
-            logger.warning("structured parse failed (attempt %d): %s", attempt, exc)
-            if attempt == 2:
+            validation_failures += 1
+            logger.warning(
+                "structured parse failed (validation attempt %d): %s",
+                validation_failures,
+                exc,
+            )
+            if validation_failures >= 2:
                 _attach_failure_diagnostics(exc, response)
                 raise
             shape_prompt += (
@@ -264,4 +316,3 @@ def chat_structured(
                 "Correct the specific schema/theory rule above. Return ONLY the JSON "
                 "object with exactly the required fields; do not explain the correction."
             )
-    raise RuntimeError("unreachable")  # pragma: no cover
