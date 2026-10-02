@@ -111,7 +111,7 @@ preprocessing
 
 Phase 1 now routes modalities **record-by-record by capability**. When usable materialized images or video frames are present, the visual/multimodal stage runs automatically; when no usable media is available, the record proceeds through the text/caption + metadata path without dummy media fields. Mixed datasets can therefore contain text-only and multimodal records in the same project. Project settings may still constrain unsupported or expensive processing explicitly, but media presence is the ordinary activation signal. Model outputs remain provisional, evidence-linked pre-analysis for human review.
 
-For the readable execution order, start with **[docs/DATA_ANALYSIS_PIPELINE.md](docs/DATA_ANALYSIS_PIPELINE.md)** and `src/laclaugpt_data_analysis/stages/runner.py`. The five scientific stages are deliberately exposed as separate files: preprocess, frame/multimodal analysis, descriptive summary, Laclau analysis, and postprocess.
+For the readable execution order, start with **[docs/DATA_ANALYSIS_PIPELINE.md](docs/DATA_ANALYSIS_PIPELINE.md)** and `src/laclaugpt_data_analysis/stages/runner.py`. For the repository-wide implementation style, including the human-owned numbered AI26 steps and the rule that research logic stays visible, see **[CODING_STYLE.md](CODING_STYLE.md)**. The five scientific stages are deliberately exposed as separate files: preprocess, frame/multimodal analysis, descriptive summary, Laclau analysis, and postprocess.
 
 DNA, SNA, Critical AI Studies and other advanced methods are Phase 2 / experimental / optional. They are disabled by default and are not allowed to enter the Phase 1 canonical runner silently.
 
