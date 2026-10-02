@@ -138,6 +138,10 @@ Do not create top-level `var/`, `logs/`, `database/`, `outputs/`, `downloads/` o
 
 When Collection and Analysis run on the same host, use the configured `collection_data_dir` to read canonical Collection data directly from the Collection module's `data/` tree. For distributed deployments use MongoDB, Redis and S3-compatible storage such as CSC Allas. CSV/JSONL is the manual fallback.
 
+## Research-code readability contract
+
+Follow [CODING_STYLE.md](CODING_STYLE.md). The numbered `laclaugpt/step_*.py` files are the visible scientific surface; shared infrastructure may be factored out, but research logic, theory choices, inputs/outputs and pipeline order must remain easy for a human researcher to inspect. `LaclauGPT-Multimodal-Analysis` is the architectural/code-style reference for future AI26 modernization once its Roihu EP24 pipeline is verified.
+
 ## Python architecture
 
 - use `src/laclaugpt_data_analysis/`
