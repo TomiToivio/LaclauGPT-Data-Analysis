@@ -264,7 +264,7 @@ ruff check .
 pytest --cov=laclaugpt_data_analysis --cov-report=term-missing
 ```
 
-See `AGENTS.md`, `PRIVACY.md`, `docs/DATA_ANALYSIS_PIPELINE.md`, `docs/RUNTIME_DATA.md`, `docs/ANALYSIS_RUNTIME.md`, `docs/PLUGIN_PIPELINE.md`, and `docs/PHASE1_OPEN_SOURCE_LIBRARIES.md` for the repository contract, readable pipeline, runtime architecture, and optional library layer.
+See `AGENTS.md`, `PRIVACY.md`, `docs/CODING_STYLE.md`, `docs/DATA_ANALYSIS_PIPELINE.md`, `docs/RUNTIME_DATA.md`, `docs/ANALYSIS_RUNTIME.md`, `docs/PLUGIN_PIPELINE.md`, and `docs/PHASE1_OPEN_SOURCE_LIBRARIES.md` for the repository contract, the code style, the readable pipeline, runtime architecture, and optional library layer.
 
 ## License
 

@@ -183,6 +183,8 @@ The seven scientific step modules below are the canonical human-written Phase 2 
 
 Agents may implement adapters, storage, prompts, models, RDF, orchestration, tests and other support code around these modules, but MUST NOT modify, rename, merge, replace, regenerate or move the seven step files unless Tomi explicitly authorizes a change to the specific step. If support code exposes a problem in a step, report it instead of silently patching the human-written method.
 
+The style that support code around these steps must follow — and that the rebuild toward the Multimodal-Analysis structure preserves — is documented in [docs/CODING_STYLE.md](docs/CODING_STYLE.md). Readable research code takes priority over architectural cleverness.
+
 ## TOMI-LOCKED
 
 Anything marked `TOMI-LOCKED` is a human-controlled invariant.
