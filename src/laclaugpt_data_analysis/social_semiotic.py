@@ -72,23 +72,38 @@ def _normalise_literal_field(annotation, value):
     return value
 
 
-class StrictMethodModel(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+def _normalise_taxonomy_payload(cls, value):
+    """Tolerate null/unambiguous spelling drift without weakening strict schemas."""
+    if not isinstance(value, dict):
+        return value
+    normalized = dict(value)
+    for field_name, field in cls.model_fields.items():
+        if field_name in normalized:
+            normalized[field_name] = _normalise_literal_field(
+                field.annotation,
+                normalized[field_name],
+            )
+    return normalized
+
+
+class TaxonomyToleranceMixin(BaseModel):
+    """Canonicalise unambiguous model drift in closed taxonomies (#299 rule).
+
+    The tolerance is a property of the taxonomy contract, not of whichever base
+    class a module happened to pick: every LLM-output schema that declares a
+    ``Literal`` taxonomy should inherit this mixin so a value one step from
+    exactly one canonical member is canonicalised identically everywhere.
+    Unknown extra fields keep whatever ``extra`` policy the concrete model sets.
+    """
 
     @model_validator(mode="before")
     @classmethod
     def _normalise_taxonomy_formatting(cls, value):
-        """Tolerate null/unambiguous spelling drift without weakening strict schemas."""
-        if not isinstance(value, dict):
-            return value
-        normalized = dict(value)
-        for field_name, field in cls.model_fields.items():
-            if field_name in normalized:
-                normalized[field_name] = _normalise_literal_field(
-                    field.annotation,
-                    normalized[field_name],
-                )
-        return normalized
+        return _normalise_taxonomy_payload(cls, value)
+
+
+class StrictMethodModel(TaxonomyToleranceMixin):
+    model_config = ConfigDict(extra="forbid")
 
 
 class EvidencePointer(StrictMethodModel):
