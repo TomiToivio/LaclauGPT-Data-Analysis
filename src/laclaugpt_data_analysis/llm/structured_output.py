@@ -50,6 +50,13 @@ def _positive_int_env(name: str, default: int) -> int:
         return default
     return value
 
+
+def structured_output_ceiling() -> int:
+    """Return the active structured-output ceiling after runtime overrides."""
+    return _positive_int_env(
+        MAX_STRUCTURED_NUM_PREDICT_ENV, MAX_STRUCTURED_NUM_PREDICT
+    )
+
 _FENCE_RE = re.compile(r"^```[a-zA-Z0-9_-]*\n?|\n?```$")
 
 
@@ -236,9 +243,7 @@ def chat_structured(
         STRUCTURED_NUM_PREDICT_ENV, STRUCTURED_NUM_PREDICT
     )
     minimum_ctx = _positive_int_env(STRUCTURED_NUM_CTX_ENV, STRUCTURED_NUM_CTX)
-    configured_ceiling = _positive_int_env(
-        MAX_STRUCTURED_NUM_PREDICT_ENV, MAX_STRUCTURED_NUM_PREDICT
-    )
+    configured_ceiling = structured_output_ceiling()
 
     run_options.setdefault("num_predict", default_budget)
     current_budget = int(run_options["num_predict"])

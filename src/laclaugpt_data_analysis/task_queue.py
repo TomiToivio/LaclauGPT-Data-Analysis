@@ -124,6 +124,10 @@ class DurableTaskStore(Protocol):
 
     def rearm_terminal_failure(self, idempotency_key: str) -> int: ...
 
+    def rearm_terminal_failure_if_budget_increased(
+        self, idempotency_key: str, current_ceiling: int
+    ) -> int: ...
+
     def failure_summary(self) -> dict[str, int]: ...
 
     def write_result(
@@ -197,8 +201,45 @@ class InMemoryTaskStore:
     def rearm_terminal_failure(self, idempotency_key: str) -> int:
         if idempotency_key not in self.terminal_failures:
             return 0
-        self.terminal_failures.remove(idempotency_key)
-        return 1
+        rearmed = 0
+        now = time.time()
+        for row in self.failures:
+            if (
+                row["task"]["idempotency_key"] == idempotency_key
+                and row.get("terminal") is True
+                and "rearmed_at" not in row
+            ):
+                row["rearmed_at"] = now
+                rearmed += 1
+        self.terminal_failures.discard(idempotency_key)
+        return rearmed or 1
+
+    def rearm_terminal_failure_if_budget_increased(
+        self, idempotency_key: str, current_ceiling: int
+    ) -> int:
+        if current_ceiling < 1:
+            return 0
+        rearmed = 0
+        now = time.time()
+        for row in self.failures:
+            if (
+                row["task"]["idempotency_key"] == idempotency_key
+                and row.get("terminal") is True
+                and "rearmed_at" not in row
+                and row.get("terminal_reason") == "unanalysable_within_budget"
+                and isinstance(row.get("output_budget_tokens"), int)
+                and row["output_budget_tokens"] < current_ceiling
+            ):
+                row["rearmed_at"] = now
+                rearmed += 1
+        if rearmed and not any(
+            row["task"]["idempotency_key"] == idempotency_key
+            and row.get("terminal") is True
+            and "rearmed_at" not in row
+            for row in self.failures
+        ):
+            self.terminal_failures.discard(idempotency_key)
+        return rearmed
 
     def failure_summary(self) -> dict[str, int]:
         return {
@@ -269,6 +310,8 @@ class SqliteTaskStore:
                 "error TEXT NOT NULL, provenance_json TEXT NOT NULL, response_raw TEXT, "
                 "response_raw_chars INTEGER, response_raw_truncated INTEGER, finish_reason TEXT, "
                 "diagnostic_only INTEGER, terminal INTEGER NOT NULL DEFAULT 0, "
+                "terminal_reason TEXT, output_budget_tokens INTEGER, "
+                "required_output_tokens_lower_bound INTEGER, generated_output_chars INTEGER, "
                 "rearmed_at REAL, created_at REAL NOT NULL)"
             )
             failure_columns = {
@@ -283,6 +326,10 @@ class SqliteTaskStore:
                 "finish_reason": "TEXT",
                 "diagnostic_only": "INTEGER",
                 "terminal": "INTEGER NOT NULL DEFAULT 0",
+                "terminal_reason": "TEXT",
+                "output_budget_tokens": "INTEGER",
+                "required_output_tokens_lower_bound": "INTEGER",
+                "generated_output_chars": "INTEGER",
                 "rearmed_at": "REAL",
             }.items():
                 if column not in failure_columns:
@@ -312,6 +359,26 @@ class SqliteTaskStore:
                 "UPDATE task_failures SET rearmed_at = ? "
                 "WHERE idempotency_key = ? AND terminal = 1 AND rearmed_at IS NULL",
                 (time.time(), idempotency_key),
+            )
+            return int(cursor.rowcount)
+
+    def rearm_terminal_failure_if_budget_increased(
+        self, idempotency_key: str, current_ceiling: int
+    ) -> int:
+        if current_ceiling < 1:
+            return 0
+        with sqlite3.connect(self.path) as connection:
+            cursor = connection.execute(
+                "UPDATE task_failures SET rearmed_at = ? "
+                "WHERE idempotency_key = ? AND terminal = 1 AND rearmed_at IS NULL "
+                "AND terminal_reason = ? AND output_budget_tokens IS NOT NULL "
+                "AND output_budget_tokens < ?",
+                (
+                    time.time(),
+                    idempotency_key,
+                    "unanalysable_within_budget",
+                    current_ceiling,
+                ),
             )
             return int(cursor.rowcount)
 
@@ -366,7 +433,9 @@ class SqliteTaskStore:
                 "INSERT INTO task_failures "
                 "(task_id, idempotency_key, source_url, attempt, error, provenance_json, "
                 "response_raw, response_raw_chars, response_raw_truncated, finish_reason, "
-                "diagnostic_only, terminal, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "diagnostic_only, terminal, terminal_reason, output_budget_tokens, "
+                "required_output_tokens_lower_bound, generated_output_chars, created_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     task.task_id,
                     task.idempotency_key,
@@ -380,6 +449,10 @@ class SqliteTaskStore:
                     diagnostic.get("finish_reason"),
                     int(bool(diagnostic.get("diagnostic_only"))) if diagnostic else None,
                     int(terminal),
+                    diagnostic.get("terminal_reason"),
+                    diagnostic.get("output_budget_tokens"),
+                    diagnostic.get("required_output_tokens_lower_bound"),
+                    diagnostic.get("generated_output_chars"),
                     time.time(),
                 ),
             )
@@ -462,6 +535,25 @@ class MongoTaskStore:
                 "idempotency_key": idempotency_key,
                 "terminal": True,
                 "rearmed_at": {"$exists": False},
+            },
+            {"$set": {"rearmed_at": time.time()}},
+        )
+        return int(result.modified_count)
+
+    def rearm_terminal_failure_if_budget_increased(
+        self, idempotency_key: str, current_ceiling: int
+    ) -> int:
+        if current_ceiling < 1:
+            return 0
+        result = self.failures.update_many(
+            {
+                "project_id": self.project_id,
+                "run_id": self.run_id,
+                "idempotency_key": idempotency_key,
+                "terminal": True,
+                "rearmed_at": {"$exists": False},
+                "terminal_reason": "unanalysable_within_budget",
+                "output_budget_tokens": {"$lt": current_ceiling},
             },
             {"$set": {"rearmed_at": time.time()}},
         )

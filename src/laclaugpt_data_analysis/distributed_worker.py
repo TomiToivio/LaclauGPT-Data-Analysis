@@ -29,6 +29,7 @@ from .llm.ollama import (
     configured_llm_modes,
     resolve_llm_host,
 )
+from .llm.structured_output import structured_output_ceiling
 from .phase1_laskin_runtime import load_ai26_runtime_policy
 from .staging import (
     MediaStager,
@@ -501,6 +502,16 @@ class AI26Handler:
         return analyzed.model_dump(mode="json")
 
 
+def _maybe_rearm_terminal_failure_for_higher_budget(
+    durable_store: DurableTaskStore, idempotency_key: str
+) -> int:
+    """Best-effort compatibility hook for stores that support #321 auto-rearm."""
+    rearm = getattr(durable_store, "rearm_terminal_failure_if_budget_increased", None)
+    if not callable(rearm):
+        return 0
+    return int(rearm(idempotency_key, structured_output_ceiling()))
+
+
 def _failure_diagnostics(exc: Exception) -> dict[str, Any]:
     """Extract structured-output evidence attached at the LLM boundary."""
     response_raw = getattr(exc, "response_raw", None)
@@ -564,8 +575,19 @@ class AI26TaskWorker(TaskWorker):
             self.queue.ack(claimed.message_id)
             return "duplicate"
         if self.durable_store.has_terminal_failure(task.idempotency_key):
-            self.queue.ack(claimed.message_id)
-            return "duplicate"
+            rearmed = _maybe_rearm_terminal_failure_for_higher_budget(
+                self.durable_store, task.idempotency_key
+            )
+            if rearmed:
+                logger.info(
+                    "Automatically re-armed %s terminal truncation failure record(s) "
+                    "for %s after structured-output ceiling increase",
+                    rearmed,
+                    task.idempotency_key,
+                )
+            if self.durable_store.has_terminal_failure(task.idempotency_key):
+                self.queue.ack(claimed.message_id)
+                return "duplicate"
         try:
             result = self.handler(task)
             inserted = self.durable_store.write_result(task, result, self.provenance)
@@ -620,7 +642,18 @@ def seed_ready_tasks(
             if durable_store.has_result(task.idempotency_key):
                 continue
             if durable_store.has_terminal_failure(task.idempotency_key):
-                continue
+                rearmed = _maybe_rearm_terminal_failure_for_higher_budget(
+                    durable_store, task.idempotency_key
+                )
+                if rearmed:
+                    logger.info(
+                        "Automatically re-armed %s terminal truncation failure record(s) "
+                        "for %s during seed after structured-output ceiling increase",
+                        rearmed,
+                        task.idempotency_key,
+                    )
+                if durable_store.has_terminal_failure(task.idempotency_key):
+                    continue
             queue.publish(task)
             count += 1
             if count >= limit:
