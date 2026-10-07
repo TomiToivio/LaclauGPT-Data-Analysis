@@ -25,6 +25,18 @@ Confidence = Literal["high", "medium", "low", "unknown"]
 _LITERAL_SIMILARITY_FLOOR = 0.85
 
 
+def _has_negation_prefix_mismatch(value: str, member: str) -> bool:
+    """Reject close spellings that reverse a taxonomy value's meaning."""
+    value_folded = value.casefold()
+    member_folded = member.casefold()
+    for prefix in ("un", "in", "im", "ir", "il", "non", "dis", "de"):
+        if value_folded == f"{prefix}{member_folded}":
+            return True
+        if member_folded == f"{prefix}{value_folded}":
+            return True
+    return False
+
+
 def _normalise_literal_member(value, members: tuple[str, ...]):
     """Normalise only unambiguous model-formatting drift for a closed taxonomy."""
     if value is None:
@@ -48,7 +60,13 @@ def _normalise_literal_member(value, members: tuple[str, ...]):
 
     best_score = ranked[0][0]
     best = [member for score, member in ranked if score == best_score]
-    return best[0] if len(best) == 1 else value
+    if len(best) != 1:
+        return value
+
+    candidate = best[0]
+    if _has_negation_prefix_mismatch(value, candidate):
+        return value
+    return candidate
 
 
 def _normalise_literal_field(annotation, value):
