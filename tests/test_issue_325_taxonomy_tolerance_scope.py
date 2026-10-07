@@ -141,3 +141,38 @@ def test_tolerance_is_shared_across_both_families_but_extra_policy_is_local() ->
 
     # The Critical AI family keeps ignoring unknowns, exactly as before #325.
     assert CriticalAIObject.model_validate({"types": [], "unexpected": True}).types == []
+
+
+@pytest.mark.parametrize(
+    ("model", "payload"),
+    [
+        (
+            CriticalAIFinding,
+            {
+                "dimension": "labour",
+                "claim": "Synthetic claim.",
+                "status": "unsupported",
+            },
+        ),
+        (
+            CriticalAIFinding,
+            {
+                "dimension": "labour",
+                "claim": "Synthetic claim.",
+                "review": {"status": "invalidated"},
+            },
+        ),
+        (
+            DNAStatementCandidate,
+            {
+                "concept": {"label": "synthetic-concept"},
+                "organization": {"label": "Synthetic Institute"},
+                "evidence_text": "Synthetic evidence.",
+                "agreement_status": "unambiguous",
+            },
+        ),
+    ],
+)
+def test_taxonomy_tolerance_never_reverses_semantic_polarity(model, payload) -> None:
+    with pytest.raises(ValidationError):
+        model.model_validate(payload)
