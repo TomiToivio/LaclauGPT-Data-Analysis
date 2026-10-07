@@ -22,6 +22,7 @@ from .canonical_pipeline import PipelineContext, run_canonical_pipeline
 from .codebooks import load_codebook
 from .config import Settings, load_settings
 from .llm.base import LLMTruncationError
+from .llm.structured_output import structured_output_ceiling
 from .llm.ollama import (
     LLM_ENDPOINT_ENV_ALIAS,
     LLM_HOST_ENV,
@@ -564,8 +565,19 @@ class AI26TaskWorker(TaskWorker):
             self.queue.ack(claimed.message_id)
             return "duplicate"
         if self.durable_store.has_terminal_failure(task.idempotency_key):
-            self.queue.ack(claimed.message_id)
-            return "duplicate"
+            rearmed = self.durable_store.rearm_terminal_failure_if_budget_increased(
+                task.idempotency_key, structured_output_ceiling()
+            )
+            if rearmed:
+                logger.info(
+                    "Automatically re-armed %s terminal truncation failure record(s) "
+                    "for %s after structured-output ceiling increase",
+                    rearmed,
+                    task.idempotency_key,
+                )
+            if self.durable_store.has_terminal_failure(task.idempotency_key):
+                self.queue.ack(claimed.message_id)
+                return "duplicate"
         try:
             result = self.handler(task)
             inserted = self.durable_store.write_result(task, result, self.provenance)
@@ -620,7 +632,18 @@ def seed_ready_tasks(
             if durable_store.has_result(task.idempotency_key):
                 continue
             if durable_store.has_terminal_failure(task.idempotency_key):
-                continue
+                rearmed = durable_store.rearm_terminal_failure_if_budget_increased(
+                    task.idempotency_key, structured_output_ceiling()
+                )
+                if rearmed:
+                    logger.info(
+                        "Automatically re-armed %s terminal truncation failure record(s) "
+                        "for %s during seed after structured-output ceiling increase",
+                        rearmed,
+                        task.idempotency_key,
+                    )
+                if durable_store.has_terminal_failure(task.idempotency_key):
+                    continue
             queue.publish(task)
             count += 1
             if count >= limit:
