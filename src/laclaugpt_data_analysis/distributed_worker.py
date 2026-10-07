@@ -502,6 +502,16 @@ class AI26Handler:
         return analyzed.model_dump(mode="json")
 
 
+def _maybe_rearm_terminal_failure_for_higher_budget(
+    durable_store: DurableTaskStore, idempotency_key: str
+) -> int:
+    """Best-effort compatibility hook for stores that support #321 auto-rearm."""
+    rearm = getattr(durable_store, "rearm_terminal_failure_if_budget_increased", None)
+    if not callable(rearm):
+        return 0
+    return int(rearm(idempotency_key, structured_output_ceiling()))
+
+
 def _failure_diagnostics(exc: Exception) -> dict[str, Any]:
     """Extract structured-output evidence attached at the LLM boundary."""
     response_raw = getattr(exc, "response_raw", None)
@@ -565,8 +575,8 @@ class AI26TaskWorker(TaskWorker):
             self.queue.ack(claimed.message_id)
             return "duplicate"
         if self.durable_store.has_terminal_failure(task.idempotency_key):
-            rearmed = self.durable_store.rearm_terminal_failure_if_budget_increased(
-                task.idempotency_key, structured_output_ceiling()
+            rearmed = _maybe_rearm_terminal_failure_for_higher_budget(
+                self.durable_store, task.idempotency_key
             )
             if rearmed:
                 logger.info(
@@ -632,8 +642,8 @@ def seed_ready_tasks(
             if durable_store.has_result(task.idempotency_key):
                 continue
             if durable_store.has_terminal_failure(task.idempotency_key):
-                rearmed = durable_store.rearm_terminal_failure_if_budget_increased(
-                    task.idempotency_key, structured_output_ceiling()
+                rearmed = _maybe_rearm_terminal_failure_for_higher_budget(
+                    durable_store, task.idempotency_key
                 )
                 if rearmed:
                     logger.info(
