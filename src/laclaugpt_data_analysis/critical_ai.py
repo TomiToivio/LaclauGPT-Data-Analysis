@@ -19,6 +19,7 @@ from .context_envelope import PromptEnvelope, build_prompt_envelope
 from .dna_statement_coding import run_optional_dna_statement_coding
 from .llm.structured_output import chat_structured
 from .prompt_library import load_prompt, prompt_provenance
+from .social_semiotic import TaxonomyToleranceMixin
 
 if TYPE_CHECKING:
     from .canonical_pipeline import PipelineContext
@@ -43,7 +44,7 @@ FindingStatus = Literal["supported", "tentative", "insufficient_evidence", "not_
 ReviewStatus = Literal["provisional", "reviewed", "validated", "rejected"]
 
 
-class CriticalAIObject(BaseModel):
+class CriticalAIObject(TaxonomyToleranceMixin):
     types: list[
         Literal[
             "model",
@@ -84,12 +85,12 @@ class CriticalAIInterpretation(BaseModel):
     confidence: float | None = Field(default=None, ge=0, le=1)
 
 
-class CriticalAIReview(BaseModel):
+class CriticalAIReview(TaxonomyToleranceMixin):
     status: ReviewStatus = "provisional"
     notes: str | None = None
 
 
-class CriticalAIFinding(BaseModel):
+class CriticalAIFinding(TaxonomyToleranceMixin):
     finding_id: str = ""
     dimension: CriticalAIDimension
     claim: str

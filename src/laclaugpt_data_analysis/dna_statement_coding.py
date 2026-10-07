@@ -20,6 +20,7 @@ from .context_envelope import PromptEnvelope, build_prompt_envelope
 from .discourse_network.models import DiscourseStatement, EvidenceSpan, Stance, ValidationStatus
 from .llm.structured_output import chat_structured
 from .prompt_library import load_prompt, prompt_provenance
+from .social_semiotic import TaxonomyToleranceMixin
 
 if TYPE_CHECKING:
     from .canonical_pipeline import PipelineContext
@@ -43,7 +44,7 @@ class DNAConceptCandidate(BaseModel):
     mapping_confidence: float | None = Field(default=None, ge=0, le=1)
 
 
-class DNAStatementCandidate(BaseModel):
+class DNAStatementCandidate(TaxonomyToleranceMixin):
     person: DNAEntityCandidate | None = None
     organization: DNAEntityCandidate | None = None
     concept: DNAConceptCandidate
