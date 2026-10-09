@@ -29,7 +29,9 @@ Failures are written to durable storage. Redis only receives a compact dead-lett
 
 A failure event whose attempt reaches `max_attempts` is marked `terminal=true` in durable storage. Ready handoffs with an unrearmed terminal failure are skipped by subsequent seed cycles, so permanently failing documents cannot be reintroduced forever. Failure monitoring reports three separate counts: total failure events, distinct idempotency keys that have failed, and currently terminal distinct documents.
 
-Terminal quarantine is reversible. After a model, codebook, configuration, or parser fix, re-arm a document by running the AI26 worker with:
+**One exception is automatic (issue #321).** A failure that dead-lettered because the structured-output ceiling was exhausted (`terminal_reason=unanalysable_within_budget`) is re-armed **once** when the running ceiling — as reported by `structured_output_ceiling()` — is strictly greater than the `output_budget_tokens` recorded on the failure. A raised ceiling therefore frees the documents it previously killed, without an operator passing a flag. Failures with any other `terminal_reason`, and failures carrying no recorded budget, are never re-armed automatically.
+
+Terminal quarantine is otherwise reversible. After a model, codebook, configuration, or parser fix, re-arm a document by running the AI26 worker with:
 
 ```text
 --rearm-failed <IDEMPOTENCY_KEY>
