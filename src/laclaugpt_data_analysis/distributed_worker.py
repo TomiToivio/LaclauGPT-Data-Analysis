@@ -37,7 +37,7 @@ from .staging import (
     ObjectUnavailableError,
     StagingPolicy,
 )
-from .storage import artifact_store
+from .storage import artifact_store, mongo_client
 from .task_queue import (
     DurableTaskStore,
     TaskEnvelope,
@@ -352,11 +352,7 @@ class MongoCollectionHandoff:
     def __init__(self, settings: Settings, *, not_before: str | None = None):
         if not settings.mongo_url:
             raise ValueError("MongoDB is required for the AI26 distributed worker")
-        try:
-            from pymongo import MongoClient
-        except ImportError as exc:
-            raise RuntimeError("MongoDB worker support requires: pip install '.[remote]'") from exc
-        self.collection = MongoClient(settings.mongo_url)[settings.mongo_database][
+        self.collection = mongo_client(settings.mongo_url)[settings.mongo_database][
             collection_records_name(settings)
         ]
         self.project_id = settings.project_id

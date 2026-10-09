@@ -23,6 +23,15 @@ schedule:
   max_tasks_per_tick: 10
   # Reclaim tasks whose lease went idle (crashed worker, interrupted host).
   reclaim_idle_ms: 300000
+  # Wall-clock ceiling for ONE cycle, in seconds (issue #332). max_tasks_per_tick
+  # bounds how much work is claimed, never how long it takes, so a task blocked
+  # on an unanswered socket read could hold the flock indefinitely and starve
+  # every later tick. 5400 s = 90 min, deliberately above the documented 30-70 min
+  # band: a slow healthy cycle is never truncated, only a pathological one.
+  # Override with LACLAUGPT_CYCLE_MAX_SECONDS.
+  cycle_max_seconds: 5400
+  # SIGTERM -> SIGKILL grace, so the worker can flush logs before being reaped.
+  cycle_kill_grace_seconds: 30
 
 concurrency:
   # OS-level lock prevents overlapping mutating runs. The wrapper takes flock

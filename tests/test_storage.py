@@ -77,10 +77,15 @@ def test_s3_artifact_store_constructs_allas_compatible_client(monkeypatch):
     assert kwargs["region_name"] == "regionOne"
     assert kwargs["aws_access_key_id"] == "synthetic-access"
     assert kwargs["aws_secret_access_key"] == "synthetic-secret"
-    assert kwargs["config"].kwargs == {
-        "signature_version": "s3",
-        "s3": {"addressing_style": "auto"},
-    }
+    # The Allas-compatible settings must survive, and the client must ALSO carry
+    # finite connect/read timeouts and bounded retries (issue #332): an
+    # unbounded read is what held the analysis cycle lock for six hours.
+    config = kwargs["config"].kwargs
+    assert config["signature_version"] == "s3"
+    assert config["s3"] == {"addressing_style": "auto"}
+    assert config["connect_timeout"] > 0
+    assert config["read_timeout"] > 0
+    assert config["retries"]["max_attempts"] > 0
 
 
 def test_artifact_store_forwards_s3_client_settings(monkeypatch):

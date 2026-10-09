@@ -9,7 +9,9 @@ falling back to local persistence.
 from __future__ import annotations
 
 import csv
+import importlib.util
 import json
+import os
 import sqlite3
 from collections.abc import Iterable, Mapping
 from functools import cache
@@ -186,6 +188,49 @@ class LocalArtifactStore:
             path.unlink()
 
 
+def _s3_timeout_env(name: str, default: float) -> float:
+    """Read a positive float timeout from the environment, falling back safely.
+
+    A malformed or non-positive value must never disable the bound — a timeout of
+    zero would restore the exact indefinite-block failure this guards against, so
+    fall back to the default instead of trusting the value.
+    """
+    raw = os.getenv(f"LACLAUGPT_{name}", "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def _s3_connect_timeout_seconds() -> float:
+    """Seconds allowed to establish the TCP/TLS connection to the object store."""
+    return _s3_timeout_env("S3_CONNECT_TIMEOUT_SECONDS", 10.0)
+
+
+def _s3_read_timeout_seconds() -> float:
+    """Seconds allowed for a single read from the object store before it raises.
+
+    Generous by design: this bounds a *stalled* socket, not a legitimately slow
+    upload. It only needs to be far below the cycle's wall-clock ceiling (#332).
+    """
+    return _s3_timeout_env("S3_READ_TIMEOUT_SECONDS", 60.0)
+
+
+def _s3_max_attempts() -> int:
+    """Bounded retry attempts for a timed-out object-store operation."""
+    raw = os.getenv("LACLAUGPT_S3_MAX_ATTEMPTS", "").strip()
+    if not raw:
+        return 3
+    try:
+        value = int(raw)
+    except ValueError:
+        return 3
+    return value if value > 0 else 3
+
+
 class S3ArtifactStore:
     def __init__(
         self,
@@ -205,6 +250,11 @@ class S3ArtifactStore:
             raise RuntimeError("S3 support requires: pip install '.[remote]'") from exc
         self.bucket = bucket
         self.prefix = prefix.rstrip("/")
+        # A read with no deadline does not raise: it WAITS. That is how a single
+        # object-store stall held the AI26 cycle lock for six hours while every
+        # hourly tick exited "already running" and the queue backed up behind it
+        # (issue #332). Bound connect/read and retries so a stalled socket
+        # surfaces as a retryable error instead of an indefinite block.
         self.client = boto3.client(
             "s3",
             endpoint_url=endpoint_url or None,
@@ -214,6 +264,12 @@ class S3ArtifactStore:
             config=Config(
                 signature_version=signature_version,
                 s3={"addressing_style": addressing_style},
+                connect_timeout=_s3_connect_timeout_seconds(),
+                read_timeout=_s3_read_timeout_seconds(),
+                retries={
+                    "max_attempts": _s3_max_attempts(),
+                    "mode": "standard",
+                },
             ),
         )
 
@@ -287,6 +343,78 @@ class S3ArtifactStore:
         self.client.delete_object(Bucket=self.bucket, Key=self._key(key))
 
 
+def _redis_timeout_seconds(name: str, default: float) -> float:
+    """Positive float from the environment, or the default.
+
+    Never returns 0: a zero socket timeout would restore the indefinite block that
+    held the AI26 cycle lock (issue #332).
+    """
+    raw = os.getenv(f"LACLAUGPT_{name}", "").strip()
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError:
+        return default
+    return value if value > 0 else default
+
+
+def mongo_client(url: str, *, server_selection_timeout_ms: float | None = None):
+    """Build a MongoClient with a FINITE server-selection budget.
+
+    pymongo's server-selection timeout bounds how long an operation waits for a
+    usable server; without it a lost primary blocks the call indefinitely — the
+    same failure shape as the unbounded Redis/S3 reads in #332.
+    """
+    try:
+        from pymongo import MongoClient
+    except ImportError as exc:  # pragma: no cover - optional runtime dependency
+        raise RuntimeError("pymongo is required: pip install '.[remote]'") from exc
+
+    if server_selection_timeout_ms is not None and server_selection_timeout_ms > 0:
+        budget = server_selection_timeout_ms
+    else:
+        budget = _redis_timeout_seconds("MONGO_SERVER_SELECTION_TIMEOUT_MS", 5000.0)
+    return MongoClient(url, serverSelectionTimeoutMS=budget)
+
+
+def redis_client(
+    url: str,
+    *,
+    decode_responses: bool = True,
+    connect_timeout: float | None = None,
+    socket_timeout: float | None = None,
+):
+    """Build a Redis client with FINITE socket timeouts.
+
+    Centralised so every Redis connection in the runtime shares one bound: a
+    stalled Redis read previously blocked a worker indefinitely, and the retry
+    policy never saw an exception to act on (#332).
+
+    Callers that need a tighter probe budget (preflight) may pass explicit
+    overrides; both are validated, so neither can be set to 0 and silently
+    reintroduce the indefinite block.
+    """
+    import redis  # dependency check: raises at call time if redis is not installed
+
+    connect = (
+        connect_timeout
+        if connect_timeout is not None and connect_timeout > 0
+        else _redis_timeout_seconds("REDIS_CONNECT_TIMEOUT_SECONDS", 10.0)
+    )
+    read = (
+        socket_timeout
+        if socket_timeout is not None and socket_timeout > 0
+        else _redis_timeout_seconds("REDIS_SOCKET_TIMEOUT_SECONDS", 30.0)
+    )
+    return redis.Redis.from_url(
+        url,
+        decode_responses=decode_responses,
+        socket_connect_timeout=connect,
+        socket_timeout=read,
+    )
+
+
 class MemoryCache:
     def __init__(self):
         self.values: dict[str, str] = {}
@@ -300,11 +428,9 @@ class MemoryCache:
 
 class RedisCache:
     def __init__(self, url: str, namespace: str):
-        try:
-            import redis
-        except ImportError as exc:
-            raise RuntimeError("Redis support requires: pip install '.[remote]'") from exc
-        self.client = redis.Redis.from_url(url, decode_responses=True)
+        if importlib.util.find_spec("redis") is None:
+            raise RuntimeError("Redis support requires: pip install '.[remote]'")
+        self.client = redis_client(url)
         self.namespace = namespace
 
     def _key(self, key: str) -> str:

@@ -169,14 +169,53 @@ The wrapper resolves the repository, loads the **private** environment itself
 bounded batch and exits. Exit codes:
 
 ```text
-0  success
-2  configuration or preflight failure
-3  another tick holds the lock (benign; the previous run is still working)
-4  periodic-report stage failed after a successful worker cycle
+0   success
+2   configuration or preflight failure
+3   another tick holds the lock (benign; the previous run is still working)
+4   periodic-report stage failed after a successful worker cycle
+124 the cycle's wall-clock ceiling elapsed; the worker was terminated
+137 the ceiling elapsed and SIGTERM was ignored, so the worker was SIGKILLed
 ```
 
 A cycle that attempts work and completes none of it exits non-zero, so cron or
 monitoring can detect a broken analysis path instead of silently accepting it.
+
+### The cycle wall-clock ceiling (issue #332)
+
+`LACLAUGPT_MAX_TASKS` bounds **how much work** a cycle claims. It never bounded
+**how long** a cycle could take — so a single task blocked on an unanswered
+socket read could hold the `flock` for hours, starving every later tick (each
+exiting `3`, `already running`), while a task sat `pending` in the consumer
+group. On 2026-10-09 one cycle held the lock for **6 h 22 m**.
+
+The wrapper now bounds the cycle in wall-clock time:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `LACLAUGPT_CYCLE_MAX_SECONDS` | `5400` (90 min) | Ceiling for one cycle. Deliberately **above** the documented 30–70 min band, so a slow healthy cycle is never truncated — only a pathological one. |
+| `LACLAUGPT_CYCLE_KILL_GRACE_SECONDS` | `30` | SIGTERM → SIGKILL grace, so the worker can flush logs before being reaped. |
+
+The `timeout` wrapper signals the worker's whole **process group**, so threads
+and spawned subprocesses die with it rather than leaving a grandchild holding
+the lock. A termination is recorded in the log as
+`… CYCLE CEILING exceeded … worker_status=124`, which is distinct from a task
+failure and flows into the existing non-zero exit path (the report stage is
+skipped, as for any non-zero worker status).
+
+Termination is **safe**: a killed cycle leaves its Redis message unacknowledged,
+so the `--reclaim-idle-ms` lease lets a later cycle reclaim it, and MongoDB's
+unique `(project_id, run_id, idempotency_key)` result index keeps the durable
+result idempotent. **Never** move the consumer-group cursor backwards to
+"recover" a stuck cycle — `XGROUP SETID` can re-process thousands of already
+handled entries.
+
+The partner fix lives in the runtime: the S3 and Redis clients now carry finite
+connect/read/socket timeouts (`LACLAUGPT_S3_CONNECT_TIMEOUT_SECONDS`,
+`LACLAUGPT_S3_READ_TIMEOUT_SECONDS`, `LACLAUGPT_S3_MAX_ATTEMPTS`,
+`LACLAUGPT_REDIS_CONNECT_TIMEOUT_SECONDS`, `LACLAUGPT_REDIS_SOCKET_TIMEOUT_SECONDS`).
+A blocked read now **raises** and takes the normal retry/dead-letter path
+instead of waiting forever — the ceiling is the backstop, not the primary
+mechanism.
 
 ## Debug mode
 

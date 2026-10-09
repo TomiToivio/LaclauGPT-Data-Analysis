@@ -51,8 +51,9 @@ class FakeDatabase:
 class FakeClient:
     databases: dict[str, FakeDatabase] = {}
 
-    def __init__(self, url: str):
+    def __init__(self, url: str, **kwargs):
         self.url = url
+        self.kwargs = kwargs
 
     def __getitem__(self, name: str) -> FakeDatabase:
         return self.databases.setdefault(name, FakeDatabase())

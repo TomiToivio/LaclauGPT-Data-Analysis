@@ -8,6 +8,7 @@ Used by ``scripts/run_ai26_laskin.sh --check`` and by debug mode.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import sys
@@ -16,7 +17,7 @@ from uuid import uuid4
 
 from .debug_mode import sanitize_url
 from .staging import StagingPolicy
-from .storage import S3ArtifactStore
+from .storage import S3ArtifactStore, redis_client
 
 
 def _check_mongodb(settings: Any) -> dict[str, Any]:
@@ -38,12 +39,12 @@ def _check_mongodb(settings: Any) -> dict[str, Any]:
 def _check_redis(settings: Any) -> dict[str, Any]:
     if not settings.redis_url:
         return {"configured": False, "reachable": None}
-    try:
-        import redis
-    except ImportError:
+    if importlib.util.find_spec("redis") is None:
         return {"configured": True, "reachable": None, "error": "redis_not_installed"}
     try:
-        client = redis.Redis.from_url(settings.redis_url, socket_connect_timeout=3)
+        # A bare connect-only timeout left the READ unbounded: a reachable host
+        # that then stalls would hang the probe forever (#332). Bound both.
+        client = redis_client(settings.redis_url, connect_timeout=3, socket_timeout=5)
         client.ping()
         return {"configured": True, "reachable": True}
     except Exception as exc:  # noqa: BLE001

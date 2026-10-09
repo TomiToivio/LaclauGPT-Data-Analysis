@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Mapping, Protocol
 
 from .distributed import ProjectNamespace
+from .storage import redis_client
 
 
 def _canonical_json(payload: Mapping[str, Any]) -> str:
@@ -120,11 +121,7 @@ class RedisConfigStore:
         namespace: ProjectNamespace,
         snapshots: FileConfigStore,
     ):
-        try:
-            import redis
-        except ImportError as exc:
-            raise RuntimeError("Redis coordination requires: pip install '.[remote]'") from exc
-        self.client = redis.Redis.from_url(url, decode_responses=True)
+        self.client = redis_client(url)
         self.namespace = namespace
         self.snapshots = snapshots
 
@@ -286,11 +283,9 @@ class RedisMessageBus:
         service: str,
         consumer: str,
     ):
-        try:
-            import redis
-        except ImportError as exc:
-            raise RuntimeError("Redis coordination requires: pip install '.[remote]'") from exc
-        self.client = redis.Redis.from_url(url, decode_responses=True)
+        import redis  # used below for the BUSYGROUP response check
+
+        self.client = redis_client(url)
         self.stream = namespace.stream_key(f"messages:{service}")
         self.group = f"{service}-consumers"
         self.consumer = consumer

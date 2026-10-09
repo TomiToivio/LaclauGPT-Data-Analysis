@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol
 
 from .config import Settings
+from .storage import mongo_client, redis_client
 
 FAILURE_RESPONSE_RAW_MAX_CHARS = 16_384
 
@@ -471,11 +472,7 @@ class MongoTaskStore:
         project_id: str,
         run_id: str,
     ) -> None:
-        try:
-            from pymongo import MongoClient
-        except ImportError as exc:  # pragma: no cover - optional runtime dependency
-            raise RuntimeError("pymongo is required for MongoTaskStore") from exc
-        client = MongoClient(mongo_url)
+        client = mongo_client(mongo_url)
         db = client[database]
         self.results = db[result_collection]
         self.failures = db[failure_collection]
@@ -661,11 +658,7 @@ class RedisStreamQueue:
         dead_letter_stream: str | None = None,
         heartbeat_key: str | None = None,
     ):
-        try:
-            import redis
-        except ImportError as exc:  # pragma: no cover - optional runtime dependency
-            raise RuntimeError("redis is required for RedisStreamQueue") from exc
-        self.redis = redis.Redis.from_url(url, decode_responses=True)
+        self.redis = redis_client(url)
         self.stream = stream
         self.group = group
         self.consumer = consumer
