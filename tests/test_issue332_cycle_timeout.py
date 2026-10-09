@@ -58,14 +58,19 @@ def test_the_ceiling_is_configurable_from_the_environment() -> None:
 def test_the_default_ceiling_is_above_the_documented_healthy_band() -> None:
     """A healthy-but-slow cycle must never be truncated.
 
-    The operator guide documents 30-70 min as the normal band. A default at or
-    below the top of that band would kill legitimate cycles, so the default must
-    exceed it.
+    The operator guide documents 30-70 min as the normal band, and a sibling fix
+    (#333) shipped a 70-min default. That value is measurably too tight: of 495
+    logged cycles, FOUR succeeded with a runtime above 70 min — 110.3, 110.2,
+    85.7 and 74.3 min. A 70-min ceiling would have truncated all four mid-work.
+    The ceiling exists to stop a pathological hang, so it must clear the
+    observed healthy maximum with margin.
     """
     match = re.search(r"CYCLE_MAX_SECONDS=\$\{LACLAUGPT_CYCLE_MAX_SECONDS:-(\d+)\}", wrapper())
     assert match, "the cycle ceiling default is missing"
     default = int(match.group(1))
     assert default > 70 * 60, f"ceiling {default}s is inside the 30-70 min healthy band"
+    # and it must clear the longest SUCCESSFUL observed cycle (110.3 min)
+    assert default > int(110.3 * 60), "ceiling does not clear the longest healthy cycle"
 
 
 def test_a_timeout_is_distinguishable_from_a_worker_failure() -> None:
@@ -191,9 +196,22 @@ def test_a_valid_timeout_is_honoured(monkeypatch: pytest.MonkeyPatch) -> None:
     assert storage._s3_max_attempts() == 7
 
 
-def test_the_execution_layer_declares_the_ceiling() -> None:
-    """The public execution contract must state the ceiling, not only the wrapper."""
+def test_the_execution_layer_agrees_with_the_wrapper() -> None:
+    """The public execution contract must state the ceiling, and match the wrapper.
+
+    Two places holding the same number drift apart silently, so assert they are
+    the SAME value rather than each clearing a threshold independently.
+    """
     text = EXECUTION.read_text(encoding="utf-8")
     assert "cycle_max_seconds" in text
-    match = re.search(r"cycle_max_seconds:\s*(\d+)", text)
-    assert match and int(match.group(1)) > 70 * 60
+    declared = re.search(r"cycle_max_seconds:\s*(\d+)", text)
+    assert declared, "the execution layer no longer declares cycle_max_seconds"
+    wrapper_default = re.search(
+        r"CYCLE_MAX_SECONDS=\$\{LACLAUGPT_CYCLE_MAX_SECONDS:-(\d+)\}", wrapper()
+    )
+    assert wrapper_default, "the wrapper no longer sets a default ceiling"
+    assert declared.group(1) == wrapper_default.group(1), (
+        f"execution layer says {declared.group(1)}s but the wrapper defaults to "
+        f"{wrapper_default.group(1)}s"
+    )
+    assert int(declared.group(1)) > 70 * 60

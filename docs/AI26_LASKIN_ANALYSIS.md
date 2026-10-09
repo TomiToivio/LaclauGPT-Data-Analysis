@@ -192,7 +192,7 @@ The wrapper now bounds the cycle in wall-clock time:
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
-| `LACLAUGPT_CYCLE_MAX_SECONDS` | `5400` (90 min) | Ceiling for one cycle. Deliberately **above** the documented 30–70 min band, so a slow healthy cycle is never truncated — only a pathological one. |
+| `LACLAUGPT_CYCLE_MAX_SECONDS` | `9000` (150 min) | Ceiling for one cycle. Chosen from measurement, not round numbers: of 495 logged cycles, four **succeeded** above the documented 30–70 min band (110.3, 110.2, 85.7, 74.3 min), so the ceiling must clear the observed healthy maximum (110 min) with margin while still breaking the observed 382-min hang. |
 | `LACLAUGPT_CYCLE_KILL_GRACE_SECONDS` | `30` | SIGTERM → SIGKILL grace, so the worker can flush logs before being reaped. |
 
 The `timeout` wrapper signals the worker's whole **process group**, so threads

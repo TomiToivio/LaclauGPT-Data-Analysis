@@ -30,12 +30,14 @@ RECLAIM_IDLE_MS=${LACLAUGPT_RECLAIM_IDLE_MS:-300000}
 # a socket read held the flock for 6 h+ (measured 382 min on 2026-10-09) while
 # every hourly tick exited "already running".
 #
-# 90 min is deliberate, and it is evidence-based: of 495 logged cycles, four
-# SUCCESSFUL ones (status=0) ran past 70 min — 110.3, 110.2, 85.7 and 74.3 min.
-# A 70-min ceiling would have truncated all four mid-work. The ceiling exists to
-# stop a pathological hang, not a slow-but-healthy cycle, so it must clear the
-# observed healthy maximum with margin.
-CYCLE_MAX_SECONDS=${LACLAUGPT_CYCLE_MAX_SECONDS:-5400}
+# 150 min is evidence-based, not round-numbered. Of 495 logged cycles the median
+# is 9 min and p90 is 41, but FOUR succeeded (status=0) above the documented
+# 30-70 min band: 110.3, 110.2, 85.7 and 74.3 min. A 70-min ceiling truncates
+# all four mid-work, and even 90 min would clip the 110-min pair. The ceiling
+# exists to break a pathological hang, not a slow-but-healthy cycle, so it must
+# clear the observed healthy maximum (110.3 min) with real margin: 150 min is
+# +36%, and still kills the 382-min hang at less than half its observed length.
+CYCLE_MAX_SECONDS=${LACLAUGPT_CYCLE_MAX_SECONDS:-9000}
 if [[ ! "$CYCLE_MAX_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
   fail "LACLAUGPT_CYCLE_MAX_SECONDS must be a positive integer (seconds)"
 fi
