@@ -67,6 +67,16 @@ set -a
 . "$ENV_FILE"
 set +a
 
+# A bounded task count is not a wall-clock bound: an idle network read can
+# otherwise pin flock indefinitely. The private env may override the default.
+CYCLE_TIMEOUT_SECONDS=${LACLAUGPT_AI26_CYCLE_TIMEOUT_SECONDS:-4200}
+if [[ ! "$CYCLE_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+  fail "LACLAUGPT_AI26_CYCLE_TIMEOUT_SECONDS must be a positive integer (seconds)"
+fi
+if ! command -v timeout >/dev/null 2>&1; then
+  fail "GNU timeout is required for the AI26 worker watchdog"
+fi
+
 # Required settings: fail fast rather than half-run a distributed job.
 : "${LACLAUGPT_PROJECT_ID:?LACLAUGPT_PROJECT_ID is required}"
 : "${LACLAUGPT_RUN_ID:?LACLAUGPT_RUN_ID is required}"
@@ -194,10 +204,11 @@ if [[ "$MANIFEST_TREE" != "$RUNTIME_TREE" || "$MANIFEST_GIT" != "$RUNTIME_GIT" ]
   log "AI26 manifest re-frozen for scheduled analysis git=$RUNTIME_GIT tree=$RUNTIME_TREE"
 fi
 
-log "AI26 Laskin analysis start run=$LACLAUGPT_RUN_ID max_tasks=$MAX_TASKS mode=$RUN_MODE debug=${LACLAUGPT_DEBUG:-0}"
+log "AI26 Laskin analysis start run=$LACLAUGPT_RUN_ID max_tasks=$MAX_TASKS timeout_seconds=$CYCLE_TIMEOUT_SECONDS mode=$RUN_MODE debug=${LACLAUGPT_DEBUG:-0}"
 
 set +e
-"$ROOT_DIR/.venv/bin/laclaugpt-analysis-worker" \
+timeout --signal=TERM --kill-after=30s "${CYCLE_TIMEOUT_SECONDS}s" \
+  "$ROOT_DIR/.venv/bin/laclaugpt-analysis-worker" \
   --run-manifest "$RUN_MANIFEST" \
   --private-config "$PRIVATE_CONFIG" \
   --codebook "$CODEBOOK" \
@@ -207,6 +218,11 @@ set +e
   --max-tasks "$MAX_TASKS"
 WORKER_STATUS=$?
 set -e
+if [[ "$WORKER_STATUS" -eq 124 ]]; then
+  log "AI26 Laskin analysis worker timed out after ${CYCLE_TIMEOUT_SECONDS}s (TERM, then KILL after 30s); pending tasks left for safe reclaim on a later cycle"
+elif [[ "$WORKER_STATUS" -eq 137 ]]; then
+  log "AI26 Laskin analysis worker was killed (possible watchdog escalation or external SIGKILL)"
+fi
 REPORT_STATUS="not-run"
 FINAL_STATUS=$WORKER_STATUS
 
