@@ -25,6 +25,23 @@ LOCK_FILE=${LACLAUGPT_AI26_ANALYSIS_LOCK:-}
 
 MAX_TASKS=${LACLAUGPT_MAX_TASKS:-10}
 RECLAIM_IDLE_MS=${LACLAUGPT_RECLAIM_IDLE_MS:-300000}
+# Wall-clock ceiling for one bounded cycle (issue #332): --max-tasks bounds how
+# much WORK is claimed, never how long it may take, so a single task blocked on
+# a socket read held the flock for 6 h+ (measured 382 min on 2026-10-09) while
+# every hourly tick exited "already running".
+#
+# 150 min is evidence-based, not round-numbered. Of 495 logged cycles the median
+# is 9 min and p90 is 41, but FOUR succeeded (status=0) above the documented
+# 30-70 min band: 110.3, 110.2, 85.7 and 74.3 min. A 70-min ceiling truncates
+# all four mid-work, and even 90 min would clip the 110-min pair. The ceiling
+# exists to break a pathological hang, not a slow-but-healthy cycle, so it must
+# clear the observed healthy maximum (110.3 min) with real margin: 150 min is
+# +36%, and still kills the 382-min hang at less than half its observed length.
+CYCLE_MAX_SECONDS=${LACLAUGPT_CYCLE_MAX_SECONDS:-9000}
+if [[ ! "$CYCLE_MAX_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+  fail "LACLAUGPT_CYCLE_MAX_SECONDS must be a positive integer (seconds)"
+fi
+CYCLE_KILL_GRACE_SECONDS=${LACLAUGPT_CYCLE_KILL_GRACE_SECONDS:-30}
 RUN_MODE="once"
 CHECK_ONLY=0
 DEBUG_FLAG=0
@@ -67,12 +84,7 @@ set -a
 . "$ENV_FILE"
 set +a
 
-# A bounded task count is not a wall-clock bound: an idle network read can
-# otherwise pin flock indefinitely. The private env may override the default.
-CYCLE_TIMEOUT_SECONDS=${LACLAUGPT_AI26_CYCLE_TIMEOUT_SECONDS:-4200}
-if [[ ! "$CYCLE_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
-  fail "LACLAUGPT_AI26_CYCLE_TIMEOUT_SECONDS must be a positive integer (seconds)"
-fi
+# GNU timeout is required for the worker watchdog (issue #332).
 if ! command -v timeout >/dev/null 2>&1; then
   fail "GNU timeout is required for the AI26 worker watchdog"
 fi
@@ -204,10 +216,20 @@ if [[ "$MANIFEST_TREE" != "$RUNTIME_TREE" || "$MANIFEST_GIT" != "$RUNTIME_GIT" ]
   log "AI26 manifest re-frozen for scheduled analysis git=$RUNTIME_GIT tree=$RUNTIME_TREE"
 fi
 
-log "AI26 Laskin analysis start run=$LACLAUGPT_RUN_ID max_tasks=$MAX_TASKS timeout_seconds=$CYCLE_TIMEOUT_SECONDS mode=$RUN_MODE debug=${LACLAUGPT_DEBUG:-0}"
+log "AI26 Laskin analysis start run=$LACLAUGPT_RUN_ID max_tasks=$MAX_TASKS cycle_max_seconds=$CYCLE_MAX_SECONDS mode=$RUN_MODE debug=${LACLAUGPT_DEBUG:-0}"
 
+# Wall-clock ceiling (issue #332). ``timeout`` runs the worker in its own
+# process group and signals the WHOLE group, so a worker's threads and any
+# subprocess it spawned die with it — a bare SIGTERM to the worker can leave a
+# grandchild holding the lock. --kill-after guarantees termination even if the
+# worker ignores SIGTERM while blocked in a syscall.
+#
+# Exit codes: 124 = the ceiling elapsed, 137 = SIGKILL fallback. Both are
+# distinct from the worker's own statuses, so monitoring can tell a timeout
+# from a task failure. A timeout is recorded as worker_status=124 and flows
+# into the existing non-zero exit path.
 set +e
-timeout --signal=TERM --kill-after=30s "${CYCLE_TIMEOUT_SECONDS}s" \
+timeout --signal=TERM --kill-after="${CYCLE_KILL_GRACE_SECONDS}s" "${CYCLE_MAX_SECONDS}s" \
   "$ROOT_DIR/.venv/bin/laclaugpt-analysis-worker" \
   --run-manifest "$RUN_MANIFEST" \
   --private-config "$PRIVATE_CONFIG" \
@@ -219,9 +241,9 @@ timeout --signal=TERM --kill-after=30s "${CYCLE_TIMEOUT_SECONDS}s" \
 WORKER_STATUS=$?
 set -e
 if [[ "$WORKER_STATUS" -eq 124 ]]; then
-  log "AI26 Laskin analysis worker timed out after ${CYCLE_TIMEOUT_SECONDS}s (TERM, then KILL after 30s); pending tasks left for safe reclaim on a later cycle"
+  log "AI26 Laskin analysis CYCLE CEILING exceeded after ${CYCLE_MAX_SECONDS}s; worker terminated by TERM (then KILL after ${CYCLE_KILL_GRACE_SECONDS}s). Pending tasks are left for safe reclaim on a later cycle; see issue #332."
 elif [[ "$WORKER_STATUS" -eq 137 ]]; then
-  log "AI26 Laskin analysis worker was killed (possible watchdog escalation or external SIGKILL)"
+  log "AI26 Laskin analysis worker was SIGKILLed after the ${CYCLE_MAX_SECONDS}s ceiling (watchdog escalation or external SIGKILL); see issue #332."
 fi
 REPORT_STATUS="not-run"
 FINAL_STATUS=$WORKER_STATUS

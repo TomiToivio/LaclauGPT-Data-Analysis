@@ -60,8 +60,9 @@ def test_durable_task_store_uses_mongo_settings_names(monkeypatch):
             return FakeCollection()
 
     class FakeClient:
-        def __init__(self, url):
+        def __init__(self, url, **kwargs):
             calls["url"] = url
+            calls["kwargs"] = kwargs
 
         def __getitem__(self, name):
             calls["database"] = name
