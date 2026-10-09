@@ -21,6 +21,7 @@ from .canonical import SCHEMA_VERSION, CanonicalRecord
 from .canonical_pipeline import PipelineContext, run_canonical_pipeline
 from .codebooks import load_codebook
 from .config import Settings, load_settings
+from .debug_mode import configure_logging
 from .llm.base import LLMTruncationError
 from .llm.ollama import (
     LLM_ENDPOINT_ENV_ALIAS,
@@ -790,6 +791,14 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # The worker reports its per-cycle counts and diagnostics through the
+    # ``laclaugpt_data_analysis`` logger. Without an installed handler those
+    # INFO records fall back to ``logging.lastResort`` (WARNING) and are
+    # dropped, so the cron log only ever showed warnings and the documented
+    # LACLAUGPT_DEBUG=1 verbose mode was inert. Install the debug-mode
+    # configuration first so the cycle summary reaches stderr (the cron log)
+    # on every run, at INFO by default and DEBUG when requested.
+    configure_logging()
     args = _parser().parse_args(argv)
     private_root = os.environ.get("LACLAUGPT_PRIVATE_CONFIG_DIR", "")
     if not private_root:
