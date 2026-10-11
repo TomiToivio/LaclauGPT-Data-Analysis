@@ -29,7 +29,7 @@ Do not introduce a second AI26-only analysis engine or browser logic.
 5. Run the documented repository quality gates before live work:
 
 ```bash
-python tools/verify_contracts.py
+./.venv/bin/python tools/verify_contracts.py
 ruff check .
 pytest
 ```

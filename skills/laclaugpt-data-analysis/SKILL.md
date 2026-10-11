@@ -108,7 +108,7 @@ Analysis is one stage of `Collection -> Analysis -> Visualization`. Three projec
 Run the offline conformance check before proposing a change that touches the record model, the adapters or the storage selector:
 
 ```bash
-python tools/verify_contracts.py
+./.venv/bin/python tools/verify_contracts.py
 ```
 
 It verifies the fixture invariants, that provisional review state is never promoted, that JSON/JSONL/CSV/SQLite reconstruct the same logical record, that the storage selector fails closed, and that the declared schema version is well formed. It contacts nothing and writes no research data; exit status is the gate. When a contract or fixture version changes, update the vendored copy and this tool together.
