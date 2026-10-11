@@ -108,6 +108,7 @@ Analysis is one stage of `Collection -> Analysis -> Visualization`. Three projec
 Run the offline conformance check before proposing a change that touches the record model, the adapters or the storage selector:
 
 ```bash
+# needs Python >= 3.11; the repository's .venv provides it
 ./.venv/bin/python tools/verify_contracts.py
 ```
 

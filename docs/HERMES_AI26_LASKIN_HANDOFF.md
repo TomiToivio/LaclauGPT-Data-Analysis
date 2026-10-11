@@ -29,6 +29,7 @@ Do not introduce a second AI26-only analysis engine or browser logic.
 5. Run the documented repository quality gates before live work:
 
 ```bash
+# needs Python >= 3.11; the repository's .venv provides it
 ./.venv/bin/python tools/verify_contracts.py
 ruff check .
 pytest
