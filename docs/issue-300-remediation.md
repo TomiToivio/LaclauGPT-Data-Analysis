@@ -68,4 +68,4 @@ always-length-stopped provider and checks single terminal event, dead-letter,
 no reseeding, explicit rearm, and the distinct schema-error retry path.
 `tests/test_issue_321_terminal_ceiling_rearm.py` covers the superseded-budget re-arm.
 
-Verification commands: `python tools/verify_contracts.py` and `pytest`.
+Verification commands: `./.venv/bin/python tools/verify_contracts.py` and `pytest` (the package needs Python >= 3.11).
