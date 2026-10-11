@@ -16,13 +16,17 @@ The check is deliberately observational: it reads, reconstructs and compares. It
 never writes research data, contacts a service, or mutates configuration. It is
 suitable as a local preflight and as a CI gate.
 
-Exit status is 0 when every check passes and 1 otherwise, so it can be wired
-into a pipeline directly.
+This tool needs Python >= 3.11 (``requires-python`` in ``pyproject.toml``), because
+the record model imports ``datetime.UTC`` and the Visualization sibling imports
+``enum.StrEnum``. Run it with the repository virtualenv. Exit status is 0 when
+every check passes, 1 when a check fails, and 2 when the running interpreter is
+older than 3.11 — a distinct status, so that a wrong interpreter is never mistaken
+for a broken contract.
 
 Usage::
 
-    python tools/verify_contracts.py
-    python tools/verify_contracts.py --fixture /path/to/canonical_parity_v1.json
+    ./.venv/bin/python tools/verify_contracts.py
+    ./.venv/bin/python tools/verify_contracts.py --fixture /path/to/canonical_parity_v1.json
 """
 from __future__ import annotations
 
@@ -38,6 +42,38 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 SRC = REPOSITORY_ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
+
+# The record model imports ``datetime.UTC`` and the Visualization sibling imports
+# ``enum.StrEnum``; both are Python 3.11+ only, and ``pyproject.toml`` declares
+# ``requires-python = ">=3.11"``. On a host whose *system* interpreter is older,
+# importing the package dies with a bare ImportError that reads like a contract
+# violation, so fail closed with an actionable message and a distinct status.
+MINIMUM_PYTHON = (3, 11)
+
+# Distinct from 1 (a genuine contract failure) so that logs, callers and the
+# daily Laskin maintenance job can tell a wrong interpreter apart from a broken
+# contract.
+INTERPRETER_EXIT_STATUS = 2
+
+
+def check_interpreter(minimum: tuple[int, ...] = MINIMUM_PYTHON) -> str | None:
+    """Return an actionable message when the running interpreter is too old.
+
+    Returns ``None`` when the interpreter satisfies ``minimum``.
+    """
+    if sys.version_info >= minimum:
+        return None
+    wanted = ".".join(str(part) for part in minimum)
+    running = ".".join(str(part) for part in sys.version_info[:3])
+    return (
+        f"this check needs Python >= {wanted} (pyproject.toml declares "
+        f'requires-python = ">={wanted}"), but it is running under {running} '
+        f"({sys.executable}). The module imports datetime.UTC / enum.StrEnum, which do not "
+        "exist before 3.11, so the import would fail in a way that looks like a contract "
+        "violation. Re-run with the repository virtualenv, e.g. "
+        "`./.venv/bin/python tools/verify_contracts.py`."
+    )
+
 
 # Repository-local vendored copy of the authoritative Collection fixture.
 DEFAULT_FIXTURE = REPOSITORY_ROOT / "tests" / "fixtures" / "canonical_parity_v1.json"
@@ -275,6 +311,11 @@ def main(argv: list[str] | None = None) -> int:
         help="path to the shared canonical parity fixture",
     )
     args = parser.parse_args(argv)
+
+    interpreter_problem = check_interpreter()
+    if interpreter_problem is not None:
+        print(f"ERROR interpreter: {interpreter_problem}")
+        return INTERPRETER_EXIT_STATUS
 
     from laclaugpt_data_analysis.interchange import record_from_json
 
