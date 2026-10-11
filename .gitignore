@@ -82,3 +82,7 @@ __pypackages__/
 .pypirc
 .cursorignore
 .cursorindexingignore
+
+# Agent-internal working notes (plans, session scratch). They are not project
+# documentation and must never be published (issue #78, meta repo TomiToivio/LaclauGPT).
+.hermes/
