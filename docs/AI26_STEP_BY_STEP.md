@@ -146,3 +146,25 @@ drift must not happen. They are not interchangeable:
 So (3) is a subset of (2), and neither is (1). Recommended wording in all step
 documentation: *Phase 1 paper method* / *capability gate* / *experimental module*.
 This changes no branch governance and no version constant.
+
+
+## Read-only per-step inspection (incremental #341 delivery)
+
+The CLI now supports an explicit **contract-only** dry-run for each logical step:
+
+```bash
+python -m laclaugpt_data_analysis.ai26 step 4 --project ai26 --machine laskin --limit 10 --dry-run
+python -m laclaugpt_data_analysis.ai26 step 7 --dry-run --json
+```
+
+This uses the packaged stage registry, **not** a second executor. Its output identifies
+the declared modules, inputs/outputs, conditional media rules and research-phase status.
+A logical step may map to more than one module (step 5) or none (step 0), and this
+command is honest about that. It does **not** open Mongo/Redis, check a live record,
+evaluate media applicability, claim work, render a model prompt, or perform analysis.
+The `--limit` argument is validated but does not cap actual executions in this
+inspection mode. For the existing bounded worker, see `scripts/ai26_run_next.sh`,
+whose `--apply` is a separate operator action.
+
+This is **not** a replacement for the independently executable scientific stage
+bodies and reviewed Laskin pilot still required to close #341.
