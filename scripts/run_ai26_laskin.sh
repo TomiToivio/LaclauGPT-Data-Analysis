@@ -39,7 +39,8 @@ RECLAIM_IDLE_MS=${LACLAUGPT_RECLAIM_IDLE_MS:-300000}
 # +36%, and still kills the 382-min hang at less than half its observed length.
 CYCLE_MAX_SECONDS=${LACLAUGPT_CYCLE_MAX_SECONDS:-9000}
 if [[ ! "$CYCLE_MAX_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
-  fail "LACLAUGPT_CYCLE_MAX_SECONDS must be a positive integer (seconds)"
+  printf 'ERROR: LACLAUGPT_CYCLE_MAX_SECONDS must be a positive integer (seconds)\\n' >&2
+  exit 2
 fi
 CYCLE_KILL_GRACE_SECONDS=${LACLAUGPT_CYCLE_KILL_GRACE_SECONDS:-30}
 RUN_MODE="once"
@@ -142,7 +143,7 @@ fi
 
 # Configuration validation (offline, redacted).
 if ! "$PY" -m laclaugpt_data_analysis.preflight; then
-  log "preflight reported a configuration problem"
+  fail "preflight reported a configuration problem; refusing to claim tasks"
 fi
 
 if (( CHECK_ONLY )); then
