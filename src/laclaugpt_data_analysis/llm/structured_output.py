@@ -195,7 +195,7 @@ def classify_json_decode_failure(content: str, exc: json.JSONDecodeError) -> dic
         shape = "fenced"
     elif stripped.startswith(("Here is", "Sure,", "JSON:", "json:")):
         shape = "prose_wrapper"
-    elif re.search(r",\\s*[}\\]]", stripped):
+    elif re.search(r",\s*[}\]]", stripped):
         shape = "trailing_comma"
     elif stripped.startswith(("{", "[")) and ("'" in stripped[:100]) and ('"' not in stripped[:100]):
         shape = "single_quotes_possible"
