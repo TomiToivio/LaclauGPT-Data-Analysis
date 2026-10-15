@@ -36,44 +36,46 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 PACKAGE = Path(__file__).resolve().parent
 PROMPT_DIR = PACKAGE / "prompts"
 
-#: The canonical pipeline, in reading order, as the modules that implement it.
-CANONICAL_STEPS: tuple[str, ...] = (
-    "preprocess",
-    "frame",
-    "summary",
-    "laclau",
-    "postprocess",
-    "graph",
-    "evidence",
+#: The machine-readable stage registry is the single source of truth for the step list
+#: (issue #341). Everything below is a derived view of it, so the map the CLI prints cannot
+#: drift from the map the repository declares.
+REGISTRY_PATH = PACKAGE / "stages" / "registry.json"
+
+
+def load_stage_registry() -> dict[str, Any]:
+    """Read the stage registry. Raises if the packaged file is missing or malformed."""
+    with open(REGISTRY_PATH, encoding="utf-8") as stream:
+        registry = json.load(stream)
+    if registry.get("format") != "laclaugpt.ai26.stage_registry":
+        raise ValueError("Unsupported stage registry format")
+    if not registry.get("canonical_stages"):
+        raise ValueError("Stage registry declares no canonical stages")
+    return registry
+
+
+_REGISTRY = load_stage_registry()
+_ALL_STAGES: tuple[dict[str, Any], ...] = tuple(
+    [*_REGISTRY["canonical_stages"], *_REGISTRY.get("phase_2_stages", [])]
 )
 
-#: The issue's proposed stage numbers, mapped onto those modules. Stages 7-9 are the
-#: experimental Phase 2 tail and stage 0 is Collection's handoff, so neither is a module here.
+#: The canonical pipeline, in reading order, as the modules that implement it.
+CANONICAL_STEPS: tuple[str, ...] = tuple(
+    stage["id"] for stage in _REGISTRY["canonical_stages"] if stage.get("in_canonical_list")
+)
+
+#: The issue's reading-order numbers, as declared in the registry.
 STAGE_NUMBERS: dict[str, tuple[int, ...]] = {
-    "handoff": (0,),
-    "preprocess": (1,),
-    "frame": (2,),
-    "summary": (4,),
-    "laclau": (6,),
-    "postprocess": (5,),
-    "graph": (9,),
-    "evidence": (5,),
-    "dna": (7,),
-    "sna": (8,),
+    stage["id"]: tuple(stage.get("reading_order") or ()) for stage in _ALL_STAGES
 }
 
-PHASE_STATUS = {
-    "handoff": "Collection handoff (issue #271 contract)",
-    "preprocess": "phase_1",
-    "frame": "phase_1_optional_media",
-    "summary": "phase_1",
-    "laclau": "phase_1",
-    "postprocess": "phase_1",
-    "graph": "phase_1_export",
-    "evidence": "phase_1_integrity",
-    "dna": "experimental_phase_2",
-    "sna": "experimental_phase_2",
-}
+PHASE_STATUS: dict[str, str] = {stage["id"]: stage["phase_status"] for stage in _ALL_STAGES}
+
+#: Steps that are explicitly experimental Phase 2 and must never block Phase 1.
+PHASE_2_STEPS: tuple[str, ...] = tuple(
+    stage["id"] for stage in _REGISTRY.get("phase_2_stages", [])
+)
+
+_REGISTRY_BY_ID: dict[str, dict[str, Any]] = {stage["id"]: stage for stage in _ALL_STAGES}
 
 
 def _first_docstring_line(module_name: str) -> str:
@@ -134,21 +136,27 @@ def _prompt_record(stage: str, profile: str) -> dict[str, Any]:
 def _cmd_stages(args: argparse.Namespace) -> int:
     rows = []
     for name in CANONICAL_STEPS:
+        declared = _REGISTRY_BY_ID.get(name, {})
         rows.append(
             {
                 "module": name,
                 "stages": list(STAGE_NUMBERS.get(name, ())),
                 "phase_status": PHASE_STATUS.get(name, "unknown"),
-                "summary": _first_docstring_line(name),
+                "requires_media": bool(declared.get("requires_media")),
+                "conditional": bool(declared.get("conditional")),
+                "prompt_stage": declared.get("prompt_stage"),
+                "summary": _first_docstring_line(name) or str(declared.get("summary") or ""),
             }
         )
     payload = {
         "canonical_steps": list(CANONICAL_STEPS),
         "stages": rows,
-        "note": (
-            "The module map is what runs. The stage numbers are the issue's reading order; "
-            "experimental Phase 2 steps (dna, sna) are separate and never block Phase 1."
-        ),
+        "phase_2_steps": list(PHASE_2_STEPS),
+        "registry": {
+            "path": str(REGISTRY_PATH.relative_to(REPOSITORY_ROOT)),
+            "version": _REGISTRY.get("version"),
+        },
+        "note": _REGISTRY.get("reading_order_note", ""),
     }
     if args.json:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -157,7 +165,8 @@ def _cmd_stages(args: argparse.Namespace) -> int:
     print()
     for row in rows:
         numbers = ",".join(str(n) for n in row["stages"]) or "-"
-        print(f"  stage {numbers:>4}  {row['module']:<12} [{row['phase_status']}]")
+        flags = " media-optional" if row["conditional"] and row["requires_media"] else ""
+        print(f"  stage {numbers:>4}  {row['module']:<12} [{row['phase_status']}]{flags}")
         if row["summary"]:
             print(f"                 {row['summary']}")
     print()
@@ -231,7 +240,11 @@ def _cmd_status(args: argparse.Namespace) -> int:
             for name, path in configs.items()
         },
         "canonical_steps": list(CANONICAL_STEPS),
-        "phase2_steps": ["dna", "sna"],
+        "phase2_steps": list(PHASE_2_STEPS),
+        "stage_registry": {
+            "path": str(REGISTRY_PATH.relative_to(REPOSITORY_ROOT)),
+            "version": _REGISTRY.get("version"),
+        },
     }
     if args.json:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -239,7 +252,11 @@ def _cmd_status(args: argparse.Namespace) -> int:
     print("AI26 status (read-only; claims no work, calls no model)")
     for name, item in payload["configs"].items():
         print(f"  {name:<9} {'present' if item['present'] else 'MISSING'}  {item['path']}")
-    print(f"  steps     {len(CANONICAL_STEPS)} canonical; Phase 2 separate: {', '.join(payload['phase2_steps'])}")
+    print(
+        f"  steps     {len(CANONICAL_STEPS)} canonical; Phase 2 separate: "
+        f"{', '.join(payload['phase2_steps'])}"
+    )
+    print(f"  registry  {payload['stage_registry']['path']} (v{payload['stage_registry']['version']})")
     print()
     print("Run `ai26 stages` for the map, `ai26 render-prompt --stage <s>` to review a prompt.")
     return 0
