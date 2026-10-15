@@ -181,10 +181,44 @@ def _validation_feedback(exc: Exception, max_chars: int = 1800) -> str:
     return text[:max_chars] if text else type(exc).__name__
 
 
+def classify_json_decode_failure(content: str, exc: json.JSONDecodeError) -> dict[str, Any]:
+    """Describe malformed output without logging source text or model responses.
+
+    These are heuristic shape labels, not an automatic JSON repair policy.
+    The existing private durable failure capture retains bounded raw evidence.
+    """
+    text = content.strip()
+    stripped = strip_code_fences(text)
+    prefix = stripped[: min(exc.pos, len(stripped))]
+    suffix = stripped[min(exc.pos, len(stripped)):]
+    if text.startswith("```") or text.endswith("```"):
+        shape = "fenced"
+    elif stripped.startswith(("Here is", "Sure,", "JSON:", "json:")):
+        shape = "prose_wrapper"
+    elif re.search(r",\\s*[}\\]]", stripped):
+        shape = "trailing_comma"
+    elif stripped.startswith(("{", "[")) and ("'" in stripped[:100]) and ('"' not in stripped[:100]):
+        shape = "single_quotes_possible"
+    elif stripped.startswith(("{", "[")) and (not suffix or exc.pos >= len(stripped) - 2):
+        shape = "possibly_truncated"
+    else:
+        shape = "other_invalid_json"
+    return {
+        "decode_shape": shape,
+        "decode_position": exc.pos,
+        "decode_line": exc.lineno,
+        "decode_column": exc.colno,
+        "decode_response_chars": len(content),
+        "decode_prefix_chars": len(prefix),
+    }
+
+
 def _attach_failure_diagnostics(exc: Exception, response: LLMResponse) -> None:
     """Attach provider evidence without changing the public exception type."""
     exc.response_raw = response.content
     exc.finish_reason = response.finish_reason
+    if isinstance(exc, json.JSONDecodeError):
+        exc.decode_diagnostics = classify_json_decode_failure(response.content, exc)
 
 
 def build_structured_prompt(user_prompt: str, model_cls: type[T]) -> str:
