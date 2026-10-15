@@ -51,3 +51,98 @@ Collection's stable handoff key is `hash(collection_id + source_url + revision)`
 - Confirm whole-video stage 3 evidence semantics, step-by-step entrypoints, stage registry, effective prompt render/validation, prompt/schema hash, explicit not-applicable status and retries.
 - Add fixture-driven cross-repo producer/consumer tests for multimodal, text-only, multilingual and missing provenance. Confirm stable Mongo collection names and identity across private runtime settings.
 - Demonstrate restart-safe/idempotent bounded pilot on Laskin and actual Visualization consumption. Preserve EP24/Roihu references.
+
+## Live verification of the running path (2026-10-15)
+
+The section above is read from code and public schemas. This is the counterpart it
+asks for -- the Mongo routing verified **from the actual private runtime on Laskin**,
+measured rather than restated. It does not alter the version-mismatch finding.
+
+### The path, measured
+
+| Point | Measured |
+| --- | --- |
+| cron | root crontab, hourly and staggered: collect `:10`, media `:30`, analysis `:05` |
+| analysis entry | `scripts/run_ai26_laskin.sh`, bounded in *claims* with a wall-clock ceiling |
+| preflight | `--check` returns `status: ok`; Ollama `:11500` serves `gemma4:12b`; MongoDB, Redis and the S3 object store reachable |
+| worker health | recent cycles end `worker_status=0 report_status=0 status=0` |
+| queue | Redis `laclaugpt:ai26:stream:analysis:ai26-distributed-001:tasks`, 4,900 entries, two consumer groups |
+
+Collections, measured in the project database (`<project>__<kind>` convention):
+
+| Collection | Documents | Note |
+| --- | --- | --- |
+| `ai26__records` | 1,511 | incoming canonical records, `collection_id: ai26` for all |
+| `ai26__analysis_results` | 2,120 | outgoing results; Visualization reads these |
+| `ai26__analysis_failures` | 1,190 | historical plus live; split by window below |
+| `ai26__periodic_summaries` | 44,756 | |
+| `ai26__processing` | 8 | in-flight state |
+| `ai26__analyzed` | 21 | legacy; Visualization must not consult it |
+| `ai26__relations`, `ai26__annotations` | absent | consistent, not a defect -- see below |
+
+The incoming handoff block carries exactly `arena`, `collection_id`,
+`contract_version`, `handoff_key`, `project_id`, `published_at`, `reason`,
+`revision`, `run_id`, `source_priority`, `source_url`, `status`. Outgoing results
+carry the 13-key envelope Visualization unwraps, with a provenance block naming the
+codebook/config sha256, the model, the phase and the Phase 1 revisions.
+
+### Absent namespaces are consistent with policy, not a defect
+
+`ai26__relations` and `ai26__annotations` are absent, and both absences are
+*correct*: the relations namespace belongs to the experimental network modules,
+which the capability gate disables, and Visualization mirrors that gate in its own
+project config (`sna: false`, `dna_statement_coding.enabled: false`, `critical_ai`,
+`rdf`). Reporting these as missing data would be a false alarm; the accurate
+statement is that nothing is expected to write them under the Phase 1 profile.
+
+### Contract tests, run on both sides
+
+- Analysis: `test_analysis_contracts.py`, `test_ai26_laskin_config.py`,
+  `test_ai26_cycle_outcome.py`, `test_ai26_multimethod.py` -- **40 tests pass** (exit 0).
+- Visualization: `test_issue144_analysis_results_handoff.py`,
+  `test_issue150_unwrap_analysis_envelope.py`, `test_distributed_namespace.py`,
+  `test_ai26_project_config.py`, `test_issue34_ai26_dashboard.py` -- **35 passed**.
+- Visualization service: active (user scope) and answering **HTTP 200** on its bound
+  address -- measured with a request, not read off a port list.
+
+### Live failure classes, and which issues already track them
+
+Failures were split by window so that a stale count cannot be read as a live one:
+
+| Class | 24 h | 7 d | 30 d | Status |
+| --- | --- | --- | --- | --- |
+| `ValidationError` | 16 | 146 | 409 | tracked: Analysis #342 |
+| `JSONDecodeError` | 14 | 125 | 361 | tracked: Analysis #343 |
+| `LLMTruncationError` | 0 | 80 | 284 | documented retry behaviour of a thinking model |
+| `ProviderError` / `ConnectionError` | 2 | 22 | 26 | retried; no issue yet |
+| `ValueError: manifest mismatch` | 0 | 0 | 110 | **historical** (2026-09-21...30), superseded by #121/#277 |
+
+Two conclusions: the record-schema disagreement is so far a **strict-version
+contract** problem (#271, Visualization #182) and not an observed failure of the
+live path; and the manifest-mismatch class must not be re-filed, because every one
+of those failures predates the fixes.
+
+### The readable scaffold does not yet run
+
+The seven step modules under `laclaugpt/` are **stubs**: every step body raises
+`NotImplementedError`, and `pipeline_runner.py` sequences them through injected
+step functions so the sequencing is testable without scientific bodies. So today
+the executable analysis is the distributed worker and the readable surface is a
+tested skeleton awaiting bodies -- neither is yet the independently runnable
+step surface #341 requires.
+
+## Three senses of "phase" -- say which one is meant
+
+The word carries three different meanings here, and #341's own rule is that phase
+drift must not happen. They are not interchangeable:
+
+1. **Research-programme phase** -- the AI26 Phase 1 paper (locked theory, sampling,
+   method) versus the active study, owned by the `main` / `phase-1` branch policy.
+2. **`analysis_phase`** in `config/projects/ai26.yaml` -- a capability gate: at `1`
+   the experimental modules are unavailable *regardless of what else is enabled*.
+3. **"Experimental Phase 2"** as used in #341 for steps 7 and 8 -- precisely what (2)
+   gates.
+
+So (3) is a subset of (2), and neither is (1). Recommended wording in all step
+documentation: *Phase 1 paper method* / *capability gate* / *experimental module*.
+This changes no branch governance and no version constant.
