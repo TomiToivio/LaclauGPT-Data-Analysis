@@ -226,4 +226,24 @@ def normalize_schema_version(payload: Mapping[str, Any]) -> CanonicalRecord:
         raise UnsupportedSchemaVersion(
             f"unsupported schema version {version!r}; expected {SCHEMA_VERSION!r}"
         )
+    # The shared Collection JSON Schema leaves `source` open to provenance
+    # extensions. Keep the local strict SourceSection while preserving all
+    # unknown producer fields in its durable metadata namespace (#352).
+    source = data.get("source")
+    if isinstance(source, Mapping):
+        source = dict(source)
+        extras = {key: source.pop(key) for key in list(source)
+                  if key not in CanonicalRecord.model_fields["source"].annotation.model_fields}
+        if extras:
+            raw_metadata = dict(source.get("raw_metadata") or {})
+            namespace = "collection_source_extensions"
+            existing = dict(raw_metadata.get(namespace) or {})
+            # Do not silently overwrite conflicting values in a replay.
+            for key, value in extras.items():
+                if key in existing and existing[key] != value:
+                    raise ValueError(f"conflicting source extension: {key}")
+                existing[key] = value
+            raw_metadata[namespace] = existing
+            source["raw_metadata"] = raw_metadata
+            data["source"] = source
     return CanonicalRecord.model_validate(data)
