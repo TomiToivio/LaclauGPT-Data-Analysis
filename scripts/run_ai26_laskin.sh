@@ -141,30 +141,6 @@ else
   log "curl not available; skipping Ollama preflight"
 fi
 
-# Optional operator-only remote drift diagnostic (#353). Do not refresh running
-# code, modify the live collector, or prevent analysis on a stale checkout.
-# A bounded fetch makes the distance meaningful rather than comparing against
-# a cached origin/main. Network/auth failures are warnings, not preflight gates.
-if (( CHECK_ONLY )); then
-  if command -v git >/dev/null 2>&1 && git -C "$ROOT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    if timeout 15 git -C "$ROOT_DIR" fetch --quiet origin main 2>/dev/null; then
-      DRIFT=$(git -C "$ROOT_DIR" rev-list --left-right --count HEAD...refs/remotes/origin/main 2>/dev/null || true)
-      if [[ "$DRIFT" =~ ^([0-9]+)[[:space:]]+([0-9]+)$ ]]; then
-        log "AI26 deployed checkout drift: ahead=${BASH_REMATCH[1]} behind=${BASH_REMATCH[2]} remote=origin/main"
-        if (( ${BASH_REMATCH[2]} > 0 )); then
-          log "WARNING: deployed checkout is behind origin/main; review and fast-forward during a controlled deployment"
-        fi
-      else
-        log "WARNING: git drift comparison unavailable"
-      fi
-    else
-      log "WARNING: unable to refresh origin/main for drift check (network/auth/timeout)"
-    fi
-  else
-    log "WARNING: git checkout unavailable for drift check"
-  fi
-fi
-
 # Configuration validation (offline, redacted).
 if ! "$PY" -m laclaugpt_data_analysis.preflight; then
   fail "preflight reported a configuration problem; refusing to claim tasks"

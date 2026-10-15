@@ -7,6 +7,7 @@ from typing import Any
 from .canonical import (
     SCHEMA_VERSION,
     CanonicalRecord,
+    SourceSection,
     HumanReadableSection,
     IntermediateSection,
     RawCaptureSection,
@@ -182,6 +183,34 @@ def _adapt_shared_parity_fixture(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+def _preserve_undeclared_source_keys(data: dict[str, Any]) -> dict[str, Any]:
+    """Move producer source fields this model does not declare into ``source.extensions``.
+
+    ``source`` is an open object in the published Collection contract, so a producer may
+    legitimately write provenance this model has never heard of. Discarding it would lose
+    research provenance; refusing it would make a contract-valid record unloadable. It is
+    preserved verbatim under ``extensions`` instead, which keeps every declared field
+    strict and every undeclared value intact (issue #352).
+    """
+    source = data.get("source")
+    if not isinstance(source, Mapping):
+        return data
+
+    declared = set(SourceSection.model_fields)
+    undeclared = {key: value for key, value in source.items() if key not in declared}
+    if not undeclared:
+        return data
+
+    preserved = dict(source)
+    extensions = dict(preserved.get("extensions") or {})
+    for key, value in undeclared.items():
+        extensions.setdefault(key, value)
+        preserved.pop(key, None)
+    preserved["extensions"] = extensions
+    data = dict(data)
+    data["source"] = preserved
+    return data
+
 def normalize_schema_version(payload: Mapping[str, Any]) -> CanonicalRecord:
     """Normalize supported historical records to the current four-layer contract."""
     data = dict(payload)
@@ -226,24 +255,4 @@ def normalize_schema_version(payload: Mapping[str, Any]) -> CanonicalRecord:
         raise UnsupportedSchemaVersion(
             f"unsupported schema version {version!r}; expected {SCHEMA_VERSION!r}"
         )
-    # The shared Collection JSON Schema leaves `source` open to provenance
-    # extensions. Keep the local strict SourceSection while preserving all
-    # unknown producer fields in its durable metadata namespace (#352).
-    source = data.get("source")
-    if isinstance(source, Mapping):
-        source = dict(source)
-        extras = {key: source.pop(key) for key in list(source)
-                  if key not in CanonicalRecord.model_fields["source"].annotation.model_fields}
-        if extras:
-            raw_metadata = dict(source.get("raw_metadata") or {})
-            namespace = "collection_source_extensions"
-            existing = dict(raw_metadata.get(namespace) or {})
-            # Do not silently overwrite conflicting values in a replay.
-            for key, value in extras.items():
-                if key in existing and existing[key] != value:
-                    raise ValueError(f"conflicting source extension: {key}")
-                existing[key] = value
-            raw_metadata[namespace] = existing
-            source["raw_metadata"] = raw_metadata
-            data["source"] = source
-    return CanonicalRecord.model_validate(data)
+    return CanonicalRecord.model_validate(_preserve_undeclared_source_keys(data))
