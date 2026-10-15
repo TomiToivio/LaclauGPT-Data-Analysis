@@ -13,6 +13,8 @@
 #
 # Environment: LACLAUGPT_DRIFT_THRESHOLD (default 0) is the number of commits a checkout may
 # lag origin/main before the drift check warns. It only ever warns; it never blocks a cycle.
+# LACLAUGPT_CYCLE_MAX_SECONDS (default 9000) bounds the worker; LACLAUGPT_REPORT_MAX_SECONDS
+# (default 900) bounds the periodic report, which runs after it inside the same flock (#360).
 #   scripts/run_ai26_laskin.sh                   same as --once (cron-safe)
 #
 # Exit codes: 0 success, 2 configuration/preflight failure, 3 already running,
@@ -46,6 +48,18 @@ if [[ ! "$CYCLE_MAX_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
   exit 2
 fi
 CYCLE_KILL_GRACE_SECONDS=${LACLAUGPT_CYCLE_KILL_GRACE_SECONDS:-30}
+# The periodic report runs *after* the worker and *inside* the same flock, so an
+# unbounded report starves the next tick instead of failing it: 38 logged ticks
+# have already exited with "already running; exiting cleanly" (13:05, 14:05 and
+# 16:05 on 2026-10-15 alone). Its own observed healthy duration is ~4 min
+# (10:33->10:37, 11:53->11:57, 13:09->13:13, 15:46->15:50), so 15 min clears it
+# by ~3.5x and still breaks a pathological hang. The worker has had exactly this
+# watchdog since #332; the report did not (issue #360).
+REPORT_MAX_SECONDS=${LACLAUGPT_REPORT_MAX_SECONDS:-900}
+if [[ ! "$REPORT_MAX_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
+  printf 'ERROR: LACLAUGPT_REPORT_MAX_SECONDS must be a positive integer (seconds)\n' >&2
+  exit 2
+fi
 RUN_MODE="once"
 CHECK_ONLY=0
 DEBUG_FLAG=0
@@ -266,11 +280,21 @@ FINAL_STATUS=$WORKER_STATUS
 if [[ "$WORKER_STATUS" -eq 0 && "${LACLAUGPT_PERIODIC_REPORTS:-1}" != "0" ]]; then
   REPORT_BIN="$ROOT_DIR/.venv/bin/laclaugpt-phase1-laskin-report"
   if [[ -x "$REPORT_BIN" ]]; then
-    log "AI26 Phase 1 periodic report start run=$LACLAUGPT_RUN_ID"
+    log "AI26 Phase 1 periodic report start run=$LACLAUGPT_RUN_ID report_max_seconds=$REPORT_MAX_SECONDS"
+    # Same watchdog semantics as the worker (issue #360, cf. #332): the ceiling
+    # runs the report in its own process group so its threads and subprocesses die
+    # with it, and --kill-after guarantees termination even if it ignores SIGTERM
+    # while blocked in a syscall. A breach is a report failure, not a worker one.
     set +e
-    "$REPORT_BIN" --run-id "$LACLAUGPT_RUN_ID"
+    timeout --signal=TERM --kill-after="${CYCLE_KILL_GRACE_SECONDS}s" "${REPORT_MAX_SECONDS}s" \
+      "$REPORT_BIN" --run-id "$LACLAUGPT_RUN_ID"
     REPORT_STATUS=$?
     set -e
+    if [[ "$REPORT_STATUS" -eq 124 ]]; then
+      log "AI26 Phase 1 periodic report CEILING exceeded after ${REPORT_MAX_SECONDS}s; terminated by TERM (then KILL after ${CYCLE_KILL_GRACE_SECONDS}s). The next tick recomputes the same window; see issue #360."
+    elif [[ "$REPORT_STATUS" -eq 137 ]]; then
+      log "AI26 Phase 1 periodic report was SIGKILLed after the ${REPORT_MAX_SECONDS}s ceiling (watchdog escalation); see issue #360."
+    fi
     if [[ "$REPORT_STATUS" -ne 0 ]]; then
       log "AI26 Phase 1 periodic report failed status=$REPORT_STATUS"
       FINAL_STATUS=4
