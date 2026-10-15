@@ -11,8 +11,6 @@ import hashlib
 import json
 import pathlib
 
-import pytest
-
 from laclaugpt_data_analysis import ai26
 
 REPO_ROOT = pathlib.Path(ai26.__file__).resolve().parents[2]
@@ -36,8 +34,8 @@ def test_stages_lists_every_canonical_step_with_a_self_description(capsys) -> No
 def test_the_stage_map_keeps_phase_2_separate_and_non_blocking(capsys) -> None:
     assert ai26.main(["stages", "--json"]) == 0
     payload = capsys_json(capsys)
-    phase_2 = ai26.PHASE_STATUS["dna"], ai26.PHASE_STATUS["sna"]
-    assert all("experimental_phase_2" == value for value in phase_2)
+    assert ai26.PHASE_STATUS["dna"] == "experimental_phase_2"
+    assert ai26.PHASE_STATUS["sna"] == "experimental_phase_2"
     assert not any(
         row["phase_status"] == "experimental_phase_2" for row in payload["stages"]
     ), "Phase 2 steps are not part of the canonical step list"
@@ -51,14 +49,37 @@ def test_stages_is_readable_without_json(capsys) -> None:
     assert "no model is called" in out
 
 
-def test_render_prompt_reports_the_ids_and_hashes_without_a_model_call(capsys) -> None:
+def test_prompt_ids_resolve_to_the_files_behind_them(capsys) -> None:
+    """The point of the subcommand: the exact prompt a run used, with its hash."""
     assert ai26.main(["render-prompt", "--stage", "discourse", "--profile", "ai26", "--json"]) == 0
     record = capsys_json(capsys)
     assert record["system_prompt_id"] == "laclau.system"
     assert record["task_prompt_id"] == "laclau.discourse_analysis"
+    assert record["files"], "the discourse prompt exists and must be found"
     for item in record["files"]:
         payload = (REPO_ROOT / item["path"]).read_bytes()
         assert hashlib.sha256(payload).hexdigest() == item["sha256"]
+        assert item["chars"] == len(payload)
+        assert item["version"]
+
+
+def test_every_prompt_version_is_listed_rather_than_collapsed(capsys) -> None:
+    """A later version must not erase the record of an earlier one."""
+    assert ai26.main(["render-prompt", "--stage", "discourse", "--profile", "ai26", "--json"]) == 0
+    record = capsys_json(capsys)
+    systems = [item for item in record["files"] if item["prompt_id"] == "laclau.system"]
+    assert len(systems) >= 1
+    versions = {item["version"] for item in systems}
+    assert all(version.startswith("system_v") for version in versions)
+
+
+def test_show_prints_the_prompt_text_itself(capsys) -> None:
+    assert ai26.main(
+        ["render-prompt", "--stage", "discourse", "--profile", "ai26", "--show"]
+    ) == 0
+    out = capsys.readouterr().out
+    assert "### laclau.discourse_analysis" in out
+    assert len(out) > 400, "the prompt text itself is what a researcher comes here to read"
 
 
 def test_render_prompt_refuses_an_unknown_stage_with_a_message_not_a_traceback(capsys) -> None:
@@ -73,6 +94,10 @@ def test_the_ai26_profile_and_the_legacy_profile_resolve_different_prompts() -> 
     legacy_record = ai26._prompt_record("summary", "ep24")
     assert ai26_record["task_prompt_id"] != legacy_record["task_prompt_id"]
     assert ai26_record["system_prompt_id"] != legacy_record["system_prompt_id"]
+
+
+def test_an_unknown_prompt_id_resolves_to_no_files_rather_than_guessing() -> None:
+    assert ai26.prompt_files("notafamily.notaprompt") == []
 
 
 def test_contract_resolves_the_shipped_project_config(capsys) -> None:
