@@ -519,6 +519,9 @@ def _failure_diagnostics(exc: Exception) -> dict[str, Any]:
         "response_raw": "" if response_raw is None else str(response_raw),
         "finish_reason": "" if finish_reason is None else str(finish_reason),
     }
+    decode_details = getattr(exc, "decode_diagnostics", None)
+    if isinstance(decode_details, dict):
+        diagnostics.update(decode_details)
     if isinstance(exc, LLMTruncationError):
         diagnostics.update({
             "terminal_reason": "unanalysable_within_budget",
