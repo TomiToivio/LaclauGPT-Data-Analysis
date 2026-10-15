@@ -21,6 +21,7 @@ from laclaugpt_data_analysis.dna_statement_coding import (
     DNAStatementCandidate,
 )
 from laclaugpt_data_analysis.social_semiotic import (
+    drain_taxonomy_substitutions,
     CompositionObservation,
     StrictMethodModel,
     TaxonomyToleranceMixin,
@@ -91,9 +92,39 @@ def test_dna_statement_normalises_drift_in_nested_literals() -> None:
 
 
 def test_critical_ai_still_rejects_genuinely_distant_values() -> None:
-    for distant in ("algorithm", "not_applicable", "institution", "system"):
+    """Distant values are still rejected wherever the field has not opted in.
+
+    Issue #342 added a second, separate mechanism to the same mixin: a field named in
+    ``_TAXONOMY_CATCH_ALL_FIELDS`` maps a value that is not a member at all to the
+    taxonomy's own ``other``, recording the original string, because the live AI26 queue
+    spent two validation attempts per record on values like ``methodology`` and
+    ``not_applicable``. The near-miss tolerance is unchanged, and the original intent of
+    this guard holds: a distant value in a field that has *not* opted in is an error, and
+    ``types`` is the only field of this model that has.
+
+    ``types`` is the one place where the live evidence was overwhelming, so it is
+    asserted here as the catch-all rather than as a rejection - and the field the value
+    landed in is recorded, so nothing is lost silently.
+    """
+    for distant in ("algorithm", "institution", "system"):
         with pytest.raises(ValidationError):
-            CriticalAIAnalysis.model_validate({"ai_object": {"types": [distant]}})
+            CriticalAIObject.model_validate({"types": distant})
+
+    with pytest.raises(ValidationError):
+        CriticalAIFinding.model_validate(
+            {"dimension": "labour", "claim": "Synthetic claim.", "status": "algorithm"}
+        )
+    with pytest.raises(ValidationError):
+        CriticalAIFinding.model_validate(
+            {"dimension": "labour", "claim": "Synthetic claim.", "scope": "institution"}
+        )
+
+    recorded_before = len(drain_taxonomy_substitutions())
+    caught = CriticalAIAnalysis.model_validate({"ai_object": {"types": ["not_applicable"]}})
+    assert caught.ai_object.types == ["other"]
+    recorded = drain_taxonomy_substitutions()
+    assert len(recorded) > recorded_before
+    assert recorded[-1]["value"] == "not_applicable"
 
 
 def test_critical_ai_keeps_required_fields_and_types_strict() -> None:

@@ -11,6 +11,8 @@ demonstrated on static educational texts and therefore requires validation.
 """
 from __future__ import annotations
 
+import logging
+from collections import deque
 from difflib import SequenceMatcher
 from typing import Literal, get_args, get_origin
 
@@ -22,7 +24,69 @@ Mode = Literal[
 ]
 Confidence = Literal["high", "medium", "low", "unknown"]
 
+logger = logging.getLogger(__name__)
+
 _LITERAL_SIMILARITY_FLOOR = 0.85
+
+#: The catch-all member a taxonomy may declare for values it does not enumerate.
+_CATCH_ALL_MEMBER = "other"
+
+#: Which fields may fall back to the catch-all, and nothing else (issue #342).
+#:
+#: These are the observational taxonomies where the model demonstrably proposes a
+#: *kind* the vocabulary does not list - observed live as ``methodology`` in
+#: ``CriticalAIObject.types``, ``not_applicable`` in ``CriticalAIFinding.dimension`` and
+#: a family of relation/process kinds in this module. A value that misses every member
+#: is recorded as the taxonomy's own ``other``; the original string is kept in the
+#: substitution ledger and the warning log, never discarded silently.
+#:
+#: Deliberately excluded: the ``Mode`` family, ``Confidence``, ``scope``, the finding and
+#: review statuses, the DNA and config taxonomies, and everything else. Those stay
+#: strict, because a wrong value there means the model misread the field rather than met
+#: a kind the vocabulary lacks - ``modalities_present: ["zoological"]`` must keep failing.
+_TAXONOMY_CATCH_ALL_FIELDS: dict[str, frozenset[str]] = {
+    "ProcessObservation": frozenset({"process_type"}),
+    "CircumstanceObservation": frozenset({"circumstance_type"}),
+    "CompositionObservation": frozenset({"feature"}),
+    "SignRelation": frozenset({"relation_type"}),
+    "IntermodalRelation": frozenset({"relation_type"}),
+    "UncertaintyObservation": frozenset({"category"}),
+    "CriticalAIObject": frozenset({"types"}),
+    "CriticalAIFinding": frozenset({"dimension"}),
+}
+
+_TAXONOMY_SUBSTITUTION_LIMIT = 200
+_TAXONOMY_SUBSTITUTIONS: deque[dict[str, str]] = deque(maxlen=_TAXONOMY_SUBSTITUTION_LIMIT)
+
+
+def taxonomy_catch_all_fields(model_name: str) -> frozenset[str]:
+    """Return the catch-all-enabled fields declared for a model name."""
+    return _TAXONOMY_CATCH_ALL_FIELDS.get(model_name, frozenset())
+
+
+def _record_taxonomy_substitution(model_name: str, field_name: str, value: str) -> None:
+    """Keep the value the vocabulary did not have, so drift stays auditable."""
+    _TAXONOMY_SUBSTITUTIONS.append(
+        {"model": model_name, "field": field_name, "value": value}
+    )
+    logger.warning(
+        "taxonomy catch-all: %s.%s value %r is not a member; recorded as %r",
+        model_name,
+        field_name,
+        value,
+        _CATCH_ALL_MEMBER,
+    )
+
+
+def drain_taxonomy_substitutions() -> list[dict[str, str]]:
+    """Return and clear the recorded substitutions.
+
+    The pipeline may attach these to run provenance; the schemas themselves stay closed,
+    because adding a durable per-record field is a contract decision, not an agent's.
+    """
+    drained = list(_TAXONOMY_SUBSTITUTIONS)
+    _TAXONOMY_SUBSTITUTIONS.clear()
+    return drained
 
 
 def _has_negation_prefix_mismatch(value: str, member: str) -> bool:
@@ -37,8 +101,21 @@ def _has_negation_prefix_mismatch(value: str, member: str) -> bool:
     return False
 
 
-def _normalise_literal_member(value, members: tuple[str, ...]):
-    """Normalise only unambiguous model-formatting drift for a closed taxonomy."""
+def _normalise_literal_member(
+    value,
+    members: tuple[str, ...],
+    *,
+    catch_all: bool = False,
+    model_name: str = "",
+    field_name: str = "",
+):
+    """Normalise spelling drift, and fall back to the declared catch-all.
+
+    A value that is plainly not a member is not guessed: when the field opts in
+    via ``_TAXONOMY_CATCH_ALL_FIELDS`` the taxonomy's own ``other`` member is used
+    and the original value is recorded. Otherwise the value is passed through
+    unchanged, so Pydantic raises exactly as it did before.
+    """
     if value is None:
         for fallback in ("other", "unknown"):
             if fallback in members:
@@ -56,6 +133,9 @@ def _normalise_literal_member(value, members: tuple[str, ...]):
         reverse=True,
     )
     if not ranked or ranked[0][0] < _LITERAL_SIMILARITY_FLOOR:
+        if catch_all and _CATCH_ALL_MEMBER in members:
+            _record_taxonomy_substitution(model_name, field_name, value)
+            return _CATCH_ALL_MEMBER
         return value
 
     best_score = ranked[0][0]
@@ -69,11 +149,20 @@ def _normalise_literal_member(value, members: tuple[str, ...]):
     return candidate
 
 
-def _normalise_literal_field(annotation, value):
+def _normalise_literal_field(
+    annotation,
+    value,
+    *,
+    catch_all: bool = False,
+    model_name: str = "",
+    field_name: str = "",
+):
     """Apply narrow tolerance to direct Literal fields and lists of Literals."""
     if get_origin(annotation) is Literal:
         members = tuple(member for member in get_args(annotation) if isinstance(member, str))
-        return _normalise_literal_member(value, members)
+        return _normalise_literal_member(
+            value, members, catch_all=catch_all, model_name=model_name, field_name=field_name
+        )
 
     if get_origin(annotation) is list:
         args = get_args(annotation)
@@ -82,7 +171,13 @@ def _normalise_literal_field(annotation, value):
                 member for member in get_args(args[0]) if isinstance(member, str)
             )
             return [
-                _normalise_literal_member(item, members)
+                _normalise_literal_member(
+                    item,
+                    members,
+                    catch_all=catch_all,
+                    model_name=model_name,
+                    field_name=field_name,
+                )
                 for item in value
                 if item is not None
             ]
@@ -95,17 +190,26 @@ def _normalise_taxonomy_payload(cls, value):
     if not isinstance(value, dict):
         return value
     normalized = dict(value)
+    catch_all_fields = taxonomy_catch_all_fields(cls.__name__)
     for field_name, field in cls.model_fields.items():
         if field_name in normalized:
             normalized[field_name] = _normalise_literal_field(
                 field.annotation,
                 normalized[field_name],
+                catch_all=field_name in catch_all_fields,
+                model_name=cls.__name__,
+                field_name=field_name,
             )
     return normalized
 
 
 class TaxonomyToleranceMixin(BaseModel):
     """Canonicalise unambiguous model drift in closed taxonomies (#299 rule).
+
+    Near-miss spellings are canonicalised as before. Separately, a value that is not a
+    member at all becomes the taxonomy's own ``other`` when the field is declared in
+    :data:`_TAXONOMY_CATCH_ALL_FIELDS`; the original value is recorded in the
+    substitution ledger and logged (#342).
 
     The tolerance is a property of the taxonomy contract, not of whichever base
     class a module happened to pick: every LLM-output schema that declares a
