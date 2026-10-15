@@ -136,6 +136,15 @@ class SourceSection(Model):
     parent_source_url: str | None = None
     raw_metadata: dict[str, Any] = Field(default_factory=dict)
     raw_ref: str | None = None
+    #: Producer fields this model does not declare, preserved verbatim (issue #352).
+    #:
+    #: The Collection contract publishes ``source`` as an open object, so a producer may add
+    #: provenance here (backfill tracking, for instance) without a schema change on either
+    #: side. Rejecting those keys made a record valid by the contract and unloadable by the
+    #: code; keeping them here preserves the strictness of the declared fields and loses
+    #: nothing. ``extensions`` is deliberately last and empty by default, so a record
+    #: without undeclared keys is byte-identical to what it was.
+    extensions: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("created_at", "collected_at", mode="before")
     @classmethod
