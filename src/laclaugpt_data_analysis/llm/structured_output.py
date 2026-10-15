@@ -21,6 +21,7 @@ from laclaugpt_data_analysis.llm.base import (
     LLMResponse,
     LLMTruncationError,
 )
+from laclaugpt_data_analysis.llm.json_repair import join_repairs, repaired_candidate
 
 logger = logging.getLogger(__name__)
 
@@ -336,8 +337,23 @@ def parse_structured(content: str, model_cls: type[T]) -> T:
 
     A scalar string is accepted for a schema-declared ``list[str]`` and preserved as
     a one-element list. Other shape errors remain strict.
+
+    A malformed response gets one bounded *structural* repair before it is treated as
+    a validation failure (#343). Measured against the worker's own captured failures,
+    that recovers half the ``JSONDecodeError`` class. The repair never rewrites string
+    contents and never invents content, so it can only turn a discard into a
+    validation attempt - the model remains the contract - and it is logged. Set
+    ``LACLAUGPT_JSON_REPAIR=0`` to disable it, which restores the pre-#343 behaviour.
     """
-    payload = json.loads(strip_code_fences(content))
+    text = strip_code_fences(content)
+    text, repairs = repaired_candidate(text)
+    if repairs:
+        logger.warning(
+            "repaired malformed JSON before validation (%s; %d chars)",
+            join_repairs(repairs),
+            len(content),
+        )
+    payload = json.loads(text)
     schema = model_cls.model_json_schema()
     normalized = _coerce_single_string_lists(payload, schema, schema.get("$defs", {}))
     return model_cls.model_validate(normalized)
