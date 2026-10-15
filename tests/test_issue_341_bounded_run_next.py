@@ -24,6 +24,21 @@ def test_bounded_dry_run() -> None:
     assert "max_tasks=3" in result.stdout
 
 
+def test_leading_zeroes_are_normalised_not_rejected() -> None:
+    """The guard forbade the only input the normalisation line was written for."""
+    for value, expected in (("003", "max_tasks=3"), ("0100", "max_tasks=100"), ("0010", "max_tasks=10")):
+        result = run("--limit", value)
+        assert result.returncode == 0, (value, result.stderr)
+        assert expected in result.stdout, (value, result.stdout)
+
+
+def test_the_digit_cap_holds_before_any_arithmetic() -> None:
+    """A long value must fail on its length, not wrap through 10# into a legal one."""
+    result = run("--limit", "00003")
+    assert result.returncode == 2
+    assert "1 to 100" in result.stderr
+
+
 def test_malformed_limits_fail_closed() -> None:
     for value in ("0", "-1", "101", "1.0", "abc", "99999999999999999", "2;echo BAD"):
         result = run("--limit", value)
