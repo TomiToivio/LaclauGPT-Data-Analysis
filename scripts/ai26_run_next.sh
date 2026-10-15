@@ -20,7 +20,13 @@ while (($#)); do
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
-if [[ ! "$LIMIT" =~ ^[1-9][0-9]*$ ]] || (( ${#LIMIT} > 4 )) || (( 10#$LIMIT > 100 )); then
+# ``003`` is the integer 3, so leading zeroes are normalised below rather than
+# rejected — the normalisation line existed while this guard forbade the only
+# input it was written for, and the acceptance test caught the contradiction.
+# The digit cap matters: without it ``10#`` wraps a 17-digit value into a legal
+# one and the range check stops meaning anything. The cap is applied to the
+# string length, before any arithmetic touches it.
+if [[ ! "$LIMIT" =~ ^[0-9]+$ ]] || (( ${#LIMIT} > 4 )) || (( 10#$LIMIT < 1 || 10#$LIMIT > 100 )); then
   echo "--limit must be an integer from 1 to 100" >&2
   exit 2
 fi
