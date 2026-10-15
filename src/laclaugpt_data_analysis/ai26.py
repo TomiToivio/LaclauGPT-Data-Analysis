@@ -262,6 +262,54 @@ def _cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
+
+def _cmd_step(args: argparse.Namespace) -> int:
+    """Inspect one logical step without claiming a task or executing research code.
+
+    A dry-run is intentionally a contract inspection, not a simulation of execution.
+    Some logical numbers map to multiple modules, or no executable module at all.
+    """
+    matches = [
+        stage for stage in _ALL_STAGES
+        if args.number in stage.get("reading_order", [])
+    ]
+    if not matches:
+        print(f"error: unknown logical AI26 step {args.number}", file=sys.stderr)
+        return 2
+    if args.limit < 1:\n        print("error: --limit must be positive", file=sys.stderr)\n        return 2\n    payload = {\n        "logical_step": args.number,
+        "mode": "contract_inspection_only",
+        "read_only": True,
+        "executed": False,
+        "claimed_tasks": 0,
+        "project": args.project,
+        "machine": args.machine,
+        "limit": args.limit,
+        "stages": [
+            {
+                "id": stage["id"],
+                "module": stage.get("module"),
+                "phase_status": stage["phase_status"],
+                "conditional": bool(stage.get("conditional", False)),
+                "requires_media": bool(stage.get("requires_media", False)),
+                "inputs": stage.get("inputs", []),
+                "outputs": stage.get("outputs", []),
+            }
+            for stage in matches
+        ],
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+    else:
+        print(f"AI26 logical step {args.number}: dry-run contract inspection only")
+        print("No records inspected or claimed; no provider invoked; no outputs written.")
+        for stage in payload["stages"]:
+            print(f"  {stage['id']} [{stage['phase_status']}] module={stage['module'] or 'none'}")
+            if stage["conditional"]:
+                print("    conditional: media/handoff applicability is not evaluated")
+        print("To execute bounded worker claims, use scripts/ai26_run_next.sh --apply explicitly.")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="python -m laclaugpt_data_analysis.ai26",
@@ -295,6 +343,19 @@ def build_parser() -> argparse.ArgumentParser:
     status = subparsers.add_parser("status", help="which configs exist, and what is read-only")
     status.add_argument("--json", action="store_true", help="machine-readable output")
     status.set_defaults(func=_cmd_status)
+
+    step = subparsers.add_parser(
+        "step",
+        help="inspect one logical step without execution (requires --dry-run)",
+    )
+    step.add_argument("number", type=int, choices=range(10), metavar="{0..9}")
+    step.add_argument("--project", choices=("ai26",), default="ai26")
+    step.add_argument("--machine", choices=("laskin",), default="laskin")
+    step.add_argument("--limit", type=int, default=10)
+    step.add_argument("--dry-run", action="store_true", required=True,
+                      help="mandatory safety flag: contract inspection, not execution")
+    step.add_argument("--json", action="store_true")
+    step.set_defaults(func=_cmd_step)
 
     return parser
 
