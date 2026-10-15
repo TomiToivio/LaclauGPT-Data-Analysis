@@ -176,118 +176,6 @@ def _coerce_single_string_lists(
     return value
 
 
-_JSON_KEY_HINT = re.compile(r"\s*:")
-
-_PROSE_PREFIX_RE = re.compile(r"[^\s]*?")
-
-
-def _string_literal_spans(text: str) -> list[tuple[int, int]]:
-    """Spans of double-quoted string literals, tolerant of escapes."""
-    spans: list[tuple[int, int]] = []
-    index = 0
-    length = len(text)
-    while index < length:
-        if text[index] == "\\":
-            index += 2
-            continue
-        if text[index] == '"':
-            start = index
-            index += 1
-            while index < length:
-                if text[index] == "\\":
-                    index += 2
-                    continue
-                if text[index] == '"':
-                    break
-                index += 1
-            spans.append((start, min(index + 1, length)))
-        index += 1
-    return spans
-
-
-def sanitize_structured_excerpt(content: str, limit: int = 400) -> str:
-    """A structural excerpt with every string *value* elided and every key kept.
-
-    Keys are schema field names and carry the diagnosis; values are research text and
-    must not be copied into logs or issues. Truncation is marked explicitly.
-    """
-    head = content[:limit]
-    spans = _string_literal_spans(head)
-    pieces: list[str] = []
-    cursor = 0
-    for start, stop in spans:
-        pieces.append(head[cursor:start])
-        literal = head[start:stop]
-        after = head[stop:stop + 8]
-        is_key = bool(_JSON_KEY_HINT.match(after))
-        if is_key and len(literal) <= 64:
-            pieces.append(literal)
-        else:
-            pieces.append('"<elided>"')
-        cursor = stop
-    pieces.append(head[cursor:])
-    excerpt = "".join(pieces)
-    if len(content) > limit:
-        excerpt += f"... <{len(content) - limit} more chars>"
-    return excerpt
-
-
-def classify_json_failure(content: str, exc: Exception) -> dict[str, object]:
-    """Name why a structured response could not be parsed, from the response itself.
-
-    The pipeline logged only ``JSONDecodeError``, which is not enough to choose a fix:
-    a prose wrapper needs stripping, a length stop needs a bigger budget, and a
-    trailing comma needs a repair. This returns the mode, the character position the
-    parser complained about, and structural counts, so the next diagnosis is decidable
-    without keeping the payload.
-    """
-    text = content or ""
-    stripped = strip_code_fences(text)
-    position = getattr(exc, "pos", None)
-    mode = "json_decode_error"
-    detail = ""
-
-    if not text.strip():
-        mode = "empty_response"
-    elif not stripped.strip():
-        mode = "fences_only"
-    else:
-        first_open = min(
-            (index for index in (stripped.find("{"), stripped.find("[")) if index != -1),
-            default=-1,
-        )
-        if first_open > 0 and stripped[:first_open].strip():
-            mode = "prose_wrapped"
-            detail = stripped[:first_open].strip()[:60]
-        elif stripped[-1:] not in ("}", "]"):
-            last_close = max(stripped.rfind("}"), stripped.rfind("]"))
-            if last_close != -1 and stripped[last_close + 1:].strip():
-                mode = "trailing_text"
-                detail = stripped[last_close + 1:].strip()[:60]
-            elif stripped.count("{") != stripped.count("}") or stripped.count("[") != stripped.count("]"):
-                mode = "unbalanced_structure"
-            else:
-                mode = "trailing_text"
-        elif re.search(r",\s*[}\]]", stripped):
-            mode = "trailing_comma"
-        elif re.search(r"'[^']*'\s*:", stripped):
-            mode = "single_quoted_key"
-        elif re.search(r"[{,]\s*[A-Za-z_][A-Za-z0-9_]*\s*:", stripped):
-            mode = "unquoted_key"
-        elif "\\x" in stripped or re.search(r"\\[^\"\\\\/bfnrtu]", stripped):
-            mode = "invalid_escape"
-
-    return {
-        "mode": mode,
-        "position": position,
-        "chars": len(text),
-        "brace_balance": stripped.count("{") - stripped.count("}"),
-        "bracket_balance": stripped.count("[") - stripped.count("]"),
-        "detail": detail,
-        "excerpt": sanitize_structured_excerpt(stripped),
-    }
-
-
 def _validation_feedback(exc: Exception, max_chars: int = 1800) -> str:
     """Compact retry feedback carrying Pydantic/theory validator messages."""
     text = " ".join(str(exc).split())
@@ -323,6 +211,11 @@ def classify_json_decode_failure(content: str, exc: json.JSONDecodeError) -> dic
         "decode_column": exc.colno,
         "decode_response_chars": len(content),
         "decode_prefix_chars": len(prefix),
+        # Counts, not fragments: enough to tell a truncated response (positive balance,
+        # nothing closed) from a merely mis-punctuated one, without carrying any of the
+        # response text into a durable record or a log line.
+        "decode_brace_balance": stripped.count("{") - stripped.count("}"),
+        "decode_bracket_balance": stripped.count("[") - stripped.count("]"),
     }
 
 
@@ -332,25 +225,6 @@ def _attach_failure_diagnostics(exc: Exception, response: LLMResponse) -> None:
     exc.finish_reason = response.finish_reason
     if isinstance(exc, json.JSONDecodeError):
         exc.decode_diagnostics = classify_json_decode_failure(response.content, exc)
-
-
-def _attach_json_failure_diagnostics(exc: Exception, response: LLMResponse) -> None:
-    """Attach a classified, value-elided diagnosis of an unparseable response (#343).
-
-    ``response_raw`` keeps the payload itself for an operator who needs it; these
-    fields are what belongs in a log line or an issue, because every string *value*
-    is elided and only schema keys survive.
-    """
-    diagnosis = classify_json_failure(response.content, exc)
-    exc.json_failure = diagnosis
-    logger.warning(
-        "structured JSON decode failed: mode=%s pos=%s chars=%s brace_balance=%s excerpt=%s",
-        diagnosis["mode"],
-        diagnosis["position"],
-        diagnosis["chars"],
-        diagnosis["brace_balance"],
-        diagnosis["excerpt"],
-    )
 
 
 def build_structured_prompt(user_prompt: str, model_cls: type[T]) -> str:
@@ -494,9 +368,21 @@ def chat_structured(
                 exc,
             )
             if isinstance(exc, json.JSONDecodeError):
-                # A decode failure is not a validation failure: naming the shape is the
-                # only way to choose between stripping, repairing and budgeting (#343).
-                _attach_json_failure_diagnostics(exc, response)
+                # A decode failure is not a validation failure: naming the shape is the only
+                # way to choose between stripping, repairing and budgeting (#343). One
+                # classifier and one attribute name (``decode_diagnostics``), which is what the
+                # worker carries into the durable record -- the duplicate that used to live
+                # here set an attribute nothing read.
+                diagnosis = classify_json_decode_failure(response.content, exc)
+                logger.warning(
+                    "structured JSON decode failed: shape=%s pos=%s brace_balance=%s "
+                    "bracket_balance=%s chars=%s",
+                    diagnosis["decode_shape"],
+                    diagnosis["decode_position"],
+                    diagnosis["decode_brace_balance"],
+                    diagnosis["decode_bracket_balance"],
+                    diagnosis["decode_response_chars"],
+                )
             if validation_failures >= 2:
                 _attach_failure_diagnostics(exc, response)
                 raise
