@@ -86,6 +86,24 @@ def _first_docstring_line(module_name: str) -> str:
     return doc.splitlines()[0].strip() if doc else ""
 
 
+def prompt_files(prompt_id: str) -> list[Path]:
+    """Every file behind a prompt id.
+
+    A prompt id is ``<family>.<name>`` and its text lives at ``prompts/<family>/<name>_v<n>.md``.
+    Versions are research instruments, so all of them are returned rather than one: an
+    analysis can be traced to the exact wording that produced it, and a later version never
+    erases the record of an earlier run.
+    """
+    family, _, name = prompt_id.partition(".")
+    directory = PROMPT_DIR / family if family else PROMPT_DIR
+    if not directory.is_dir():
+        return []
+    matches = sorted(directory.glob(f"{name}_v*.md"))
+    if not matches:
+        matches = sorted(directory.glob(f"{name}*.md"))
+    return matches
+
+
 def _prompt_record(stage: str, profile: str) -> dict[str, Any]:
     """Return the prompt ids for a stage, and the files behind them when they exist."""
     from laclaugpt_data_analysis.stages.prompt_map import prompt_ids_for_stage
@@ -99,25 +117,18 @@ def _prompt_record(stage: str, profile: str) -> dict[str, Any]:
         "files": [],
     }
     for prompt_id in (system_id, task_id):
-        candidate = PROMPT_DIR / f"{prompt_id}.md"
-        if candidate.exists():
+        for candidate in prompt_files(prompt_id):
             payload = candidate.read_bytes()
             record["files"].append(
                 {
                     "prompt_id": prompt_id,
+                    "version": candidate.stem,
                     "path": str(candidate.relative_to(REPOSITORY_ROOT)),
                     "sha256": hashlib.sha256(payload).hexdigest(),
                     "chars": len(payload),
                 }
             )
     return record
-
-
-def _read_prompt_text(prompt_id: str) -> str:
-    candidate = PROMPT_DIR / f"{prompt_id}.md"
-    if not candidate.exists():
-        raise FileNotFoundError(candidate)
-    return candidate.read_text(encoding="utf-8")
 
 
 def _cmd_stages(args: argparse.Namespace) -> int:
@@ -162,12 +173,14 @@ def _cmd_render_prompt(args: argparse.Namespace) -> int:
         return 2
     if args.show:
         for prompt_id in (record["system_prompt_id"], record["task_prompt_id"]):
-            print(f"### {prompt_id}")
-            try:
-                print(_read_prompt_text(prompt_id))
-            except FileNotFoundError:
-                print(f"(no prompt file at prompts/{prompt_id}.md)")
-            print()
+            candidates = prompt_files(prompt_id)
+            if not candidates:
+                print(f"### {prompt_id}\n(no prompt file under prompts/)")
+                continue
+            for candidate in candidates:
+                print(f"### {prompt_id}  [{candidate.stem}]")
+                print(candidate.read_text(encoding="utf-8"))
+                print()
         return 0
     if args.json:
         print(json.dumps(record, indent=2, ensure_ascii=False))
@@ -178,7 +191,7 @@ def _cmd_render_prompt(args: argparse.Namespace) -> int:
     for item in record["files"]:
         print(f"  {item['path']}  sha256={item['sha256'][:16]}...  {item['chars']} chars")
     if not record["files"]:
-        print("  (no prompt markdown found under prompts/; ids are still recorded in provenance)")
+        print("  (no prompt markdown under prompts/ for this id; the id is still in provenance)")
     return 0
 
 
