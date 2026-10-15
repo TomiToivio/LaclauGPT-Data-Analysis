@@ -128,6 +128,28 @@ Agents may operate localhost, CSC Roihu/Slurm, Laskin/cron, or other supported p
 
 Do not invent CSC account names, project IDs, paths, credentials or hostnames. Use public placeholders and private runtime configuration. Scheduled or batch work must be bounded, restart-safe and idempotent.
 
+### Operating the AI26 runtime on Laskin (issue #341)
+
+The cron checkouts **are** the deployed code: the Analysis venv is an editable install pointing at
+the checkout's `src/`, so a merged fix is not in effect until the checkout is refreshed. Check
+before diagnosing a failure, because a stale runtime makes the live log describe pre-fix behaviour.
+
+```bash
+python -m laclaugpt_data_analysis.ai26 status            # configs, steps, registry (read-only)
+python -m laclaugpt_data_analysis.ai26 stages --json     # the step map, from the stage registry
+python -m laclaugpt_data_analysis.ai26 render-prompt --stage discourse --show
+python -m laclaugpt_data_analysis.deploy_drift --json    # drift vs origin/main, read-only
+```
+
+The step map lives in `src/laclaugpt_data_analysis/stages/registry.json`; the CLI prints it and a
+test pins it to the modules, so do not hard-code a step list anywhere else. Neither the CLI nor the
+drift check claims work, writes research data or calls a model — claiming belongs to the wrapper,
+with its lock.
+
+Read `docs/AI26_LASKIN_OPERATIONS.md` before intervening: it covers drift, the worktree and venv
+traps, how to tell a retry from a dead-letter in the log, and what must be asked before refreshing
+the Collection checkout, killing a cycle, or changing a prompt, codebook or taxonomy member.
+
 ## Mandatory runtime data boundary
 
 All runtime and operational study material belongs below `data/`, and the complete `data/` tree stays outside Git. Follow `docs/RUNTIME_DATA.md`.

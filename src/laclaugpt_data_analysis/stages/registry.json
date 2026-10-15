@@ -1,0 +1,123 @@
+{
+  "format": "laclaugpt.ai26.stage_registry",
+  "version": 1,
+  "note": "The machine-readable stage registry for the AI26 pipeline (issue #341). This is the single source of truth for the step list, its reading order, its phase status and its media conditions. The read-only CLI derives its view from this file, and a test pins the two together, so the map cannot drift from the registry again.",
+  "reading_order_note": "The module map is what runs. The 0-9 numbers are the issue's reading order over the same work, which is why two modules can share one number (postprocess writes the record, evidence verifies its quotations) and why some numbers have no module here: 0 is Collection's handoff, 3 is optional whole-video evidence, and 7 and 8 are experimental Phase 2.",
+  "canonical_stages": [
+    {
+      "id": "handoff",
+      "reading_order": [0],
+      "module": null,
+      "phase_status": "collection_handoff",
+      "summary": "Collection hands over canonical records; Analysis ingests them without inventing provenance.",
+      "in_canonical_list": false,
+      "requires_media": false,
+      "conditional": true,
+      "prompt_stage": null,
+      "inputs": ["canonical research record from LaclauGPT-Data-Collection"],
+      "outputs": ["claimed task with a stable handoff identity and revision"]
+    },
+    {
+      "id": "preprocess",
+      "reading_order": [1],
+      "module": "preprocess",
+      "phase_status": "phase_1",
+      "in_canonical_list": true,
+      "requires_media": false,
+      "conditional": false,
+      "prompt_stage": null,
+      "inputs": ["claimed record"],
+      "outputs": ["normalised text", "selected evidence streams", "ASR/OCR/frame/translation artefacts when they exist"]
+    },
+    {
+      "id": "frame",
+      "reading_order": [2],
+      "module": "frame",
+      "phase_status": "phase_1_optional_media",
+      "in_canonical_list": true,
+      "requires_media": true,
+      "conditional": true,
+      "prompt_stage": "frame",
+      "inputs": ["preprocessed record with real, materialised media frames"],
+      "outputs": ["per-frame multimodal evidence analysis"]
+    },
+    {
+      "id": "summary",
+      "reading_order": [4],
+      "module": "summary",
+      "phase_status": "phase_1",
+      "in_canonical_list": true,
+      "requires_media": false,
+      "conditional": false,
+      "prompt_stage": "summary",
+      "inputs": ["preprocessed record, plus frame analysis when media existed"],
+      "outputs": ["descriptive pre-analysis that does not wait for media"]
+    },
+    {
+      "id": "laclau",
+      "reading_order": [6],
+      "module": "laclau",
+      "phase_status": "phase_1",
+      "in_canonical_list": true,
+      "requires_media": false,
+      "conditional": false,
+      "prompt_stage": "discourse",
+      "inputs": ["descriptive pre-analysis", "context and codebook"],
+      "outputs": ["discourse proposal: demands, signifiers, articulations, frontiers"]
+    },
+    {
+      "id": "postprocess",
+      "reading_order": [5],
+      "module": "postprocess",
+      "phase_status": "phase_1",
+      "in_canonical_list": true,
+      "requires_media": false,
+      "conditional": false,
+      "prompt_stage": null,
+      "inputs": ["discourse proposal", "evidence"],
+      "outputs": ["canonical analysis record written durably"]
+    },
+    {
+      "id": "evidence",
+      "reading_order": [5],
+      "module": "evidence",
+      "phase_status": "phase_1_integrity",
+      "in_canonical_list": true,
+      "requires_media": false,
+      "conditional": false,
+      "prompt_stage": null,
+      "inputs": ["quotations a model asserted"],
+      "outputs": ["verified or rejected evidence; the pipeline's integrity rule"]
+    },
+    {
+      "id": "graph",
+      "reading_order": [9],
+      "module": "graph",
+      "phase_status": "phase_1_export",
+      "in_canonical_list": true,
+      "requires_media": false,
+      "conditional": false,
+      "prompt_stage": null,
+      "inputs": ["canonical analysis record"],
+      "outputs": ["versioned projection for LaclauGPT-Data-Visualization"]
+    }
+  ],
+  "phase_2_stages": [
+    {
+      "id": "dna",
+      "reading_order": [7],
+      "module": "laclaugpt_data_analysis.dna_statement_coding",
+      "phase_status": "experimental_phase_2",
+      "summary": "Optional evidence-linked Discourse Network Analyzer statement coding.",
+      "note": "Disabled by default, keeps model output provisional for human review, and must never block Phase 1 outputs. Its results carry the experimental_phase_2 label wherever they surface."
+    },
+    {
+      "id": "sna",
+      "reading_order": [8],
+      "module": "laclaugpt_data_analysis.sna",
+      "phase_status": "experimental_phase_2",
+      "summary": "Theory-neutral Social Network Analysis helpers.",
+      "note": "Conventional network measures under their own names, deliberately not renamed as theoretical constructs. Experimental, and non-blocking for Phase 1."
+    }
+  ]
+}
