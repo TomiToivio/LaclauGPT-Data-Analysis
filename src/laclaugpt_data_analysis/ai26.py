@@ -70,6 +70,12 @@ STAGE_NUMBERS: dict[str, tuple[int, ...]] = {
 
 PHASE_STATUS: dict[str, str] = {stage["id"]: stage["phase_status"] for stage in _ALL_STAGES}
 
+#: The issue's reading-order numbers, 0-9. A number inside this range is a legitimate
+#: logical step even when no module is registered for it: 0 is Collection's handoff,
+#: 3 is optional whole-video evidence, and 7/8 are experimental Phase 2 (see the
+#: registry's `reading_order_note`). Inspection must never call those "unknown".
+LOGICAL_STEPS: tuple[int, ...] = tuple(range(10))
+
 #: Steps that are explicitly experimental Phase 2 and must never block Phase 1.
 PHASE_2_STEPS: tuple[str, ...] = tuple(
     stage["id"] for stage in _REGISTRY.get("phase_2_stages", [])
@@ -273,7 +279,7 @@ def _cmd_step(args: argparse.Namespace) -> int:
         stage for stage in _ALL_STAGES
         if args.number in stage.get("reading_order", [])
     ]
-    if not matches:
+    if not matches and args.number not in LOGICAL_STEPS:
         print(f"error: unknown logical AI26 step {args.number}", file=sys.stderr)
         return 2
     if args.limit < 1:
@@ -301,6 +307,12 @@ def _cmd_step(args: argparse.Namespace) -> int:
             for stage in matches
         ],
     }
+    if not matches:
+        payload["note"] = (
+            "no executable module is registered for this logical step; see the "
+            "registry's reading_order_note (0 is Collection's handoff, 3 is optional "
+            "whole-video evidence, 7 and 8 are experimental Phase 2)"
+        )
     if args.json:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
     else:
@@ -310,6 +322,8 @@ def _cmd_step(args: argparse.Namespace) -> int:
             print(f"  {stage['id']} [{stage['phase_status']}] module={stage['module'] or 'none'}")
             if stage["conditional"]:
                 print("    conditional: media/handoff applicability is not evaluated")
+        if not payload["stages"]:
+            print(f"  no executable module is registered for logical step {args.number}")
         print("To execute bounded worker claims, use scripts/ai26_run_next.sh --apply explicitly.")
     return 0
 

@@ -17,7 +17,14 @@ def test_each_logical_step_is_inspectable_without_execution(number, capsys):
     assert payload["read_only"] is True
     assert payload["executed"] is False
     assert payload["claimed_tasks"] == 0
-    assert payload["stages"]
+    if number == 3:
+        # The issue's optional whole-video evidence: the registry's reading_order_note
+        # says this number has no module here, so inspection must say so rather than
+        # pretend a stage exists.
+        assert payload["stages"] == []
+        assert "no executable module" in payload["note"]
+    else:
+        assert payload["stages"]
     assert all("phase_status" in stage for stage in payload["stages"])
 
 
@@ -48,4 +55,20 @@ def test_nonpositive_limit_rejected(capsys):
 def test_number_outside_registry_is_rejected():
     with pytest.raises(SystemExit) as exc:
         ai26.main(["step", "10", "--dry-run"])
+    assert exc.value.code == 2
+
+
+def test_a_declared_step_with_no_module_is_inspectable_and_says_so(capsys):
+    """Step 3 is the issue's optional whole-video evidence: no module, still inspectable."""
+    result = ai26.main(["step", "3", "--dry-run", "--json"])
+    assert result == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["stages"] == []
+    assert "no executable module" in payload["note"]
+
+
+def test_a_step_outside_the_reading_order_is_rejected():
+    """0-9 is the issue's reading order; anything else is refused before inspection."""
+    with pytest.raises(SystemExit) as exc:
+        ai26.main(["step", "42", "--dry-run", "--json"])
     assert exc.value.code == 2
