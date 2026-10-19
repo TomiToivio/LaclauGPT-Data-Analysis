@@ -41,7 +41,10 @@ def test_every_canonical_module_exists_and_imports() -> None:
     for stage in _registry()["canonical_stages"]:
         module = stage["module"]
         if module is None:
-            assert stage["id"] == "handoff"
+            # Two module-less entries are legitimate: the Collection handoff, and
+            # the optional whole-video stage that #341 requires to be declared
+            # even though no executable module exists for it yet.
+            assert stage["id"] in {"handoff", "video"}, stage["id"]
             continue
         with_module = importlib.import_module(f"laclaugpt_data_analysis.stages.{module}")
         assert with_module is not None, stage["id"]
@@ -66,10 +69,15 @@ def test_only_the_media_stage_is_conditional_and_it_is_the_only_one_needing_medi
     canonical = [s for s in registry if s.get("in_canonical_list")]
     needing_media = [s["id"] for s in registry if s.get("requires_media")]
     conditional = [s["id"] for s in canonical if s.get("conditional")]
-    assert needing_media == ["frame"]
+    # Both optional-media stages must declare it: #341 requires stage 3 (video) to
+    # be machine-readable, not merely mentioned in a note.
+    assert needing_media == ["frame", "video"]
+    # Neither media stage may sit in the canonical analysis list, so a text-only
+    # record still has no conditional step in its mandatory flow.
     assert conditional == ["frame"], "the text-only flow must have no conditional step"
-    # The ingest step is conditional too, but it is not part of the analysis step list.
-    assert [s["id"] for s in registry if s.get("conditional")] == ["handoff", "frame"]
+    assert [s["id"] for s in registry if s.get("conditional")] == [
+        "handoff", "frame", "video",
+    ]
 
 
 def test_the_declared_prompt_stages_resolve_for_the_active_profile() -> None:
