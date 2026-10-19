@@ -128,6 +128,17 @@ def _check_ollama(settings: Any) -> dict[str, Any]:
     return report
 
 
+def _configured_backend_problems(checks: dict[str, Any]) -> list[str]:
+    """Fail closed when a configured MongoDB/Redis probe is missing or uncertain."""
+    problems: list[str] = []
+    for backend in ("mongodb", "redis"):
+        check = checks[backend]
+        if check.get("configured") and check.get("reachable") is not True:
+            reason = check.get("error") or "not_verified"
+            problems.append(f"{backend} unavailable: {reason}")
+    return problems
+
+
 def preflight_report() -> dict[str, Any]:
     """Return a credential-free report of the composed runtime configuration."""
     from .config import load_settings
@@ -168,10 +179,7 @@ def preflight_report() -> dict[str, Any]:
     deployment_errors = settings.deployment_profile.validate()
     problems.extend(deployment_errors)
     checks = report["checks"]
-    if checks["mongodb"].get("reachable") is False:
-        problems.append("mongodb unreachable")
-    if checks["redis"].get("reachable") is False:
-        problems.append("redis unreachable")
+    problems.extend(_configured_backend_problems(checks))
     if checks["object_store"].get("reachable") is False:
         problems.append("object store unreachable")
     if checks["object_store"].get("writeable") is False:
