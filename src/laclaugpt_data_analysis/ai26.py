@@ -276,7 +276,11 @@ def _cmd_step(args: argparse.Namespace) -> int:
     if not matches:
         print(f"error: unknown logical AI26 step {args.number}", file=sys.stderr)
         return 2
-    if args.limit < 1:\n        print("error: --limit must be positive", file=sys.stderr)\n        return 2\n    payload = {\n        "logical_step": args.number,
+    if args.limit < 1:
+        print("error: --limit must be positive", file=sys.stderr)
+        return 2
+    payload = {
+        "logical_step": args.number,
         "mode": "contract_inspection_only",
         "read_only": True,
         "executed": False,
