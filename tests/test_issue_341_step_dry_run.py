@@ -18,10 +18,12 @@ def test_each_logical_step_is_inspectable_without_execution(number, capsys):
     assert payload["executed"] is False
     assert payload["claimed_tasks"] == 0
     if number == 3:
-        # The issue's optional whole-video evidence: the registry's reading_order_note
-        # says this number has no module here, so inspection must say so rather than
-        # pretend a stage exists.
-        assert payload["stages"] == []
+        # The issue's optional whole-video evidence. #341 requires it to be
+        # machine-readable, so a stage is declared even though no module exists:
+        # inspection must report the declared stage and say it has no module.
+        assert [s["id"] for s in payload["stages"]] == ["video"]
+        assert payload["stages"][0]["phase_status"] == "phase_1_optional_media"
+        assert payload["stages"][0]["requires_media"] is True
         assert "no executable module" in payload["note"]
     else:
         assert payload["stages"]
@@ -63,7 +65,9 @@ def test_a_declared_step_with_no_module_is_inspectable_and_says_so(capsys):
     result = ai26.main(["step", "3", "--dry-run", "--json"])
     assert result == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["stages"] == []
+    # Declared, inspectable, and honest about the missing module.
+    assert [s["id"] for s in payload["stages"]] == ["video"]
+    assert payload["stages"][0]["module"] is None
     assert "no executable module" in payload["note"]
 
 
