@@ -148,3 +148,14 @@ def test_no_subcommand_writes_anything(tmp_path, monkeypatch, capsys) -> None:
         assert ai26.main(argv) == 0
     capsys.readouterr()
     assert list(tmp_path.iterdir()) == [], "the CLI must leave the working directory untouched"
+
+
+def test_show_json_includes_prompt_bodies_and_remains_valid_json(capsys) -> None:
+    """--show must not silently override the machine-readable --json contract."""
+    assert ai26.main(["render-prompt", "--stage", "discourse", "--json", "--show"]) == 0
+    record = capsys_json(capsys)
+    assert record["files"]
+    for item in record["files"]:
+        assert item["text"] == (REPO_ROOT / item["path"]).read_text(encoding="utf-8")
+        assert hashlib.sha256(item["text"].encode("utf-8")).hexdigest() == item["sha256"]
+
