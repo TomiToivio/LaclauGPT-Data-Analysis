@@ -192,6 +192,25 @@ def classify_json_decode_failure(content: str, exc: json.JSONDecodeError) -> dic
     stripped = strip_code_fences(text)
     prefix = stripped[: min(exc.pos, len(stripped))]
     suffix = stripped[min(exc.pos, len(stripped)):]
+    brace_balance = stripped.count("{") - stripped.count("}")
+    bracket_balance = stripped.count("[") - stripped.count("]")
+    # A response cut inside a *string* is the commonest truncation, and Python reports the
+    # position where the string STARTED, not where the output stopped: an unterminated string
+    # beginning at char 49 of a 193-char response lands nowhere near the end, so a
+    # position-at-end test alone calls it `other_invalid_json` and the operator never learns
+    # that the budget, not the grammar, was the problem. The message is the hard signal; a
+    # positive balance means more scopes were opened than closed, which invalid JSON that is
+    # merely mis-punctuated does not usually do.
+    truncation_signal = (
+        exc.msg.startswith("Unterminated string")
+        or brace_balance > 0
+        or bracket_balance > 0
+    )
+    # Output that stops without closing its scope looks truncated; output that ends in a
+    # closing delimiter but still fails to parse is malformed, not cut off. Position-at-end
+    # cannot tell those apart -- `{"a": }` errors two characters from the end and is not
+    # truncated -- so ask what the response ends with instead.
+    ends_open = not stripped.endswith(("}", "]"))
     if text.startswith("```") or text.endswith("```"):
         shape = "fenced"
     elif stripped.startswith(("Here is", "Sure,", "JSON:", "json:")):
@@ -200,7 +219,7 @@ def classify_json_decode_failure(content: str, exc: json.JSONDecodeError) -> dic
         shape = "trailing_comma"
     elif stripped.startswith(("{", "[")) and ("'" in stripped[:100]) and ('"' not in stripped[:100]):
         shape = "single_quotes_possible"
-    elif stripped.startswith(("{", "[")) and (not suffix or exc.pos >= len(stripped) - 2):
+    elif stripped.startswith(("{", "[")) and (ends_open or truncation_signal):
         shape = "possibly_truncated"
     else:
         shape = "other_invalid_json"
@@ -214,8 +233,8 @@ def classify_json_decode_failure(content: str, exc: json.JSONDecodeError) -> dic
         # Counts, not fragments: enough to tell a truncated response (positive balance,
         # nothing closed) from a merely mis-punctuated one, without carrying any of the
         # response text into a durable record or a log line.
-        "decode_brace_balance": stripped.count("{") - stripped.count("}"),
-        "decode_bracket_balance": stripped.count("[") - stripped.count("]"),
+        "decode_brace_balance": brace_balance,
+        "decode_bracket_balance": bracket_balance,
     }
 
 

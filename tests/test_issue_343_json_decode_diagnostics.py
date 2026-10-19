@@ -45,6 +45,33 @@ def test_single_quote_classification():
     assert _diagnose("{'key': 'private'}")["decode_shape"] == "single_quotes_possible"
 
 
+def test_an_unterminated_string_is_a_truncation_not_other_invalid():
+    """The shape actually observed on Laskin, and the reason the position test alone fails.
+
+    Python reports the position where the unterminated string *started* (char 49 of a
+    193-character response), which is nowhere near the end, so a position-at-end heuristic
+    called a truncated response `other_invalid_json` and hid the fact that the token budget,
+    not the grammar, was the problem.
+    """
+    content = (
+        '{"summary": "The agency said the programme would continue, and the '
+        'ministry confirmed the timetable", "claims": ["one", "two'
+    )
+    diagnosis = _diagnose(content)
+    assert diagnosis["decode_shape"] == "possibly_truncated"
+    assert diagnosis["decode_brace_balance"] > 0
+    # the failure is not at the end of the text: the string that never closed runs to it
+    assert diagnosis["decode_position"] < diagnosis["decode_response_chars"]
+
+
+def test_a_balanced_but_invalid_response_is_not_called_truncated():
+    """Imbalance is the truncation signal; a balanced failure must not borrow it."""
+    diagnosis = _diagnose('{"summary": 1, "claims": }')
+    assert diagnosis["decode_brace_balance"] == 0
+    assert diagnosis["decode_bracket_balance"] == 0
+    assert diagnosis["decode_shape"] == "other_invalid_json"
+
+
 def test_the_classification_carries_imbalance_counts_without_any_response_text():
     """A truncated response leaves an open structure; a mis-punctuated one balances."""
     truncated = _diagnose('{"key": [1, 2')
