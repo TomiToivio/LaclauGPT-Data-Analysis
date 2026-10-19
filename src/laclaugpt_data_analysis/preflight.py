@@ -139,6 +139,37 @@ def _configured_backend_problems(checks: dict[str, Any]) -> list[str]:
     return problems
 
 
+#: Runtime dependencies a worker cycle cannot do without, and the remedy to name
+#: when one is missing from the interpreter that is actually running (ported from
+#: the Multimodal pipeline's STEP PREFLIGHT ERROR contract, AI26 #372).
+_RUNTIME_DEPENDENCIES: dict[str, str] = {
+    "pymongo": "install the runtime requirements into this interpreter",
+    "redis": "install the runtime requirements into this interpreter",
+    "ollama": "install the Ollama client this pipeline talks to the model through",
+}
+
+
+def _dependency_problems(executable: str | None = None) -> list[str]:
+    """Name each missing runtime dependency, its interpreter and its remedy.
+
+    The endpoint checks report what they could reach; this reports what the
+    interpreter is missing, which is the difference between "the server is down"
+    and "this venv was never installed into" -- a distinction that has cost whole
+    queue cycles before. Both questions are worth asking: a reachable endpoint
+    proves nothing if the client library is absent.
+    """
+    import sys
+
+    where = executable or sys.executable
+    problems: list[str] = []
+    for name, remedy in _RUNTIME_DEPENDENCIES.items():
+        try:
+            __import__(name)
+        except ImportError:
+            problems.append(f"PREFLIGHT ERROR: {name} unavailable in {where} - {remedy}")
+    return problems
+
+
 def preflight_report() -> dict[str, Any]:
     """Return a credential-free report of the composed runtime configuration."""
     from .config import load_settings
@@ -188,6 +219,7 @@ def preflight_report() -> dict[str, Any]:
         problems.append("ollama endpoint unreachable")
     if checks["ollama"].get("model_present") is False:
         problems.append(f"model not present on endpoint: {settings.llm_model}")
+    problems.extend(_dependency_problems())
     if problems:
         report["status"] = "invalid"
         report["problems"] = problems
@@ -195,11 +227,17 @@ def preflight_report() -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    del argv
+    argv = list(argv or [])
+    strict = "--strict" in argv
     try:
         report = preflight_report()
     except Exception as exc:  # noqa: BLE001 - a preflight must not crash the wrapper
         print(json.dumps({"status": "error", "error": type(exc).__name__}, indent=2))
+        return 2
+    if strict and report["status"] != "ok":
+        # Human-first: the named failure and its remedy, not a JSON wall in a log.
+        for problem in report.get("problems", []):
+            print(problem, file=sys.stderr)
         return 2
     print(json.dumps(report, indent=2, sort_keys=True, default=str))
     return 0 if report["status"] == "ok" else 2
