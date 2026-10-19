@@ -191,7 +191,6 @@ def classify_json_decode_failure(content: str, exc: json.JSONDecodeError) -> dic
     text = content.strip()
     stripped = strip_code_fences(text)
     prefix = stripped[: min(exc.pos, len(stripped))]
-    suffix = stripped[min(exc.pos, len(stripped)):]
     brace_balance = stripped.count("{") - stripped.count("}")
     bracket_balance = stripped.count("[") - stripped.count("]")
     # A response cut inside a *string* is the commonest truncation, and Python reports the
