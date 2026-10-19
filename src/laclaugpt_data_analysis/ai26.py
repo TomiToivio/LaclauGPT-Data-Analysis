@@ -403,11 +403,19 @@ def _cmd_step(args: argparse.Namespace) -> int:
             for stage in matches
         ],
     }
+    module_less = [s["id"] for s in payload["stages"] if not s["has_module"]]
     if not matches:
         payload["note"] = (
             "no executable module is registered for this logical step; see the "
-            "registry's reading_order_note (0 is Collection's handoff, 3 is optional "
-            "whole-video evidence, 7 and 8 are experimental Phase 2)"
+            "registry's reading_order_note (0 is Collection's handoff, 7 and 8 are "
+            "experimental Phase 2)"
+        )
+    elif module_less:
+        payload["note"] = (
+            "no executable module is registered for: "
+            + ", ".join(module_less)
+            + ". The stage is declared so its applicability is machine-readable, "
+            "and it records not_applicable rather than running."
         )
     if args.json:
         print(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -416,8 +424,10 @@ def _cmd_step(args: argparse.Namespace) -> int:
         print("No records inspected or claimed; no provider invoked; no outputs written.")
         for stage in payload["stages"]:
             print(f"  {stage['id']} [{stage['phase_status']}] module={stage['module'] or 'none'}")
-            if stage["conditional"]:
-                print("    conditional: media/handoff applicability is not evaluated")
+            if stage["requires_media"]:
+                print(f"    applicability: {stage['media_applicability']}")
+            elif stage["conditional"]:
+                print("    conditional: handoff applicability is not evaluated here")
         if not payload["stages"]:
             print(f"  no executable module is registered for logical step {args.number}")
         print("To execute bounded worker claims, use scripts/ai26_run_next.sh --apply explicitly.")
