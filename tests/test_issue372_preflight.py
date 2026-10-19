@@ -19,19 +19,26 @@ from unittest import mock
 from laclaugpt_data_analysis import preflight
 
 
+def _imports(missing: tuple[str, ...] = ()) -> mock._patch:
+    """Patch __import__ so the probe is hermetic: CI may not install every
+    optional runtime dependency, and a test must not depend on that."""
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name in missing:
+            raise ImportError(f"no module named {name}")
+        return real_import(name, *args, **kwargs)
+
+    return mock.patch.object(builtins, "__import__", fake_import)
+
+
 class DependencyNamingTests(unittest.TestCase):
     def test_healthy_interpreter_names_no_problem(self) -> None:
-        self.assertEqual(preflight._dependency_problems(), [])
+        with _imports():
+            self.assertEqual(preflight._dependency_problems(), [])
 
     def test_missing_dependency_names_module_interpreter_and_remedy(self) -> None:
-        real_import = builtins.__import__
-
-        def fake_import(name, *args, **kwargs):
-            if name == "pymongo":
-                raise ImportError("no module named pymongo")
-            return real_import(name, *args, **kwargs)
-
-        with mock.patch.object(builtins, "__import__", fake_import):
+        with _imports(missing=("pymongo",)):
             problems = preflight._dependency_problems("/opt/venv/bin/python")
         self.assertEqual(len(problems), 1)
         message = problems[0]
@@ -43,7 +50,7 @@ class DependencyNamingTests(unittest.TestCase):
     def test_check_is_local_only(self) -> None:
         """No sockets, no store, no model call: an import probe cannot fail fast if
         it first waits on a network."""
-        with mock.patch("socket.socket", side_effect=AssertionError("network used")):
+        with _imports(), mock.patch("socket.socket", side_effect=AssertionError("network used")):
             self.assertEqual(preflight._dependency_problems(), [])
 
 
