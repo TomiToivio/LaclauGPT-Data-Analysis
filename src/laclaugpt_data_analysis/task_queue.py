@@ -485,12 +485,16 @@ class SqliteTaskStore:
             if not result_supersedes_fingerprint(stored, fingerprint):
                 return False
             if stored is None:
-                connection.execute(
-                    "INSERT INTO task_results (source_url, result_json, provenance_json, "
-                    "created_at, generation_fingerprint, idempotency_key) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
-                    (*payload, task.idempotency_key),
-                )
+                try:
+                    connection.execute(
+                        "INSERT INTO task_results (source_url, result_json, provenance_json, "
+                        "created_at, generation_fingerprint, idempotency_key) "
+                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        (*payload, task.idempotency_key),
+                    )
+                except sqlite3.IntegrityError:
+                    # Another writer won the same source; that is a duplicate, not an error.
+                    return False
             else:
                 # Same source, provably different generation settings: the old answer is
                 # replaced rather than kept next to an answer it does not describe.

@@ -91,6 +91,16 @@ def clean(value: Any) -> str:
     return "" if raw.lower() in _MISSING else raw
 
 
+def _body_text(value: Any) -> str:
+    """Section text, trimmed. Unlike :func:`clean` this never rewrites a word.
+
+    ``clean`` exists for tabular cells, where "nan"/"None" are pandas artefacts. A prompt
+    section is prose the model is meant to read, so a section whose text happens to be
+    "none" must reach the model as "none" rather than disappear.
+    """
+    return "" if value is None else str(value).strip()
+
+
 def estimate_tokens(text: str) -> int:
     """Crude token estimate for a budget signal. Empty text is zero tokens, not one."""
     text = clean(text)
@@ -248,9 +258,16 @@ def allocate(
     )
     ordered = sorted(list(sections), key=lambda item: -item.priority)
     if budget == 0:
-        text = "\n\n".join(f"{item.header}\n{clean(item.body)}" for item in ordered)
+        unbounded_bodies = {item.name: _body_text(item.body) for item in ordered}
+        text = "\n\n".join(f"{item.header}\n{unbounded_bodies[item.name]}" for item in ordered)
         unbounded = tuple(
-            FieldReport(item.name, len(clean(item.body)), estimate_tokens(item.body), False, False)
+            FieldReport(
+                item.name,
+                len(unbounded_bodies[item.name]),
+                estimate_tokens(unbounded_bodies[item.name]),
+                False,
+                False,
+            )
             for item in ordered
         )
         return Packet(text, unbounded, 0, 0, 0)
@@ -265,7 +282,7 @@ def allocate(
     bodies: dict[str, str] = {}
     report: list[FieldReport] = []
     for item in ordered:
-        body = clean(item.body)
+        body = _body_text(item.body)
         cap = item.cap_for(None)
         if not body:
             bodies[item.name] = ""
