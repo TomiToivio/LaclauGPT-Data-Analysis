@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import logging
 import os
@@ -22,7 +23,7 @@ from .canonical_pipeline import PipelineContext, run_canonical_pipeline
 from .codebooks import load_codebook
 from .config import Settings, load_settings
 from .debug_mode import configure_logging
-from .llm.base import LLMTruncationError
+from .llm.base import LLMTruncationError, generation_fingerprint
 from .llm.ollama import (
     LLM_ENDPOINT_ENV_ALIAS,
     LLM_HOST_ENV,
@@ -30,7 +31,7 @@ from .llm.ollama import (
     configured_llm_modes,
     resolve_llm_host,
 )
-from .llm.structured_output import structured_output_ceiling
+from .llm.structured_output import effective_structured_options, structured_output_ceiling
 from .phase1_laskin_runtime import load_ai26_runtime_policy
 from .staging import (
     MediaStager,
@@ -50,6 +51,29 @@ from .task_queue import (
 logger = logging.getLogger(__name__)
 
 AI26_MODEL = "gemma4:12b"
+
+#: The prompt identity the worker's stages run under. It must match the default of
+#: ``stages.runner.run_canonical_pipeline``; a changed prompt version invalidates resume.
+AI26_PROMPT_VERSION = "canonical-pipeline-v1"
+
+
+def ai26_generation_fingerprint(
+    *, model: str = AI26_MODEL, prompt_version: str = AI26_PROMPT_VERSION
+) -> str:
+    """Fingerprint of the generation settings this worker will actually use.
+
+    Covers the model, the configured mode, every effective generation option (merged
+    defaults plus the structured-output budgets, read from the environment) and the
+    prompt version. Read-only and network-free: it never probes the endpoint.
+    """
+    configured = configured_llm_modes()
+    mode = configured[0][1] if configured else "local"
+    return generation_fingerprint(
+        model=model,
+        options=effective_structured_options(),
+        mode=mode,
+        prompt_version=prompt_version,
+    )
 
 
 def _sha256(path: Path) -> str:
@@ -273,8 +297,21 @@ class WorkerBinding:
 
 
 def enforce_local_model(manifest: FrozenRunManifest) -> None:
+    """Refuse to start a worker that cannot honestly serve every task.
+
+    These checks run before the first claim, so a misconfigured worker exits without
+    taking work it cannot finish. The provider dependency is one of them: without the
+    ``ollama`` package every call raises lazily *after* the task has been claimed, which
+    turns one configuration error into a claimed-then-failed task (issue #372, upstream
+    #292/#293: the preflight must name the missing dependency, not discover it mid-run).
+    """
     if manifest.model != AI26_MODEL:
         raise ValueError(f"AI26 distributed test requires model {AI26_MODEL}")
+    if importlib.util.find_spec("ollama") is None:
+        raise ValueError(
+            "the ollama package is required for the AI26 worker; "
+            "install it with pip install -e '.[ollama]' before claiming tasks"
+        )
     for name, mode in configured_llm_modes():
         if mode != "local":
             raise ValueError(
@@ -539,6 +576,7 @@ class AI26TaskWorker(TaskWorker):
 
     def run_once(self, *, reclaim_idle_ms: int | None = None) -> str:
         self.last_failure_class: str | None = None
+        self.last_resume_invalidated = 0
         quarantine_before = int(getattr(self.queue, "quarantined_count", 0))
         self.last_quarantined = 0
         claimed = None
@@ -571,7 +609,7 @@ class AI26TaskWorker(TaskWorker):
                 self.queue.dead_letter(task, error)
                 self.queue.ack(claimed.message_id)
                 return "dead-letter"
-        if self.durable_store.has_result(task.idempotency_key):
+        if self.has_current_result(task):
             self.queue.ack(claimed.message_id)
             return "duplicate"
         if self.durable_store.has_terminal_failure(task.idempotency_key):
@@ -590,7 +628,12 @@ class AI26TaskWorker(TaskWorker):
                 return "duplicate"
         try:
             result = self.handler(task)
-            inserted = self.durable_store.write_result(task, result, self.provenance)
+            inserted = self.durable_store.write_result(
+                task,
+                result,
+                self.provenance,
+                fingerprint=self.generation_fingerprint,
+            )
             self.queue.ack(claimed.message_id)
             return "completed" if inserted else "duplicate"
         except Exception as exc:
@@ -626,6 +669,7 @@ def seed_ready_tasks(
     *,
     limit: int,
     page_size: int | None = None,
+    fingerprint: str = "",
 ) -> int:
     if limit < 1:
         return 0
@@ -639,7 +683,7 @@ def seed_ready_tasks(
         offset += len(envelopes)
         for envelope in envelopes:
             task = binding.task_from_handoff(envelope)
-            if durable_store.has_result(task.idempotency_key):
+            if durable_store.has_result(task.idempotency_key, fingerprint):
                 continue
             if durable_store.has_terminal_failure(task.idempotency_key):
                 rearmed = _maybe_rearm_terminal_failure_for_higher_budget(
@@ -679,6 +723,8 @@ def build_worker(binding: WorkerBinding, settings: Settings) -> tuple[TaskWorker
     durable = durable_store_from_settings(settings, run_id=binding.manifest.run_id)
     handoff = MongoCollectionHandoff(settings, not_before=policy.date_after)
     worker_provenance = {**binding.provenance(), **policy.provenance()}
+    fingerprint = ai26_generation_fingerprint()
+    worker_provenance = {**worker_provenance, "generation_fingerprint": fingerprint}
     worker = AI26TaskWorker(
         queue=queue,
         durable_store=durable,
@@ -686,6 +732,7 @@ def build_worker(binding: WorkerBinding, settings: Settings) -> tuple[TaskWorker
         worker_id=binding.worker_id,
         provenance=worker_provenance,
         validator=binding.validate_task,
+        generation_fingerprint=fingerprint,
     )
     return worker, handoff
 
@@ -728,6 +775,7 @@ def _run_bounded_cycle(
         "idle": 0,
         "seeded": max(seeded, 0),
         "claims": 0,
+        "resume_invalidated": 0,
     }
     failure_classes: dict[str, int] = {}
     work_units = 0
@@ -736,6 +784,7 @@ def _run_bounded_cycle(
         counts["claims"] += 1
         counts[outcome] = counts.get(outcome, 0) + 1
         counts["quarantined"] += int(getattr(worker, "last_quarantined", 0))
+        counts["resume_invalidated"] += int(getattr(worker, "last_resume_invalidated", 0))
         failure_class = getattr(worker, "last_failure_class", None)
         if failure_class:
             failure_classes[failure_class] = failure_classes.get(failure_class, 0) + 1
@@ -822,6 +871,7 @@ def main(argv: list[str] | None = None) -> int:
             worker.queue,
             worker.durable_store,
             limit=max(args.max_tasks, 0),
+            fingerprint=worker.generation_fingerprint,
         )
     counts, failure_classes = _run_bounded_cycle(
         worker,

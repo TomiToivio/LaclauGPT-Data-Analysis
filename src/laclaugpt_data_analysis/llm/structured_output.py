@@ -17,9 +17,11 @@ from pydantic import BaseModel
 
 from laclaugpt_data_analysis.llm.base import (
     ChatRequest,
+    LLMEmptyResponseError,
     LLMProvider,
     LLMResponse,
     LLMTruncationError,
+    empty_response_retries,
 )
 from laclaugpt_data_analysis.llm.json_repair import join_repairs, repaired_candidate
 
@@ -57,6 +59,23 @@ def structured_output_ceiling() -> int:
     return _positive_int_env(
         MAX_STRUCTURED_NUM_PREDICT_ENV, MAX_STRUCTURED_NUM_PREDICT
     )
+
+
+def effective_structured_options(options: dict[str, Any] | None = None) -> dict[str, int]:
+    """The generation budgets a structured call actually uses before the ladder widens.
+
+    Exposed so a resume fingerprint can be bound to the *effective* numbers rather than
+    to whatever a caller happened to pass (issue #372, upstream #287).
+    """
+    default_budget = _positive_int_env(STRUCTURED_NUM_PREDICT_ENV, STRUCTURED_NUM_PREDICT)
+    minimum_ctx = _positive_int_env(STRUCTURED_NUM_CTX_ENV, STRUCTURED_NUM_CTX)
+    resolved = dict(options or {})
+    resolved.setdefault("num_predict", default_budget)
+    return {
+        "num_predict": int(resolved["num_predict"]),
+        "num_ctx": max(int(resolved.get("num_ctx", 0) or 0), minimum_ctx),
+        "structured_ceiling": structured_output_ceiling(),
+    }
 
 _FENCE_RE = re.compile(r"^```[a-zA-Z0-9_-]*\n?|\n?```$")
 
@@ -272,6 +291,11 @@ def parse_structured(content: str, model_cls: type[T]) -> T:
     ``LACLAUGPT_JSON_REPAIR=0`` to disable it, which restores the pre-#343 behaviour.
     """
     text = strip_code_fences(content)
+    if not text.strip():
+        # Fail loudly and specifically. json.loads("") reports "Expecting value: line 1
+        # column 1", which reads like a grammar problem and hides that the model answered
+        # nothing at all (issue #372, upstream #236/#274).
+        raise LLMEmptyResponseError("structured output is empty: there is nothing to validate")
     text, repairs = repaired_candidate(text)
     if repairs:
         logger.warning(
@@ -327,6 +351,8 @@ def chat_structured(
     )
 
     validation_failures = 0
+    empty_failures = 0
+    empty_retries = empty_response_retries()
     call_attempt = 0
 
     while True:
@@ -373,6 +399,29 @@ def chat_structured(
                 minimum_ctx,
                 next_budget * 2,
             )
+            continue
+
+        if not response.content.strip():
+            # HTTP 200 with no content is not a validation failure: feeding a validation
+            # error back to a model that said nothing only burns the ladder. Retry the
+            # same request, then fail loudly so the worker retries or terminalises the
+            # record instead of storing an empty analysis (issue #372, upstream #274).
+            empty_failures += 1
+            logger.warning(
+                "empty structured generation (call %d, empty %d/%d, finish_reason=%s)",
+                call_attempt,
+                empty_failures,
+                empty_retries + 1,
+                response.finish_reason or "unknown",
+            )
+            if empty_failures > empty_retries:
+                exc = LLMEmptyResponseError(
+                    "structured generation returned an empty response after "
+                    f"{empty_failures} attempt(s) (model={model}, "
+                    f"finish_reason={response.finish_reason or 'unknown'})"
+                )
+                _attach_failure_diagnostics(exc, response)
+                raise exc from None
             continue
 
         try:

@@ -43,7 +43,7 @@ class FakeDurableStore:
         self.completed: set[str] = set()
         self.terminal: set[str] = set()
 
-    def has_result(self, idempotency_key: str) -> bool:
+    def has_result(self, idempotency_key: str, fingerprint: str = "") -> bool:
         return idempotency_key in self.completed
 
     def has_terminal_failure(self, idempotency_key: str) -> bool:

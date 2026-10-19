@@ -47,6 +47,7 @@ from .shared import (
     envelope_for_stage,
     model_run_metadata,
     now_iso,
+    render_prompt,
 )
 
 
@@ -78,12 +79,13 @@ def discourse_analysis(
         codebook_entries=codebook_entries,
         prompt_version=prompt_version,
     )
+    user_prompt, prompt_report = render_prompt(envelope, stage="discourse")
     proposal, response = chat_structured(
         provider,
         DiscourseProposal,
         model=model,
         system_prompt=system_resource.text,
-        user_prompt=envelope.render(),
+        user_prompt=user_prompt,
         allow_cloud_fallback=allow_cloud_fallback,
     )
     prompt_meta = prompt_provenance(system_resource, task_resource, rendered=rendered_task)
@@ -93,6 +95,7 @@ def discourse_analysis(
         prompt_meta,
         prompt_version=prompt_version,
         stage="discourse",
+        prompt_report=prompt_report,
     )
     append_stage(
         record,
@@ -102,6 +105,7 @@ def discourse_analysis(
             "prompt_version": prompt_version,
             **prompt_meta,
             "context_provenance": envelope.provenance_snapshot(),
+            "prompt_budget": prompt_report,
             "proposal": proposal.model_dump(mode="json"),
             "model_run": run_meta,
         },

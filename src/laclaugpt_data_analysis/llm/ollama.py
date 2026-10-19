@@ -21,14 +21,18 @@ import logging
 import os
 import platform
 import subprocess
+from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
 from laclaugpt_data_analysis.llm.base import (
     ChatRequest,
     LLMCallProvenance,
+    LLMEmptyResponseError,
     LLMResponse,
     ProviderError,
+    empty_response_retries,
     merge_options,
 )
 
@@ -292,10 +296,67 @@ def model_digest(model: str) -> str:
 
 
 def _response_value(response: Any, name: str, default: Any = None) -> Any:
-    """Read a field from either Ollama\'s mapping or typed response object."""
+    """Read a field from either Ollama's mapping or its typed response object."""
     if isinstance(response, dict):
         return response.get(name, default)
     return getattr(response, name, default)
+
+
+def _content(response: Any) -> str:
+    message = _response_value(response, "message", {})
+    if isinstance(message, dict):
+        value = message.get("content", "")
+    else:
+        value = getattr(message, "content", "")
+    return value if isinstance(value, str) else ""
+
+
+@dataclass(frozen=True)
+class Completion:
+    """One completed provider exchange, after the blank-answer retry."""
+
+    response: Any
+    content: str
+    finish_reason: str
+    truncated: bool
+    attempts: int
+
+
+def complete_with_empty_retry(send: Callable[[], Any], *, label: str = "") -> Completion:
+    """Call ``send`` until it returns usable content, then return the completion.
+
+    A 200 response with empty or whitespace-only content is not an answer. Ollama does
+    return these — local Qwen models did so routinely in the multimodal pipeline — and the
+    old code returned them as normal text, so a stage could checkpoint and cache an empty
+    analysis as a success (issue #372, upstream #236/#274). Retries are bounded and
+    reported through :class:`Completion`; when they are exhausted this raises
+    :class:`LLMEmptyResponseError` so the worker retries or terminalises the record.
+
+    A *truncated* response is returned as-is: the budget ladder, not a retry, is the
+    correct response to a length stop.
+    """
+    retries = empty_response_retries()
+    attempts = 0
+    for attempt in range(1, retries + 2):
+        attempts = attempt
+        response = send()
+        content = _content(response)
+        finish_reason = str(_response_value(response, "done_reason", "") or "")
+        truncated = finish_reason.casefold() in _TRUNCATION_REASONS
+        if content.strip() or truncated:
+            return Completion(response, content, finish_reason, truncated, attempts)
+        if attempt <= retries:
+            logger.warning(
+                "empty_model_response model=%s attempt=%d/%d finish_reason=%s; retrying",
+                label or "unknown",
+                attempt,
+                retries + 1,
+                finish_reason or "unknown",
+            )
+    raise LLMEmptyResponseError(
+        f"model returned an empty response after {attempts} attempt(s)"
+        + (f" (model={label})" if label else "")
+    )
 
 
 def _fallback_allowed(explicit: bool | None) -> bool:
@@ -345,37 +406,43 @@ class OllamaProvider:
             kwargs["think"] = False
         host = resolve_llm_host(self._host_override)
         client = _client(host)
-        try:
-            response = client.chat(model=use_model, messages=messages, options=opts, **kwargs)
-        except Exception as exc:
-            can_fallback = (
-                mode == "local"
-                and not _looks_cloud(use_model)
-                and _fallback_allowed(request.allow_cloud_fallback)
-                and _retryable_local_error(exc)
-            )
-            if not can_fallback:
-                raise ProviderError(f"Ollama call failed: {exc}") from exc
-            cloud_model = os.environ.get(LLM_CLOUD_ENV) or LLM_DEFAULT_CLOUD
-            logger.warning(
-                "local Ollama failed with retryable error (%s); authorised fallback to %s",
-                exc,
-                cloud_model,
-            )
-            response = client.chat(model=cloud_model, messages=messages, options=opts, **kwargs)
-            use_model = cloud_model
-            actual_mode = "cloud"
-            fallback_used = True
-            fallback_reason = f"{type(exc).__name__}: {exc}"
 
-        message = _response_value(response, "message", {})
-        content = (
-            message.get("content", "")
-            if isinstance(message, dict)
-            else getattr(message, "content", "")
-        )
-        finish_reason = str(_response_value(response, "done_reason", "") or "")
-        truncated = finish_reason.casefold() in _TRUNCATION_REASONS
+        def send(model_name: str):
+            return client.chat(model=model_name, messages=messages, options=opts, **kwargs)
+
+        def send_with_fallback():
+            """One provider exchange, applying the authorised local->cloud fallback."""
+            nonlocal use_model, actual_mode, fallback_used, fallback_reason
+            try:
+                return send(use_model)
+            except Exception as exc:
+                can_fallback = (
+                    mode == "local"
+                    and not _looks_cloud(use_model)
+                    and _fallback_allowed(request.allow_cloud_fallback)
+                    and _retryable_local_error(exc)
+                )
+                if not can_fallback:
+                    raise ProviderError(f"Ollama call failed: {exc}") from exc
+                cloud_model = os.environ.get(LLM_CLOUD_ENV) or LLM_DEFAULT_CLOUD
+                logger.warning(
+                    "local Ollama failed with retryable error (%s); authorised fallback to %s",
+                    exc,
+                    cloud_model,
+                )
+                response = send(cloud_model)
+                use_model = cloud_model
+                actual_mode = "cloud"
+                fallback_used = True
+                fallback_reason = f"{type(exc).__name__}: {exc}"
+                return response
+
+        # A 200 with no content is not an answer: retry a bounded number of times, then
+        # fail loudly instead of returning an empty analysis (issue #372).
+        completion = complete_with_empty_retry(send_with_fallback, label=use_model)
+        content = completion.content
+        finish_reason = completion.finish_reason
+        truncated = completion.truncated
         provenance = LLMCallProvenance(
             requested_mode=mode,
             requested_model=request.model,
@@ -386,14 +453,16 @@ class OllamaProvider:
             endpoint=host or "default endpoint",
             fallback_used=fallback_used,
             fallback_reason=fallback_reason,
+            attempts=completion.attempts,
         )
         logger.debug(
-            "LLM response requested=%s/%s actual=%s/%s fallback=%s",
+            "LLM response requested=%s/%s actual=%s/%s fallback=%s attempts=%d",
             mode,
             resolved,
             actual_mode,
             use_model,
             fallback_used,
+            completion.attempts,
         )
         return LLMResponse(
             content=content,

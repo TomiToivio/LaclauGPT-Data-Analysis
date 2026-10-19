@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -33,6 +34,10 @@ from pydantic import BaseModel, Field
 from ..canonical import CanonicalRecord
 from ..codebooks import CodebookEntry
 from ..context_envelope import PromptEnvelope, build_prompt_envelope
+from ..llm.base import effective_generation_settings, generation_fingerprint
+from ..llm.structured_output import effective_structured_options
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Run context
@@ -235,11 +240,16 @@ def envelope_for_stage(
     task: str,
     codebook_entries: list[CodebookEntry],
     prompt_version: str,
+    budget: int | None = None,
 ) -> PromptEnvelope:
     """Assemble the layered prompt envelope for one stage call.
 
     Memory context and codebook entries share the memory layer; the task text is
     the current operation. See `prompts/README.md` for the three-layer model.
+
+    ``budget=None`` inherits the model-visible character budget from the environment
+    (see :mod:`prompt_budget`); the envelope is bounded so a large record cannot push
+    the task and the system prompt out of the model's context window (issue #372).
     """
     memory = "\n".join(
         part for part in (context.memory_context, memory_text(codebook_entries)) if part
@@ -254,7 +264,32 @@ def envelope_for_stage(
         rag_context=context.rag_context,
         context_provenance=context.provenance,
         prompt_version=prompt_version,
+        budget=budget,
     )
+
+
+def render_prompt(envelope: PromptEnvelope, *, stage: str = "") -> tuple[str, dict[str, Any]]:
+    """Render a stage prompt and log the model-visible size before the call.
+
+    An oversize prompt used to be invisible: the server truncated it and the damage only
+    showed up as a worse answer. Logging the size first means the cause is in the run log
+    next to the failure instead of being inferred from it (issue #372, upstream #262).
+    """
+    text, report = envelope.render_with_report()
+    logger.info(
+        "prompt_visible stage=%s prompt_version=%s chars=%d est_tokens=%d budget=%d "
+        "truncated=%s omitted=%s",
+        stage or "unknown",
+        envelope.prompt_version,
+        report["used"],
+        report["est_tokens"],
+        report["budget"],
+        ",".join(report["truncated"]) or "-",
+        ",".join(report["omitted"]) or "-",
+    )
+    if report["truncated"] or report["omitted"]:
+        logger.warning("prompt_budget %s", report["report_line"].replace("\n", " | "))
+    return text, report
 
 
 def project_config_sha256(context: PipelineContext) -> str:
@@ -272,14 +307,27 @@ def model_run_metadata(
     *,
     prompt_version: str,
     stage: str,
+    prompt_report: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Provenance block attached to every model call.
 
     Carries the prompt identity/version, the revisions in force, and the
     effective stage set, so a stored result can be reproduced and audited.
+
+    Since issue #372 it also carries the *effective* generation settings, their
+    fingerprint, and the model-visible prompt size: a stored result can then be checked
+    against the settings that produced it, and an over-budget prompt is recorded rather
+    than guessed at.
     """
-    return {
-        **response.provenance.to_dict(),
+    provenance = response.provenance
+    settings = effective_generation_settings(
+        model=provenance.actual_model,
+        options=effective_structured_options(),
+        mode=provenance.actual_mode,
+        prompt_version=prompt_version,
+    )
+    metadata = {
+        **provenance.to_dict(),
         "prompt_version": prompt_version,
         "stage": stage,
         "config_revision": context.config_revision,
@@ -288,5 +336,23 @@ def model_run_metadata(
         "project_config_revision": context.project_config_revision,
         "project_config_sha256": project_config_sha256(context),
         "effective_analysis_stages": effective_stage_set(context),
+        "generation_settings": settings,
+        "generation_fingerprint": generation_fingerprint(
+            model=provenance.actual_model,
+            options=effective_structured_options(),
+            mode=provenance.actual_mode,
+            prompt_version=prompt_version,
+        ),
         **prompt_meta,
     }
+    if prompt_report is not None:
+        metadata.update(
+            {
+                "prompt_chars": prompt_report.get("used", 0),
+                "prompt_est_tokens": prompt_report.get("est_tokens", 0),
+                "prompt_budget_chars": prompt_report.get("budget", 0),
+                "prompt_truncated_sections": list(prompt_report.get("truncated") or []),
+                "prompt_omitted_sections": list(prompt_report.get("omitted") or []),
+            }
+        )
+    return metadata
