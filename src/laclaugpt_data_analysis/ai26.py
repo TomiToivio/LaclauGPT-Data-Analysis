@@ -217,6 +217,87 @@ def _cmd_render_prompt(args: argparse.Namespace) -> int:
     return 0
 
 
+def validate_stage_registry(registry: dict[str, Any]) -> list[str]:
+    """Check the declared stage map against modules and versioned prompt resources.
+
+    This is a non-executing structural audit, not validation of scientific claims,
+    runtime dependencies, remote contracts, or an effective model prompt.
+    """
+    from laclaugpt_data_analysis.stages.prompt_map import prompt_ids_for_stage
+
+    errors: list[str] = []
+    canonical = registry.get("canonical_stages", [])
+    experimental = registry.get("phase_2_stages", [])
+    if not isinstance(canonical, list) or not isinstance(experimental, list):
+        return ["stage groups must be arrays"]
+    seen: set[str] = set()
+    for group_name, stages in (("canonical", canonical), ("phase_2", experimental)):
+        for index, stage in enumerate(stages):
+            if not isinstance(stage, dict):
+                errors.append(f"{group_name}[{index}]: stage must be an object")
+                continue
+            identifier = stage.get("id")
+            if not isinstance(identifier, str) or not identifier:
+                errors.append(f"{group_name}[{index}]: missing stage id")
+                continue
+            if identifier in seen:
+                errors.append(f"{identifier}: duplicate stage id")
+            seen.add(identifier)
+            order = stage.get("reading_order")
+            if not isinstance(order, list) or not order or any(
+                type(number) is not int or number not in LOGICAL_STEPS for number in order
+            ):
+                errors.append(f"{identifier}: invalid logical reading order")
+            phase = stage.get("phase_status", "")
+            if group_name == "phase_2":
+                if phase != "experimental_phase_2":
+                    errors.append(f"{identifier}: Phase 2 must be experimental")
+                if stage.get("in_canonical_list"):
+                    errors.append(f"{identifier}: Phase 2 cannot be a canonical prerequisite")
+            elif phase == "experimental_phase_2":
+                errors.append(f"{identifier}: experimental stage in canonical group")
+            if stage.get("requires_media") and not stage.get("conditional"):
+                errors.append(f"{identifier}: media requirement must be conditional")
+            module = stage.get("module")
+            if stage.get("in_canonical_list"):
+                if not isinstance(module, str) or not module:
+                    errors.append(f"{identifier}: canonical stage lacks module")
+                elif module != identifier:
+                    errors.append(f"{identifier}: canonical module id mismatch")
+            prompt_stage = stage.get("prompt_stage")
+            if prompt_stage:
+                try:
+                    prompt_ids = prompt_ids_for_stage("ai26", prompt_stage)
+                except ValueError:
+                    errors.append(f"{identifier}: unmapped AI26 prompt stage {prompt_stage}")
+                else:
+                    for prompt_id in prompt_ids:
+                        if not prompt_files(prompt_id):
+                            errors.append(f"{identifier}: missing prompt resource {prompt_id}")
+    if not canonical:
+        errors.append("canonical stage group is empty")
+    return errors
+
+
+def _cmd_validate_contract(args: argparse.Namespace) -> int:
+    """Audit local registry/prompt coherence without calling providers or stores."""
+    errors = validate_stage_registry(load_stage_registry())
+    report = {
+        "valid": not errors,
+        "read_only": True,
+        "scope": "local_stage_registry_and_ai26_prompt_resources_only",
+        "errors": errors,
+    }
+    if args.json:
+        print(json.dumps(report, indent=2, ensure_ascii=False))
+    else:
+        print("AI26 local registry/prompt contract: " + ("OK" if not errors else "FAILED"))
+        for error in errors:
+            print(f"  - {error}")
+        print("Remote Collection/Visualization and live runtime are not checked.")
+    return 0 if not errors else 1
+
+
 def _cmd_contract(args: argparse.Namespace) -> int:
     path = Path(args.project_config)
     if not path.is_absolute():
@@ -372,6 +453,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     contract.add_argument("--json", action="store_true", help="machine-readable output")
     contract.set_defaults(func=_cmd_contract)
+
+    validate = subparsers.add_parser(
+        "validate-contract", help="audit local stage registry and AI26 prompt references"
+    )
+    validate.add_argument("--json", action="store_true", help="machine-readable result")
+    validate.set_defaults(func=_cmd_validate_contract)
 
     status = subparsers.add_parser("status", help="which configs exist, and what is read-only")
     status.add_argument("--json", action="store_true", help="machine-readable output")

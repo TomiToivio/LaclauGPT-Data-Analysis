@@ -168,3 +168,16 @@ whose `--apply` is a separate operator action.
 
 This is **not** a replacement for the independently executable scientific stage
 bodies and reviewed Laskin pilot still required to close #341.
+
+## Local registry/prompt integrity check
+
+Run `python -m laclaugpt_data_analysis.ai26 validate-contract --json` before
+reviewing or deploying registry changes. The offline command checks stage IDs,
+logical reading-order numbering, canonical/experimental Phase 2 separation,
+conditional media requirements and the existence of versioned AI26 prompt
+resources referenced by stages. It exits 1 and reports individual findings
+when declarations disagree. It never claims tasks or calls a model.
+
+This check is **not** the cross-repository schema validator at
+`tools/check_ai26_contracts.py`, a fully assembled prompt preview, or a Laskin
+production pilot. Those acceptance gates remain independent and required.
