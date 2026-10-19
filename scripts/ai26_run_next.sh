@@ -37,4 +37,8 @@ if (( ! APPLY )); then
   exit 0
 fi
 export LACLAUGPT_MAX_TASKS="$LIMIT"
+# A misconfigured host must fail here, in seconds, naming what is missing --
+# not three minutes into a queue cycle (ported from the Multimodal preflight, #372).
+"$ROOT_DIR/.venv/bin/python" -m laclaugpt_data_analysis.preflight --strict || exit 2
+
 exec bash "$ROOT_DIR/scripts/run_ai26_laskin.sh" --once
