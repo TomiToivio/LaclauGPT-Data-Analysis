@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -33,6 +34,10 @@ from pydantic import BaseModel, Field
 from ..canonical import CanonicalRecord
 from ..codebooks import CodebookEntry
 from ..context_envelope import PromptEnvelope, build_prompt_envelope
+from ..llm.base import generation_fingerprint
+from ..llm.structured_output import effective_structured_options
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Run context
