@@ -42,6 +42,20 @@
       "outputs": ["per-frame multimodal evidence analysis"]
     },
     {
+      "id": "video",
+      "reading_order": [3],
+      "module": null,
+      "phase_status": "phase_1_optional_media",
+      "summary": "Optional whole-video evidence. Runs only when the record actually carries video; text-only records record it as not_applicable and are never blocked by it.",
+      "in_canonical_list": false,
+      "requires_media": true,
+      "conditional": true,
+      "prompt_stage": null,
+      "note": "Declared here so the applicability rule is machine-readable. No executable module yet: whole-video evidence is later work, and its absence must never gate stage 4.",
+      "inputs": ["preprocessed record with real, materialised video"],
+      "outputs": ["whole-video evidence when a module exists; not_applicable otherwise"]
+    },
+    {
       "id": "summary",
       "reading_order": [4],
       "module": "summary",
