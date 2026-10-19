@@ -186,6 +186,13 @@ def _cmd_render_prompt(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
+    if args.show and args.json:
+        # Preserve JSON output even when the researcher requests prompt bodies.
+        # This exposes static resource text, not a fully rendered model invocation.
+        for item in record["files"]:
+            item["text"] = (REPOSITORY_ROOT / item["path"]).read_text(encoding="utf-8")
+        print(json.dumps(record, indent=2, ensure_ascii=False))
+        return 0
     if args.show:
         for prompt_id in (record["system_prompt_id"], record["task_prompt_id"]):
             candidates = prompt_files(prompt_id)
