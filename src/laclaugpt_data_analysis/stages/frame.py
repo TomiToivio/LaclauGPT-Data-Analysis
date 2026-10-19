@@ -47,7 +47,13 @@ from ..llm.structured_output import chat_structured
 from ..prompt_library import load_prompt, prompt_provenance
 from ..social_semiotic import MultimodalFrameProposal, assert_preanalysis_boundary
 from .prompt_map import phase1_preanalysis_prompt_ids
-from .shared import PipelineContext, append_stage, envelope_for_stage, model_run_metadata
+from .shared import (
+    PipelineContext,
+    append_stage,
+    envelope_for_stage,
+    model_run_metadata,
+    render_prompt,
+)
 
 
 def analyze_frames(
@@ -94,12 +100,15 @@ def analyze_frames(
             codebook_entries=codebook_entries,
             prompt_version=prompt_version,
         )
+        user_prompt, prompt_report = render_prompt(
+            envelope, stage="social_semiotic_frame"
+        )
         proposal, response = chat_structured(
             provider,
             MultimodalFrameProposal,
             model=model,
             system_prompt=system_resource.text,
-            user_prompt=envelope.render(),
+            user_prompt=user_prompt,
             allow_cloud_fallback=allow_cloud_fallback,
         )
         assert_preanalysis_boundary(proposal.model_dump(mode="json"))
@@ -111,6 +120,7 @@ def analyze_frames(
             prompt_meta,
             prompt_version=prompt_version,
             stage="social_semiotic_frame",
+            prompt_report=prompt_report,
         )
         record.intermediate.frame_analysis.append(
             {
@@ -120,6 +130,7 @@ def analyze_frames(
                 "prompt_version": prompt_version,
                 **prompt_meta,
                 "context_provenance": envelope.provenance_snapshot(),
+                "prompt_budget": prompt_report,
                 "model_run": run_meta,
             }
         )

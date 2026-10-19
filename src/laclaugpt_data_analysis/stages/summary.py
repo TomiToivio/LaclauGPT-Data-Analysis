@@ -54,6 +54,7 @@ from .shared import (
     envelope_for_stage,
     model_run_metadata,
     now_iso,
+    render_prompt,
 )
 
 
@@ -104,12 +105,13 @@ def summarize_record(
         codebook_entries=codebook_entries,
         prompt_version=prompt_version,
     )
+    user_prompt, prompt_report = render_prompt(envelope, stage="social_semiotic_summary")
     proposal, response = chat_structured(
         provider,
         MultimodalSummaryProposal,
         model=model,
         system_prompt=system_resource.text,
-        user_prompt=envelope.render(),
+        user_prompt=user_prompt,
         allow_cloud_fallback=allow_cloud_fallback,
     )
     assert_preanalysis_boundary(proposal.model_dump(mode="json"))
@@ -121,6 +123,7 @@ def summarize_record(
         prompt_meta,
         prompt_version=prompt_version,
         stage="social_semiotic_summary",
+        prompt_report=prompt_report,
     )
 
     now = now_iso()
@@ -136,6 +139,7 @@ def summarize_record(
             "prompt_version": prompt_version,
             **prompt_meta,
             "context_provenance": envelope.provenance_snapshot(),
+            "prompt_budget": prompt_report,
             "proposal": proposal.model_dump(mode="json"),
             "model_run": run_meta,
         },

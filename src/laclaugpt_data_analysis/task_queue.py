@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
 import time
 from dataclasses import asdict, dataclass, replace
@@ -10,6 +11,8 @@ from typing import Any, Callable, Mapping, Protocol
 
 from .config import Settings
 from .storage import mongo_client, redis_client
+
+logger = logging.getLogger(__name__)
 
 FAILURE_RESPONSE_RAW_MAX_CHARS = 16_384
 
@@ -43,6 +46,52 @@ def bounded_failure_diagnostics(
             if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
                 result[key] = value
     return result
+
+
+# ---------------------------------------------------------------------------
+# Resume identity
+# ---------------------------------------------------------------------------
+#
+# A durable result is identified by the Collection handoff key, which is stable for an
+# immutable source revision. That is necessary and not sufficient: an answer produced
+# with a different model, mode, prompt version or generation option is not the answer to
+# the current question, even though the source is byte-identical. Issue #372 (upstream
+# #287) binds the stored result to a fingerprint of the *effective* generation settings
+# so a settings change invalidates the resume instead of silently returning a stale
+# analysis as a duplicate.
+#
+# Compatibility rule: a row written before this guard existed carries no fingerprint and
+# is treated as matching, so deploying the guard cannot trigger a mass re-analysis of a
+# corpus already analysed. Everything written from this revision on carries one, and a
+# mismatch is then a hard cache miss.
+
+
+def result_matches_fingerprint(stored: Mapping[str, Any], wanted: str) -> bool:
+    """Whether a stored result may be reused for the current generation settings.
+
+    ``wanted == ""`` means the caller did not supply a fingerprint: presence is enough,
+    which is the historical contract. A stored row with no fingerprint is legacy and is
+    also treated as matching.
+    """
+    if not wanted:
+        return True
+    recorded = str(stored.get("generation_fingerprint") or "")
+    return not recorded or recorded == wanted
+
+
+def result_supersedes_fingerprint(stored: Mapping[str, Any] | None, new: str) -> bool:
+    """Whether a new result should replace an existing one for the same source.
+
+    Only a recorded, different, non-empty fingerprint supersedes: that is the case where
+    the old result provably came from different generation settings. A legacy row without
+    a fingerprint is kept, and an unchanged fingerprint is a duplicate.
+    """
+    if stored is None:
+        return True
+    recorded = str(stored.get("generation_fingerprint") or "")
+    if not recorded or not new:
+        return False
+    return recorded != new
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,7 +168,8 @@ class TaskQueue(Protocol):
 
 
 class DurableTaskStore(Protocol):
-    def has_result(self, idempotency_key: str) -> bool: ...
+    def has_result(self, idempotency_key: str, fingerprint: str = "") -> bool: ...
+
 
     def has_terminal_failure(self, idempotency_key: str) -> bool: ...
 
@@ -136,6 +186,8 @@ class DurableTaskStore(Protocol):
         task: TaskEnvelope,
         result: Mapping[str, Any],
         provenance: Mapping[str, Any],
+        *,
+        fingerprint: str = "",
     ) -> bool: ...
 
     def write_failure(
@@ -193,8 +245,11 @@ class InMemoryTaskStore:
         self.failures: list[dict[str, Any]] = []
         self.terminal_failures: set[str] = set()
 
-    def has_result(self, idempotency_key: str) -> bool:
-        return idempotency_key in self.results
+    def has_result(self, idempotency_key: str, fingerprint: str = "") -> bool:
+        stored = self.results.get(idempotency_key)
+        if stored is None:
+            return False
+        return result_matches_fingerprint(stored, fingerprint)
 
     def has_terminal_failure(self, idempotency_key: str) -> bool:
         return idempotency_key in self.terminal_failures
@@ -254,13 +309,17 @@ class InMemoryTaskStore:
         task: TaskEnvelope,
         result: Mapping[str, Any],
         provenance: Mapping[str, Any],
+        *,
+        fingerprint: str = "",
     ) -> bool:
-        if task.idempotency_key in self.results:
+        stored = self.results.get(task.idempotency_key)
+        if stored is not None and not result_supersedes_fingerprint(stored, fingerprint):
             return False
         self.results[task.idempotency_key] = {
             "task": task.to_dict(),
             "result": dict(result),
             "provenance": dict(provenance),
+            "generation_fingerprint": fingerprint,
         }
         return True
 
@@ -303,6 +362,10 @@ class SqliteTaskStore:
             }
             if "source_url" not in result_columns:
                 connection.execute("ALTER TABLE task_results ADD COLUMN source_url TEXT")
+            if "generation_fingerprint" not in result_columns:
+                connection.execute(
+                    "ALTER TABLE task_results ADD COLUMN generation_fingerprint TEXT"
+                )
 
             connection.execute(
                 "CREATE TABLE IF NOT EXISTS task_failures ("
@@ -338,12 +401,15 @@ class SqliteTaskStore:
                         f"ALTER TABLE task_failures ADD COLUMN {column} {declaration}"
                     )
 
-    def has_result(self, idempotency_key: str) -> bool:
+    def has_result(self, idempotency_key: str, fingerprint: str = "") -> bool:
         with sqlite3.connect(self.path) as connection:
             row = connection.execute(
-                "SELECT 1 FROM task_results WHERE idempotency_key = ?", (idempotency_key,)
+                "SELECT generation_fingerprint FROM task_results WHERE idempotency_key = ?",
+                (idempotency_key,),
             ).fetchone()
-        return row is not None
+        if row is None:
+            return False
+        return result_matches_fingerprint({"generation_fingerprint": row[0] or ""}, fingerprint)
 
     def has_terminal_failure(self, idempotency_key: str) -> bool:
         with sqlite3.connect(self.path) as connection:
@@ -400,24 +466,41 @@ class SqliteTaskStore:
         task: TaskEnvelope,
         result: Mapping[str, Any],
         provenance: Mapping[str, Any],
+        *,
+        fingerprint: str = "",
     ) -> bool:
-        try:
-            with sqlite3.connect(self.path) as connection:
+        payload = (
+            task.record_ref,
+            json.dumps(dict(result), ensure_ascii=False, default=str),
+            json.dumps(dict(provenance), ensure_ascii=False, default=str),
+            time.time(),
+            fingerprint,
+        )
+        with sqlite3.connect(self.path) as connection:
+            existing = connection.execute(
+                "SELECT generation_fingerprint FROM task_results WHERE idempotency_key = ?",
+                (task.idempotency_key,),
+            ).fetchone()
+            stored = None if existing is None else {"generation_fingerprint": existing[0] or ""}
+            if not result_supersedes_fingerprint(stored, fingerprint):
+                return False
+            if stored is None:
                 connection.execute(
-                    "INSERT INTO task_results "
-                    "(idempotency_key, source_url, result_json, provenance_json, created_at) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (
-                        task.idempotency_key,
-                        task.record_ref,
-                        json.dumps(dict(result), ensure_ascii=False, default=str),
-                        json.dumps(dict(provenance), ensure_ascii=False, default=str),
-                        time.time(),
-                    ),
+                    "INSERT INTO task_results (source_url, result_json, provenance_json, "
+                    "created_at, generation_fingerprint, idempotency_key) "
+                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    (*payload, task.idempotency_key),
                 )
-            return True
-        except sqlite3.IntegrityError:
-            return False
+            else:
+                # Same source, provably different generation settings: the old answer is
+                # replaced rather than kept next to an answer it does not describe.
+                connection.execute(
+                    "UPDATE task_results SET source_url = ?, result_json = ?, "
+                    "provenance_json = ?, created_at = ?, generation_fingerprint = ? "
+                    "WHERE idempotency_key = ?",
+                    (*payload, task.idempotency_key),
+                )
+        return True
 
     def write_failure(
         self,
@@ -496,18 +579,18 @@ class MongoTaskStore:
             name="analysis_failure_source_url",
         )
 
-    def has_result(self, idempotency_key: str) -> bool:
-        return (
-            self.results.find_one(
-                {
-                    "project_id": self.project_id,
-                    "run_id": self.run_id,
-                    "idempotency_key": idempotency_key,
-                },
-                {"_id": 1},
-            )
-            is not None
+    def has_result(self, idempotency_key: str, fingerprint: str = "") -> bool:
+        document = self.results.find_one(
+            {
+                "project_id": self.project_id,
+                "run_id": self.run_id,
+                "idempotency_key": idempotency_key,
+            },
+            {"_id": 0, "generation_fingerprint": 1},
         )
+        if document is None:
+            return False
+        return result_matches_fingerprint(document, fingerprint)
 
     def has_terminal_failure(self, idempotency_key: str) -> bool:
         return (
@@ -569,6 +652,8 @@ class MongoTaskStore:
         task: TaskEnvelope,
         result: Mapping[str, Any],
         provenance: Mapping[str, Any],
+        *,
+        fingerprint: str = "",
     ) -> bool:
         try:
             from pymongo.errors import DuplicateKeyError
@@ -584,13 +669,23 @@ class MongoTaskStore:
             "source_url": source_url,
             "result": dict(result),
             "provenance": dict(provenance),
+            "generation_fingerprint": fingerprint,
             "created_at": time.time(),
         }
         try:
             self.results.insert_one(document)
             return True
         except DuplicateKeyError:
-            return False
+            query = {
+                "project_id": self.project_id,
+                "run_id": self.run_id,
+                "idempotency_key": task.idempotency_key,
+            }
+            stored = self.results.find_one(query, {"_id": 0, "generation_fingerprint": 1})
+            if not result_supersedes_fingerprint(stored, fingerprint):
+                return False
+            self.results.replace_one(query, document)
+            return True
 
     def write_failure(
         self,
@@ -883,6 +978,7 @@ class TaskWorker:
         provenance: Mapping[str, Any],
         validator: Callable[[TaskEnvelope], None] | None = None,
         max_attempts: int = 3,
+        generation_fingerprint: str = "",
     ) -> None:
         self.queue = queue
         self.durable_store = durable_store
@@ -891,6 +987,32 @@ class TaskWorker:
         self.provenance = dict(provenance)
         self.validator = validator
         self.max_attempts = max_attempts
+        #: Resume identity of the *effective* generation settings (issue #372). Empty
+        #: keeps the historical presence-only duplicate check.
+        self.generation_fingerprint = generation_fingerprint
+        self.last_resume_invalidated = 0
+
+    def has_current_result(self, task: TaskEnvelope) -> bool:
+        """Whether a result already exists for this source *and these settings*.
+
+        A stored result written under different effective generation settings is not a
+        duplicate: it is a stale answer to a question the run is no longer asking. The
+        worker re-analyses it and says so in the log.
+        """
+        store = self.durable_store
+        key = task.idempotency_key
+        fingerprint = self.generation_fingerprint
+        if store.has_result(key, fingerprint):
+            return True
+        if fingerprint and store.has_result(key):
+            logger.warning(
+                "resume_invalidated idempotency_key=%s reason=generation_settings_changed "
+                "fingerprint=%s; re-analysing instead of reusing the stored result",
+                key,
+                fingerprint,
+            )
+            self.last_resume_invalidated += 1
+        return False
 
     def run_once(self, *, reclaim_idle_ms: int | None = None) -> str:
         self.last_failure_class = None
@@ -906,13 +1028,18 @@ class TaskWorker:
         if self.validator is not None:
             self.validator(task)
 
-        if self.durable_store.has_result(task.idempotency_key):
+        if self.has_current_result(task):
             self.queue.ack(claimed.message_id)
             return "duplicate"
 
         try:
             result = self.handler(task)
-            inserted = self.durable_store.write_result(task, result, self.provenance)
+            inserted = self.durable_store.write_result(
+                task,
+                result,
+                self.provenance,
+                fingerprint=self.generation_fingerprint,
+            )
             self.queue.ack(claimed.message_id)
             return "completed" if inserted else "duplicate"
         except Exception as exc:

@@ -22,6 +22,7 @@ from .ollama import (
     _fallback_allowed,
     _looks_cloud,
     _retryable_local_error,
+    complete_with_empty_retry,
     model_digest,
     resolve_endpoint,
     resolve_llm_host,
@@ -65,25 +66,36 @@ def _ollama_chat_with_images(provider: OllamaProvider, request: ChatRequest) -> 
     ]
     host = resolve_llm_host(provider._host_override)
     client = _client(host)
-    try:
-        response = client.chat(model=use_model, messages=messages, options=opts, **kwargs)
-    except Exception as exc:
-        can_fallback = (
-            mode == "local"
-            and not _looks_cloud(use_model)
-            and _fallback_allowed(request.allow_cloud_fallback)
-            and _retryable_local_error(exc)
-        )
-        if not can_fallback:
-            raise ProviderError(f"Ollama multimodal call failed: {exc}") from exc
-        cloud_model = os.environ.get(LLM_CLOUD_ENV) or LLM_DEFAULT_CLOUD
-        response = client.chat(model=cloud_model, messages=messages, options=opts, **kwargs)
-        use_model = cloud_model
-        actual_mode = "cloud"
-        fallback_used = True
-        fallback_reason = f"{type(exc).__name__}: {exc}"
+
+    def send(model_name: str):
+        return client.chat(model=model_name, messages=messages, options=opts, **kwargs)
+
+    def send_with_fallback():
+        nonlocal use_model, actual_mode, fallback_used, fallback_reason
+        try:
+            return send(use_model)
+        except Exception as exc:
+            can_fallback = (
+                mode == "local"
+                and not _looks_cloud(use_model)
+                and _fallback_allowed(request.allow_cloud_fallback)
+                and _retryable_local_error(exc)
+            )
+            if not can_fallback:
+                raise ProviderError(f"Ollama multimodal call failed: {exc}") from exc
+            cloud_model = os.environ.get(LLM_CLOUD_ENV) or LLM_DEFAULT_CLOUD
+            response = send(cloud_model)
+            use_model = cloud_model
+            actual_mode = "cloud"
+            fallback_used = True
+            fallback_reason = f"{type(exc).__name__}: {exc}"
+            return response
+
+    # The same blank-answer guard as the text provider: a vision call that returns HTTP
+    # 200 with no content must not become a stored frame description (issue #372).
+    completion = complete_with_empty_retry(send_with_fallback, label=use_model)
     return LLMResponse(
-        content=response["message"]["content"],
+        content=completion.content,
         provenance=LLMCallProvenance(
             requested_mode=mode,
             requested_model=request.model,
@@ -94,7 +106,10 @@ def _ollama_chat_with_images(provider: OllamaProvider, request: ChatRequest) -> 
             endpoint=host or "default endpoint",
             fallback_used=fallback_used,
             fallback_reason=fallback_reason,
+            attempts=completion.attempts,
         ),
+        finish_reason=completion.finish_reason,
+        truncated=completion.truncated,
     )
 
 

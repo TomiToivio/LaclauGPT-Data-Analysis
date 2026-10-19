@@ -69,6 +69,13 @@ DEFAULT_TOTAL = 48_000
 DEFAULT_RESERVE_OUTPUT = 6_000
 DEFAULT_RESERVE_SCHEMA = 2_000
 
+#: When a caller overrides the total without naming reserves, the reserves keep the same
+#: *proportion* as the documented default pair instead of staying absolute. An explicit
+#: 8k budget with 6k+2k reserved would otherwise be rejected as unusable, which pushes the
+#: caller towards disabling the guard entirely.
+RESERVE_OUTPUT_RATIO = DEFAULT_RESERVE_OUTPUT / DEFAULT_TOTAL
+RESERVE_SCHEMA_RATIO = DEFAULT_RESERVE_SCHEMA / DEFAULT_TOTAL
+
 _MISSING = ("nan", "none", "nat", "<na>")
 
 
@@ -174,6 +181,13 @@ def _env_int(name: str, default: int) -> int:
         raise BudgetError(f"{name} must be an integer, got {raw!r}") from exc
 
 
+def _env_int_or_none(name: str) -> int | None:
+    raw = os.getenv(name)
+    if raw in (None, ""):
+        return None
+    return _env_int(name, 0)
+
+
 def resolve_budget(
     total: int | None = None,
     *,
@@ -188,14 +202,14 @@ def resolve_budget(
     total = int(total) if total is not None else _env_int(TOTAL_ENV, DEFAULT_TOTAL)
     if total == 0:
         return 0, 0, 0
-    reserve_output = (
-        int(reserve_output) if reserve_output is not None
-        else _env_int(RESERVE_OUTPUT_ENV, DEFAULT_RESERVE_OUTPUT)
-    )
-    reserve_schema = (
-        int(reserve_schema) if reserve_schema is not None
-        else _env_int(RESERVE_SCHEMA_ENV, DEFAULT_RESERVE_SCHEMA)
-    )
+    if reserve_output is None:
+        reserve_output = _env_int_or_none(RESERVE_OUTPUT_ENV)
+    if reserve_schema is None:
+        reserve_schema = _env_int_or_none(RESERVE_SCHEMA_ENV)
+    if reserve_output is None:
+        reserve_output = max(1, int(total * RESERVE_OUTPUT_RATIO))
+    if reserve_schema is None:
+        reserve_schema = max(1, int(total * RESERVE_SCHEMA_RATIO))
     if total < MIN_TOTAL_CHARS:
         raise BudgetError(
             f"prompt budget must be at least {MIN_TOTAL_CHARS} characters, got {total} "
