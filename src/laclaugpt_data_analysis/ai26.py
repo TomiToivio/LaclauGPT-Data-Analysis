@@ -295,6 +295,14 @@ def _cmd_step(args: argparse.Namespace) -> int:
                 "phase_status": stage["phase_status"],
                 "conditional": bool(stage.get("conditional", False)),
                 "requires_media": bool(stage.get("requires_media", False)),
+                "media_applicability": (
+                    "conditional_on_media: runs only on records carrying real, "
+                    "materialised media; otherwise recorded not_applicable and "
+                    "never blocking a later mandatory stage"
+                    if stage.get("requires_media")
+                    else "not_media_dependent"
+                ),
+                "has_module": stage.get("module") is not None,
                 "inputs": stage.get("inputs", []),
                 "outputs": stage.get("outputs", []),
             }

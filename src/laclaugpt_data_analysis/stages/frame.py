@@ -69,6 +69,8 @@ def analyze_frames(
             {
                 "created_at": datetime.now(UTC).isoformat(),
                 "reason": "text_only_or_no_extracted_frames",
+                "status": "not_applicable",
+                "applicability": "media_declared_but_no_frames",
             },
         )
         return record

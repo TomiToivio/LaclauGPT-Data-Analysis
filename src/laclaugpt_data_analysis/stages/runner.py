@@ -120,6 +120,12 @@ def run_canonical_pipeline(
             {
                 "created_at": now_iso(),
                 "reason": "no_materialized_image_or_video_frames",
+                "status": "not_applicable",
+                "applicability": (
+                    "media_declared_but_unmaterialized"
+                    if record.content.media_references
+                    else "no_media_declared"
+                ),
                 "modality_plan": plan.audit(),
             },
         )
