@@ -23,10 +23,17 @@ def _imports(missing: tuple[str, ...] = ()) -> mock._patch:
     """Patch __import__ so the probe is hermetic: CI may not install every
     optional runtime dependency, and a test must not depend on that."""
     real_import = builtins.__import__
+    known = set(preflight._RUNTIME_DEPENDENCIES)
 
     def fake_import(name, *args, **kwargs):
         if name in missing:
             raise ImportError(f"no module named {name}")
+        if name in known:
+            # Present by construction: CI need not install every optional
+            # runtime dependency for this probe to be testable.
+            import types
+
+            return types.ModuleType(name)
         return real_import(name, *args, **kwargs)
 
     return mock.patch.object(builtins, "__import__", fake_import)
