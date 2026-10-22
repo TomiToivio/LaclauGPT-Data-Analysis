@@ -3,6 +3,8 @@
 `main` is the active development branch. Create short-lived feature/fix branches from `main` and merge validated changes back to `main`. Research phases do not determine Git branch selection, and no `phase-N` branch synchronization is required. Existing phase branches can remain as historical references without being advanced or deleted.
 
 The programme is currently in **research Phase 1**. Phase 2 is optional and may be skipped. Phases 3 and 4 concern research analyses and results, not distinct coding or pipeline branches. Preserve all existing privacy, scientific-method, locked-paper, and module-boundary constraints.
+Technical work is planned as incremental change to the current working modules. A paper advancing is not a reason to propose a "Phase 2 pipeline", a "Phase 3 architecture" or a replacement design: the next research phase adds requirements to the same code, contracts and datasets. Prefer the live loop — collect real AI26 data reliably, analyse it with the existing pipeline, visualize and inspect the outputs, fix what is observed, improve coverage — over any structural rewrite that is not needed by a concrete fault.
+
 
 # Agent guidance
 
@@ -31,7 +33,7 @@ This repository owns reusable analysis code: analytical contracts, NLP/embedding
 
 ## AI26 active pipeline scope
 
-**This repository's `main` branch contains the active AI26 implementation (research Phase 1).**
+**This repository's `main` branch contains the active AI26 pipeline.** Research Phase 1 names the current paper, not the software generation.
 
 - AI26 is the only active/default study in this repository. New code, configuration, tests, examples, documentation, commands and agent work MUST assume AI26 unless Tomi explicitly says otherwise.
 - EP24, Hungary26 and Brazil26 are out of scope here. They will live in separate project repositories. Do not add new EP24/Hungary26/Brazil26 pipelines, codebooks, launchers, dashboards, adapters, deployment documentation or project-specific defaults here.
@@ -57,7 +59,7 @@ Agents may summarize or contextualize results, but must not silently promote pro
 
 ## AI26 active study
 
-AI26 (`Ideological contestation over AI`) is the active and default study for this repository. The current `main` pipeline is AI26 Phase 2. Use `codebooks/public/seed_ai_formations.md` as the publication-safe conceptual reference, Do not spend current work making APIs generically multi-study unless Tomi explicitly requests it.
+AI26 (`Ideological contestation over AI`) is the active and default study for this repository. The current `main` pipeline serves the AI26 study. Use `codebooks/public/seed_ai_formations.md` as the publication-safe conceptual reference, Do not spend current work making APIs generically multi-study unless Tomi explicitly requests it.
 
 The six AI26 computational formation labels (`accelerationism`, `doomerism`, `left-wing accelerationism`, `ai safety`, `ai critical`, `anti-ai`) are provisional sensitising categories and aggregation anchors, not a closed ontology. Do not infer them from actor identity, source list, keywords or a single statement. Multi-label overlap, uncertainty and abstention are valid.
 
