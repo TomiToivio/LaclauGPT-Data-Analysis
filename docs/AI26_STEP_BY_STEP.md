@@ -2,9 +2,9 @@
 
 Status: **design/integration audit**, not a new production orchestrator. Tracks [#341](https://github.com/TomiToivio/LaclauGPT-Data-Analysis/issues/341). Date: 2026-10-15.
 
-## Branch ownership and method
+## Branch and method ownership
 
-`main` is active Phase 2 infrastructure, `phase-1` preserves Phase 1. The locked AI26 Phase 1 theory/sampling/method in `LaclauGPT/paper/PHASE_1_PAPER.md` is not edited. Phase 2 network inference must remain opt-in/experimental. Do not modify Tomi-owned `laclaugpt/step_*.py` scientific method files: see `laclaugpt/HUMAN_PIPELINE.md`. This mapping is a **presentation/contract layer** over existing code, not an alternative pipeline.
+`main` is the active development branch; research phases do not select branches and no `phase-N` synchronization is required. The locked Paper 1 (research Phase 1) AI26 theory, sampling and method in `LaclauGPT/paper/PHASE_1_PAPER.md` is not edited. Network inference (DNA/SNA) remains an opt-in experimental module. Do not modify Tomi-owned `laclaugpt/step_*.py` scientific method files: see `laclaugpt/HUMAN_PIPELINE.md`. This mapping is a **presentation/contract layer** over existing code, not an alternative pipeline.
 
 ## Audited components
 
@@ -23,9 +23,9 @@ Status: **design/integration audit**, not a new production orchestrator. Tracks 
 | 3 optional video | media staging/whole-video capability **requires verification** | verified video reference → video evidence or explicit not-applicable | descriptive |
 | 4 summary | `stages/summary.py`, `laclaugpt/step_03_summary.py` | text and available media evidence → bounded summary | descriptive; mandatory |
 | 5 postprocess | `stages/postprocess.py`, `laclaugpt/step_04_postprocess.py` | summary/evidence → structured descriptive fields | descriptive; mandatory |
-| 6 Laclau/Palonen/imaginaries | `stages/laclau.py`, `laclaugpt/step_05_laclau.py`, project config | exact source evidence → claims, signifiers, formations, evidence-backed imaginaries and uncertainty | locked Phase 1 semantics; mandatory |
-| 7 DNA | DNA statement coding and `laclaugpt/step_06_dna.py` | reviewable statements → provisional relations | **experimental Phase 2** |
-| 8 SNA | network projection and `laclaugpt/step_07_sna.py` | provenance-linked edges → graph metrics | **experimental Phase 2** |
+| 6 Laclau/Palonen/imaginaries | `stages/laclau.py`, `laclaugpt/step_05_laclau.py`, project config | exact source evidence → claims, signifiers, formations, evidence-backed imaginaries and uncertainty | locked Paper 1 semantics; mandatory |
+| 7 DNA | DNA statement coding and `laclaugpt/step_06_dna.py` | reviewable statements → provisional relations | **experimental module** |
+| 8 SNA | network projection and `laclaugpt/step_07_sna.py` | provenance-linked edges → graph metrics | **experimental module** |
 | 9 export | RDF/graph adapters, canonical Mongo record | `analysis`, `intermediate`, `provenance`, `review` → idempotent Visualization projection | infrastructure |
 
 Required logical order: `0 → 1 → [2/3 if actual media] → 4 → 5 → 6 → 9`. Never treat absent media as a failure; never block Stage 9 on experimental 7/8. Existing source `source_url`, exact quotations, timestamps, provenance, human annotations and revisions are not overwritten by hypothetical model findings.
@@ -84,7 +84,7 @@ The incoming handoff block carries exactly `arena`, `collection_id`,
 `contract_version`, `handoff_key`, `project_id`, `published_at`, `reason`,
 `revision`, `run_id`, `source_priority`, `source_url`, `status`. Outgoing results
 carry the 13-key envelope Visualization unwraps, with a provenance block naming the
-codebook/config sha256, the model, the phase and the Phase 1 revisions.
+codebook/config sha256, the model, the capability gate and the Paper 1 revisions.
 
 ### Absent namespaces are consistent with policy, not a defect
 
@@ -93,7 +93,7 @@ codebook/config sha256, the model, the phase and the Phase 1 revisions.
 which the capability gate disables, and Visualization mirrors that gate in its own
 project config (`sna: false`, `dna_statement_coding.enabled: false`, `critical_ai`,
 `rdf`). Reporting these as missing data would be a false alarm; the accurate
-statement is that nothing is expected to write them under the Phase 1 profile.
+statement is that nothing is expected to write them under the default profile.
 
 ### Contract tests, run on both sides
 
@@ -136,15 +136,16 @@ step surface #341 requires.
 The word carries three different meanings here, and #341's own rule is that phase
 drift must not happen. They are not interchangeable:
 
-1. **Research-programme phase** -- the AI26 Phase 1 paper (locked theory, sampling,
-   method) versus the active study, owned by the `main` / `phase-1` branch policy.
+1. **Research-programme phase** -- the Paper 1 (research Phase 1) theory, sampling and
+   method versus the ongoing AI26 study. Research phases describe research work, not
+   software versions, and they do not select branches.
 2. **`analysis_phase`** in `config/projects/ai26.yaml` -- a capability gate: at `1`
    the experimental modules are unavailable *regardless of what else is enabled*.
-3. **"Experimental Phase 2"** as used in #341 for steps 7 and 8 -- precisely what (2)
-   gates.
+3. **The older label "Experimental Phase 2"** for steps 7 and 8 -- precisely what (2)
+   gates; prefer *experimental module*.
 
 So (3) is a subset of (2), and neither is (1). Recommended wording in all step
-documentation: *Phase 1 paper method* / *capability gate* / *experimental module*.
+documentation: *Paper 1 method* / *capability gate* / *experimental module*.
 This changes no branch governance and no version constant.
 
 
@@ -173,7 +174,7 @@ bodies and reviewed Laskin pilot still required to close #341.
 
 Run `python -m laclaugpt_data_analysis.ai26 validate-contract --json` before
 reviewing or deploying registry changes. The offline command checks stage IDs,
-logical reading-order numbering, canonical/experimental Phase 2 separation,
+logical reading-order numbering, canonical/experimental module separation,
 conditional media requirements and the existence of versioned AI26 prompt
 resources referenced by stages. It exits 1 and reports individual findings
 when declarations disagree. It never claims tasks or calls a model.

@@ -11,7 +11,7 @@ what it asks, and what the theory forbids.
 
 ## Order
 
-AI26's analysis order. The first five steps are the canonical Phase 1 pipeline
+AI26's analysis order. The first five steps are the canonical analysis pipeline
 (see [`DATA_ANALYSIS_PIPELINE.md`](DATA_ANALYSIS_PIPELINE.md)); steps 5 onward are
 the study's optional/aggregate stages:
 

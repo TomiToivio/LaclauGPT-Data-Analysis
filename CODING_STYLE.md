@@ -8,7 +8,7 @@ The architectural reference for the human-readable analysis pipeline is the step
 
 Each major scientific analysis operation should have one clearly named Python entry-point file.
 
-The current AI26 human-owned Phase 2 pipeline is:
+The current AI26 human-owned analysis pipeline is:
 
 ```text
 laclaugpt/step_01_preprocess.py
@@ -195,7 +195,7 @@ In short:
 
 The repository currently contains two complementary surfaces:
 
-- `laclaugpt/`: the human-readable, human-owned Phase 2 scientific pipeline and supporting scripts;
+- `laclaugpt/`: the human-readable, human-owned AI26 scientific pipeline and supporting scripts;
 - `src/laclaugpt_data_analysis/`: reusable tested contracts, adapters, providers, canonical-record logic and operational infrastructure.
 
 Do not let the second surface erase the first. A future maintainer should be able to start with the numbered `laclaugpt/step_*.py` files and understand what the research pipeline does before learning its deployment machinery.

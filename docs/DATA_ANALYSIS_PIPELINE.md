@@ -33,7 +33,7 @@ source record (canonical)
                                      (+ optional graph and vector sinks)
 ```
 
-Optional Phase 2 stages run only after the six steps above, and only when a
+Optional experimental stages run only after the six steps above, and only when a
 project explicitly declares them (see [Project configuration](#project-configuration)).
 
 ## Where the code lives
@@ -218,7 +218,7 @@ analysis:
   entities: true                      # projected from the summary
   topics: true
   sentiment: true
-  sna: false                          # Phase 2 — opt-in only
+  sna: false                          # experimental — opt-in only
   dna_statement_coding: {enabled: true}
 analysis_phase: 1
 ```
@@ -226,10 +226,10 @@ analysis_phase: 1
 Rules:
 
 - A capability counts as enabled only when the project declares it **and** the
-  phase permits it. Absence of configuration is never read as activation for the
-  expensive or theory-specific stages.
-- Phase 2 methods (`sna`, `ant`, `valueflows`, `dna_statement_coding`,
-  `critical_ai`) never enter the Phase 1 default path; they require
+  declared capability gate (`analysis_phase`) permits it. Absence of configuration
+  is never read as activation for the expensive or theory-specific stages.
+- Experimental methods (`sna`, `ant`, `valueflows`, `dna_statement_coding`,
+  `critical_ai`) never enter the default path; they require the capability gate
   `analysis_phase >= 2`.
 - A misspelled capability is rejected loudly rather than silently disabling a
   stage.

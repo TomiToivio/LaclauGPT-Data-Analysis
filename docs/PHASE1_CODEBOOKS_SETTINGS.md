@@ -57,7 +57,7 @@ duplicate IDs, alias collisions, dangling references and attempts to mark model-
 entries as authoritative. Serialization order does not affect fingerprints. Meaningful
 config or codebook edits do, allowing existing cache/task code to identify stale results.
 
-## Phase isolation
+## Compatibility isolation
 
-This implementation lives on Phase 1 and does not add imports or dependencies to Phase 0.
-The Phase 0 branch remains the reproducible Phase 0 implementation.
+These changes are additive and add no imports or dependencies to the legacy core.
+The preserved baseline remains the reproducible implementation for that earlier generation.

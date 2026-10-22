@@ -115,7 +115,7 @@ The current pipeline routes modalities **record-by-record by capability**. When 
 
 For the readable execution order, start with **[docs/DATA_ANALYSIS_PIPELINE.md](docs/DATA_ANALYSIS_PIPELINE.md)** and `src/laclaugpt_data_analysis/stages/runner.py`. For the repository-wide implementation style, including the human-owned numbered AI26 steps and the rule that research logic stays visible, see **[CODING_STYLE.md](CODING_STYLE.md)**. The five scientific stages are deliberately exposed as separate files: preprocess, frame/multimodal analysis, descriptive summary, Laclau analysis, and postprocess.
 
-DNA, SNA, Critical AI Studies and other advanced methods are Phase 2 / experimental / optional. They are disabled by default and are not allowed to enter the Phase 1 canonical runner silently.
+DNA, SNA, Critical AI Studies and other advanced methods are experimental and optional. They are disabled by default and never enter the canonical runner silently.
 
 The postprocessing stage runs after Laclaudian analysis and normalizes the richer summary/discourse outputs into validated canonical fields for export, validation, comparison and visualization. It does not replace the summary or discourse analysis.
 
@@ -241,7 +241,7 @@ Optional extras:
 pip install -e '.[analysis]'
 pip install -e '.[nlp]'
 pip install -e '.[topics]'
-# Phase 1 research baselines only; not part of Phase 0/default runtime
+# Optional legacy research baselines; not part of the default runtime
 pip install -e '.[phase1-nlp]'
 pip install -e '.[ollama]'
 pip install -e '.[remote]'

@@ -44,14 +44,14 @@ The implementation follows the parent profile rather than defining a second onto
 | relations / antagonisms | explicit `laclaugpt:Articulation` resources |
 | analyses summary, uncertainty, abstentions | `laclaugpt:analysisSummary`, `laclaugpt:uncertainty`, `laclaugpt:abstention` on the source |
 
-### Phase 1 analytical objects (issue #144)
+### Discourse-theoretical analytical objects (issue #144)
 
-The default Phase 1 pipeline populates additional typed fields. These are all
+The default pipeline populates additional typed fields. These are all
 projected, with evidence links, `prov:wasGeneratedBy`, `laclaugpt:reviewState`,
 `laclaugpt:confidence` and `laclaugpt:uncertainty` preserved where the canonical
 object carries them:
 
-| Canonical Phase 1 object | RDF representation |
+| Canonical object | RDF representation |
 | --- | --- |
 | `discourses` | `laclaugpt:Discourse` + `skos:Concept` |
 | `imaginaries` | `laclaugpt:SociotechnicalImaginary` + `skos:Concept` |
@@ -100,7 +100,7 @@ Lexical strings, SKOS/discourse concepts and source occurrences are never equate
 - `prov:wasGeneratedBy` for articulations;
 - allowed review states;
 - generation provenance and review state for theory-specific signifier-role claims;
-- generation provenance and review state for Phase 1 discourse-theoretical objects (`Discourse`, `SociotechnicalImaginary`, `CollectiveSubject`, `Other`, `Affect`, `DiscourseFormation`, `Signifier`, `DiscursiveFrontier`);
+- generation provenance and review state for discourse-theoretical objects (`Discourse`, `SociotechnicalImaginary`, `CollectiveSubject`, `Other`, `Affect`, `DiscourseFormation`, `Signifier`, `DiscursiveFrontier`);
 - at least two members, generation provenance and review state for every `RelationChain`;
 - generation provenance for the `FormulaOfPopulism` projection;
 - `laclaugpt:descriptive true` on every `DescriptiveObservation` and `Topic`, so polarity cannot be read as a theory-facing claim.

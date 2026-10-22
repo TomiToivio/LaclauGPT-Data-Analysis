@@ -19,7 +19,7 @@ Imported results belong under `CanonicalRecord.analysis.plugin_results[namespace
 
 ## DATS profile
 
-DATS is an interoperability target, not a runtime dependency. Its current public export/import surface is CSV, with project and source-document exports packaged in ZIP files. The Phase 2 adapter in `interoperability/dats_native.py` is verified against the upstream DATS v1.11.1 export schemas and maps only structures that both systems can represent honestly:
+DATS is an interoperability target, not a runtime dependency. Its current public export/import surface is CSV, with project and source-document exports packaged in ZIP files. The DATS adapter in `interoperability/dats_native.py` is verified against the upstream DATS v1.11.1 export schemas and maps only structures that both systems can represent honestly:
 
 `DATS source-document table <-> CanonicalRecord`
 

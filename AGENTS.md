@@ -184,7 +184,7 @@ Before proposing a merge, inspect the diff for private/runtime leakage and run t
 
 ## Human-owned analysis steps (issue #315)
 
-The seven scientific step modules below are the canonical human-written Phase 2 analysis pipeline and are **TOMI-LOCKED**:
+The seven scientific step modules below are the canonical human-written AI26 analysis pipeline and are **TOMI-LOCKED**:
 
 - `laclaugpt/step_01_preprocess.py`
 - `laclaugpt/step_02_frame.py`

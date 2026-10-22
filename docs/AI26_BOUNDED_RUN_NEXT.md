@@ -21,4 +21,4 @@ runtime configuration. No cron is installed or changed by this addition.
 `python -m pytest -q tests/test_issue_341_bounded_run_next.py` checks
 the offline dry-run and fail-closed argument paths. Operator acceptance
 still requires a bounded Laskin pilot, human review, and explicit deployment
-sign-off. Phase 1 scientific methods and prompts are unchanged.
+sign-off. The Paper 1 scientific methods and prompts are unchanged.

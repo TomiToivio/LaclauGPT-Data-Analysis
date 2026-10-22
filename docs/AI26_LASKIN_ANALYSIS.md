@@ -403,20 +403,20 @@ Use a synthetic/public-safe record rather than private research material:
   identities or ground truth.
 
 
-## Phase 1 canonical runtime contract (#272)
+## Canonical runtime contract (#272)
 
-The Laskin worker now reads study semantics from the packaged canonical Phase 1
-AI26 protocol created in #269. Operational code must not duplicate the AI26
-study boundary or report dimensions.
+The Laskin worker reads study semantics from the packaged canonical AI26 protocol
+created in #269. Operational code must not duplicate the AI26 study boundary or
+report dimensions.
 
 The public profile controls:
 
 - `filters.date_after` for incremental Collection -> Analysis ingestion;
-- the Phase 1 stage map recorded in runtime provenance;
+- the analysis stage map recorded in runtime provenance;
 - the 24h periodic-report interval;
 - report grouping dimensions (signifier, formation, author, arena, language,
   region, topic);
-- deterministic Phase 1 config and codebook fingerprints.
+- deterministic config and codebook fingerprints.
 
 The Collection handoff query uses a strict `$gt` comparison for
 `filters.date_after`, so the documented AI26 rule “after 2026-09-01” is
@@ -425,7 +425,7 @@ configuration, not Python logic.
 ### Visualization handoff
 
 The distributed analysis path writes directly to namespaced MongoDB collections.
-No bespoke export step is required for the Phase 1 dashboard:
+No bespoke export step is required for the dashboard:
 
 | Collection role | Payload | Visualization use |
 | --- | --- | --- |
@@ -446,7 +446,7 @@ A periodic report document has the stable identity key:
 
 and contains `scope_key`, `window_start`, `window_end`, the complete
 `PeriodicDiscourseSummary` under `payload`, its `sha256`, and canonical
-Phase 1 config/codebook revisions. Re-running the hourly Laskin wrapper updates
+config/codebook revisions. Re-running the hourly Laskin wrapper updates
 the same latest completed 24h report rather than creating duplicates.
 
 ### Periodic report operation
@@ -464,14 +464,15 @@ so unattended monitoring can distinguish a missing research report from a broken
 
 ### Configuration changes and stale work
 
-The canonical Phase 1 profile and codebook fingerprints are added to worker and
+The canonical AI26 profile and codebook fingerprints are added to worker and
 report provenance. Changing a meaningful public protocol setting therefore
 changes the fingerprint recorded with new outputs. The existing frozen private
 run-manifest hashes remain responsible for private configuration/codebook
 pinning; together these two layers preserve the public/private split without
 placing private AI26 material in this repository.
 
-### Phase 0 isolation
+### Historical baseline isolation
 
-These changes are Phase 1-only. They do not modify the `phase-0` branch or its
-runtime. Public tests use only packaged public profiles and synthetic values.
+These changes are additive to the current pipeline. They do not modify the
+historical `phase-0` baseline or its runtime. Public tests use only packaged
+public profiles and synthetic values.
