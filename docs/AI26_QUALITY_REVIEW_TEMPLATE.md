@@ -31,7 +31,7 @@ Read the record and answer each line **yes / no / n-a**, with one short note whe
 | 6 | Collective subjects and frontiers are attributed to evidence, not to the model's prior | — |
 | 7 | Status flags distinguish `not_applicable` from `failed` | A silent success is worse than a visible gap |
 | 8 | Provenance present: source URL, native IDs, prompt and model version, prompt hash | Without it the output cannot be cited or reproduced |
-| 9 | Steps 7/8 (if enabled) are visibly marked experimental | Their output must never read as Phase 1 finding |
+| 9 | Steps 7/8 (if enabled) are visibly marked experimental | Their output must never read as a validated finding |
 | 10 | Nothing in the record contradicts the source's own stance | The commonest real error is plausible-but-wrong |
 
 ## 3. Record

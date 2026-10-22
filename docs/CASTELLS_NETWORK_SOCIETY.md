@@ -79,4 +79,4 @@ Derived outputs can be consumed by Data Visualization as ordinary graph/tabular/
 
 ## Current status
 
-This is an experimental Phase 2 library layer. The SNA computation remains theory-neutral; Castells/Esposito/Luhmann-inspired interpretation is downstream and must cite measured evidence rather than relabel a metric. Phase 1 code paths and schemas remain intact.
+This is an experimental library layer. The SNA computation remains theory-neutral; Castells/Esposito/Luhmann-inspired interpretation is downstream and must cite measured evidence rather than relabel a metric. Existing canonical code paths and schemas remain intact.

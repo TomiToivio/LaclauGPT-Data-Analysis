@@ -1,6 +1,6 @@
 # Phase 1 open-source analysis libraries
 
-This integration is intentionally dormant during Phase 0. The default install and canonical runner are unchanged.
+This integration is intentionally dormant by default. The default install and canonical runner are unchanged.
 
 ## Python
 

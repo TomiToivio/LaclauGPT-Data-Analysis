@@ -4,7 +4,7 @@ Codebooks are controlled research vocabulary: canonical labels, stable IDs,
 aliases, definitions and provenance for entities, actors, topics, signifiers,
 affect targets and formations.
 
-Phase 1's canonical public methodological codebook is
+The canonical public methodological codebook is
 `codebooks/public/phase1_v1.yaml`. Its configuration contract, layering,
 validation and fingerprints are documented in
 `docs/PHASE1_CODEBOOKS_SETTINGS.md`.
@@ -42,7 +42,7 @@ Before migrating or committing any codebook, classify it:
 
 ## Authority and discovery
 
-Phase 1 distinguishes schema/taxonomy definitions, researcher-authoritative
+The codebook contract distinguishes schema/taxonomy definitions, researcher-authoritative
 entries, model-discovered candidates and derived outputs. A model-discovered
 candidate must remain `state: discovered` with `provenance: model` until a
 researcher explicitly promotes it. Validation rejects model-originated entries
@@ -55,5 +55,5 @@ non-committed config files). The legacy seed loader assigns PROVISIONAL state to
 seeded objects; promotion to CANONICAL happens only through the memory resolution
 loop with human validation (THEORY.md INV_HUMAN_REVIEW).
 
-For the canonical Phase 1 protocol, use `laclaugpt-phase1-config` to validate,
+For the canonical protocol, use `laclaugpt-phase1-config` to validate,
 render (with secret redaction), and fingerprint public plus private overlays.

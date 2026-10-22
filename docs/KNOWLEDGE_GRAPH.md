@@ -2,13 +2,13 @@
 
 Issue: #249
 
-This document defines the analysis-side graph contract for LaclauGPT. The graph is an **optional projection** of canonical analysis results. It does not replace the canonical record, MongoDB documents, CSV/SQLite outputs, or the Phase-0/Phase-1 pipeline.
+This document defines the analysis-side graph contract for LaclauGPT. The graph is an **optional projection** of canonical analysis results. It does not replace the canonical record, MongoDB documents, CSV/SQLite outputs, or the analysis pipeline.
 
 ## Status and activation
 
-- Phase 0/1 behavior is unchanged by default.
+- Existing analysis behaviour is unchanged by default.
 - Laclau projection is available now through `project_laclau_record()`.
-- DNA and SNA schemas are implemented as dormant Phase-2 projection helpers. Their existence does not enable those analysis stages.
+- DNA and SNA schemas are implemented as dormant experimental projection helpers. Their existence does not enable those analysis stages.
 - RDF remains optional and lazy-loaded.
 - MongoDB and ArangoDB adapters accept already configured client/database objects and add no mandatory service dependency.
 
@@ -66,7 +66,7 @@ Relations and chains retain review state, evidence IDs, codebook refs and genera
 
 The graph does not infer new theoretical claims. Missing relation endpoints are represented only as reference placeholders so graph integrity is preserved.
 
-## DNA Phase-2 contract
+## DNA projection contract
 
 `project_dna()` projects the existing `DiscourseStatement` interoperability object as:
 
@@ -89,7 +89,7 @@ The DNA import/export path remains the existing `import_dna_rows()`, `export_dna
 
 Temporal slicing uses statement timestamps and may be performed before projection or by filtering `valid_from`.
 
-## SNA Phase-2 contract
+## SNA projection contract
 
 `SNARelation` supports:
 

@@ -1,8 +1,8 @@
-# Phase 0 discourse ontology
+# Discourse ontology
 
-Phase 0 models **Laclaudian Discourse Analysis only**. DNA and SNA are deliberately deferred.
+The ontology models **Laclaudian Discourse Analysis only**. DNA and SNA are deliberately out of scope here.
 
-MongoDB remains the operational store. RDF/JSON-LD is a lightweight semantic export generated from the existing `phase0_discourse` result.
+MongoDB remains the operational store. RDF/JSON-LD is a lightweight semantic export generated from the existing `phase0_discourse` result; that key is a legacy persisted identifier and is kept unchanged for compatibility.
 
 ## Namespace
 
@@ -14,7 +14,7 @@ Standard vocabularies reused:
 - SKOS labels
 - PROV-O provenance
 
-## Core Phase 0 classes
+## Core classes
 
 `Document`, `Actor`, `Signifier`, `EmptySignifier`, `FloatingSignifier`, `NodalPoint`, `Articulation`, `Equivalence`, `Difference`, `Antagonism`, `Frontier`, `Affect`, `AnalysisAssertion`, `AnalysisRun`.
 
@@ -26,6 +26,6 @@ Standard vocabularies reused:
 4. Negative sentiment is not automatically antagonism.
 5. Affect remains distinct from sentiment.
 6. MongoDB is not replaced by a triple store.
-7. DNA/SNA projections are later-phase extensions.
+7. DNA/SNA projections are additive extensions, not part of this ontology.
 
 The exporter lives in `laclaugpt/laclaugpt_ontology.py` and stores both JSON-LD and Turtle under `phase0_ontology`.

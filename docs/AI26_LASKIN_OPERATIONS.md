@@ -161,6 +161,6 @@ python -m laclaugpt_data_analysis.preflight                      # configuration
 python -m pytest -q                                              # the suite
 ```
 
-The step map, its reading order and its phase status live in
+The step map, its reading order and the maturity status of each step live in
 `src/laclaugpt_data_analysis/stages/registry.json` — one machine-readable registry that the CLI
 prints and a test pins to the modules, so the map cannot quietly drift from the code.

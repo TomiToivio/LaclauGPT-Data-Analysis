@@ -1,6 +1,6 @@
 # Codex operation
 
-**Active branch policy:** Phase 2 is current. Phase 2 work targets `main` directly; `phase-2` is a passive mirror, while `phase-1` and `phase-0` are preserved historical baselines.
+**Development workflow:** `main` is the active development branch. Research phases do not select branches and no `phase-N` synchronization is required; `phase-0` and `phase-1` remain historical baselines.
 
 Codex and other coding agents must follow `AGENTS.md` and `skills/laclaugpt-data-analysis/SKILL.md`.
 
