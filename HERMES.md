@@ -1,6 +1,6 @@
 # Hermes operation
 
-**Active branch policy:** Phase 2 is current. Phase 2 work targets `main` directly; `phase-2` is a passive mirror, while `phase-1` and `phase-0` are preserved historical baselines.
+**Active branch policy:** `main` is the only development branch and work targets it directly. `phase-N` branches are preserved historical snapshots: not mirrored, not synchronized, not development targets. Phases name papers, not software generations — see `AGENTS.md` and umbrella issue #82.
 
 Hermes follows `AGENTS.md` and `skills/laclaugpt-data-analysis/SKILL.md` as the authoritative contract. It is an academic research agent operating the same canonical Analysis APIs as researchers, schedulers and other coding agents.
 

@@ -1,8 +1,12 @@
 ## Development workflow and research phases
 
-`main` is the active development branch. Create short-lived feature/fix branches from `main` and merge validated changes back to `main`. Research phases do not determine Git branch selection, and no `phase-N` branch synchronization is required. Existing phase branches can remain as historical references without being advanced or deleted.
+**Phases describe papers, not software.** "Phase 1–4" names the research programme's papers and their methodology and analyses. Collection, Analysis and Visualization are **one continuously maintained system**: work here is an incremental change to the current analysis modules and contracts, driven by what the live AI26 data shows. Agents must not propose a "Phase 2 pipeline", a migration to a later technical phase, or a replacement architecture merely because a paper advances. See #82 in the umbrella repository.
 
-The programme is currently in **research Phase 1**. Phase 2 is optional and may be skipped. Phases 3 and 4 concern research analyses and results, not distinct coding or pipeline branches. Preserve all existing privacy, scientific-method, locked-paper, and module-boundary constraints.
+`main` is the active development branch. Create short-lived feature/fix branches from `main` and merge validated changes back to `main`. `phase-N` branches are historical snapshots: never development targets, never mirrored from `main`.
+
+The programme is currently working on **research Phase 1** (Paper 1). Paper 2 is optional and may be skipped; Papers 3 and 4 concern further analyses and results produced by the same running system. Preserve all existing privacy, scientific-method, locked-paper, and module-boundary constraints.
+
+The operational priority is analysing the live AI26 corpus with the existing pipeline: run it, inspect the evidence-linked output, fix observed faults, improve quality and coverage through ordinary validated changes.
 
 # Agent guidance
 
@@ -31,7 +35,7 @@ This repository owns reusable analysis code: analytical contracts, NLP/embedding
 
 ## AI26 active pipeline scope
 
-**This repository's `main` branch contains the active AI26 implementation (research Phase 1).**
+**This repository's `main` branch contains the active AI26 analysis pipeline — the current, continuously maintained implementation.**
 
 - AI26 is the only active/default study in this repository. New code, configuration, tests, examples, documentation, commands and agent work MUST assume AI26 unless Tomi explicitly says otherwise.
 - EP24, Hungary26 and Brazil26 are out of scope here. They will live in separate project repositories. Do not add new EP24/Hungary26/Brazil26 pipelines, codebooks, launchers, dashboards, adapters, deployment documentation or project-specific defaults here.
@@ -39,7 +43,7 @@ This repository owns reusable analysis code: analytical contracts, NLP/embedding
 - The human-readable publication/researcher-facing versions belong in the legacy EP24 repositories or other project-specific repositories. These three AI26 repositories do **not** need to optimize for human readability right now.
 - Prefer machine-readable canonical records, provenance, evidence, reproducible current-pipeline processing and operational correctness over prose reports, human-readable summaries, researcher workbenches, exhibition views or legacy dashboards.
 - Do not spend issue scope on making outputs friendlier to humans unless Tomi explicitly requests it. Human-in-the-loop scientific validation remains required; this rule is about software/output presentation, not removing human research responsibility.
-- Current pipeline work targets `main`; historical phase branches are not development targets.
+- Current pipeline work targets `main`; historical `phase-N` branches are frozen snapshots and are not development targets.
 
 ## Research practice
 
@@ -57,7 +61,7 @@ Agents may summarize or contextualize results, but must not silently promote pro
 
 ## AI26 active study
 
-AI26 (`Ideological contestation over AI`) is the active and default study for this repository. The current `main` pipeline is AI26 Phase 2. Use `codebooks/public/seed_ai_formations.md` as the publication-safe conceptual reference, Do not spend current work making APIs generically multi-study unless Tomi explicitly requests it.
+AI26 (`Ideological contestation over AI`) is the active and default study for this repository. The current `main` pipeline is the AI26 analysis pipeline. Use `codebooks/public/seed_ai_formations.md` as the publication-safe conceptual reference, Do not spend current work making APIs generically multi-study unless Tomi explicitly requests it.
 
 The six AI26 computational formation labels (`accelerationism`, `doomerism`, `left-wing accelerationism`, `ai safety`, `ai critical`, `anti-ai`) are provisional sensitising categories and aggregation anchors, not a closed ontology. Do not infer them from actor identity, source list, keywords or a single statement. Multi-label overlap, uncertainty and abstention are valid.
 
@@ -178,7 +182,7 @@ Before proposing a merge, inspect the diff for private/runtime leakage and run t
 
 ## Human-owned analysis steps (issue #315)
 
-The seven scientific step modules below are the canonical human-written Phase 2 analysis pipeline and are **TOMI-LOCKED**:
+The seven scientific step modules below are the canonical human-written analysis pipeline — the current pipeline, historically labelled "Phase 2" — and are **TOMI-LOCKED**:
 
 - `laclaugpt/step_01_preprocess.py`
 - `laclaugpt/step_02_frame.py`

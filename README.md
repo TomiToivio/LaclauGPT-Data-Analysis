@@ -1,10 +1,10 @@
 # LaclauGPT Data Analysis
 
 > [!IMPORTANT]
-> **AI26 Phase 2 only.** This repository's `main` branch is the active AI26 Phase 2 implementation. AI26 is the default and only project developed here. EP24, Hungary26 and Brazil26 are moving to separate project repositories. Historical compatibility code may remain, but it is dormant and must not drive new architecture or defaults. Human-readable/project-publication versions belong in the legacy EP24 or other project-specific repositories; this repository currently prioritizes machine-readable canonical data, reproducibility and Phase 2 operation over human-readable reports or legacy dashboards.
+> **AI26 analysis pipeline.** This repository's `main` branch is the active, continuously maintained AI26 analysis pipeline. AI26 is the default and only project developed here. EP24, Hungary26 and Brazil26 are moving to separate project repositories. Historical compatibility code may remain, but it is dormant and must not drive new architecture or defaults. Human-readable/project-publication versions belong in the legacy EP24 or other project-specific repositories; this repository prioritizes machine-readable canonical data, reproducibility and day-to-day operation of the live deployment over human-readable reports or legacy dashboards. **Phases name papers, not software generations** — see [AGENTS.md](AGENTS.md) and umbrella issue #82.
 
 > [!IMPORTANT]
-> **Current development phase: Phase 2.** All Phase 2 work goes directly to `main`. The `phase-2` branch is a passive mirror of the validated `main` tree. The `phase-1` branch is the preserved Phase 1 baseline and `phase-0` remains the preserved Phase 0 baseline.
+> **One development branch.** All work goes directly to `main`. `phase-N` branches are preserved historical snapshots, not mirrors and not development targets. Work is incremental: run the current pipeline on live data, fix what it reveals, keep the contracts stable.
 
 [![tests](https://github.com/TomiToivio/LaclauGPT-Data-Analysis/actions/workflows/tests.yml/badge.svg)](https://github.com/TomiToivio/LaclauGPT-Data-Analysis/actions/workflows/tests.yml)
 
@@ -16,7 +16,7 @@
 
 The current flagship research programme is **[LaclauGPT: Ideological contestation over AI](https://github.com/TomiToivio/LaclauGPT/blob/main/paper/PHASE_1_PAPER.md)**. The canonical theoretical and methodological contract is **[THEORY.md](https://github.com/TomiToivio/LaclauGPT/blob/main/THEORY.md)**.
 
-The framework is developed around Ernesto Laclau and Chantal Mouffe's discourse theory and Emilia Palonen's work on populism, polarisation and hegemonic dynamics. The underlying architecture may be reusable, but this repository is operationally scoped to **AI26 Phase 2 only**. Other studies belong in separate repositories.
+The framework is developed around Ernesto Laclau and Chantal Mouffe's discourse theory and Emilia Palonen's work on populism, polarisation and hegemonic dynamics. The underlying architecture may be reusable, but this repository is operationally scoped to the **AI26 pipeline only**. Other studies belong in separate repositories.
 
 > [!WARNING]
 > **Human-in-the-loop academic research only.** LaclauGPT's machine-generated summaries, classifications, discourse-theoretical codes, populism analyses, signifier roles, ideological formations, affects and other interpretations are **preliminary analyses to be verified by a human researcher**. They must not be treated as final findings, ground truth or autonomous scholarly judgement. Human verification of source evidence and interpretation is required before results are reported, published or cited as research conclusions. LaclauGPT is designed for academic research, not autonomous operational, administrative, intelligence, moderation, profiling or policy decisions about people or groups.
@@ -97,9 +97,9 @@ It contains storage-neutral analytical contracts, NLP/embedding/topic/classifica
 
 The package works locally with CSV + SQLite + local files and can scale to MongoDB + Redis + S3-compatible object storage.
 
-## Phase 1 default analysis pipeline
+## Default analysis pipeline
 
-Phase 1 follows the legacy LaclauGPT multimodal stage order while using the current canonical schemas, evidence rules and AI26 methodology:
+The current pipeline follows the legacy LaclauGPT multimodal stage order while using the current canonical schemas, evidence rules and AI26 methodology:
 
 ```text
 preprocessing
@@ -109,11 +109,11 @@ preprocessing
   -> postprocessing
 ```
 
-Phase 1 now routes modalities **record-by-record by capability**. When usable materialized images or video frames are present, the visual/multimodal stage runs automatically; when no usable media is available, the record proceeds through the text/caption + metadata path without dummy media fields. Mixed datasets can therefore contain text-only and multimodal records in the same project. Project settings may still constrain unsupported or expensive processing explicitly, but media presence is the ordinary activation signal. Model outputs remain provisional, evidence-linked pre-analysis for human review.
+The pipeline routes modalities **record-by-record by capability**. When usable materialized images or video frames are present, the visual/multimodal stage runs automatically; when no usable media is available, the record proceeds through the text/caption + metadata path without dummy media fields. Mixed datasets can therefore contain text-only and multimodal records in the same project. Project settings may still constrain unsupported or expensive processing explicitly, but media presence is the ordinary activation signal. Model outputs remain provisional, evidence-linked pre-analysis for human review.
 
 For the readable execution order, start with **[docs/DATA_ANALYSIS_PIPELINE.md](docs/DATA_ANALYSIS_PIPELINE.md)** and `src/laclaugpt_data_analysis/stages/runner.py`. For the repository-wide implementation style, including the human-owned numbered AI26 steps and the rule that research logic stays visible, see **[CODING_STYLE.md](CODING_STYLE.md)**. The five scientific stages are deliberately exposed as separate files: preprocess, frame/multimodal analysis, descriptive summary, Laclau analysis, and postprocess.
 
-DNA, SNA, Critical AI Studies and other advanced methods are Phase 2 / experimental / optional. They are disabled by default and are not allowed to enter the Phase 1 canonical runner silently.
+DNA, SNA, Critical AI Studies and other advanced methods are experimental / optional. They are disabled by default and must not enter the canonical runner silently.
 
 The postprocessing stage runs after Laclaudian analysis and normalizes the richer summary/discourse outputs into validated canonical fields for export, validation, comparison and visualization. It does not replace the summary or discourse analysis.
 
@@ -239,7 +239,7 @@ Optional extras:
 pip install -e '.[analysis]'
 pip install -e '.[nlp]'
 pip install -e '.[topics]'
-# Phase 1 research baselines only; not part of Phase 0/default runtime
+# Optional research-baseline extras; not part of the default runtime
 pip install -e '.[phase1-nlp]'
 pip install -e '.[ollama]'
 pip install -e '.[remote]'
