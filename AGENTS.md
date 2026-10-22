@@ -1,8 +1,14 @@
+## Research-paper phases and continuous software development (LaclauGPT #82)
+
+**Phases refer only to research papers and scientific programmes, never to software generations.** Collection, Analysis and Visualization are continuously maintained interoperable modules on `main`. Build, fix, test and deploy incrementally in support of real data collection, analysis and visualization. A new paper does not trigger a new pipeline, architecture, branch, dataset or migration. Prioritize operational AI26 evidence, quality, coverage and researcher review over phase-labelled rewrites. Paper-specific theories and methods are expressed in research documents, study configuration and well-scoped extensions; preserve the locked Paper 1 framework.
+
+Historical `phase-N` branches, directories, commands and identifiers are compatibility/archival names, **not** development instructions. Do not rename or remove them solely to modernize terminology. Where older guidance conflicts with this rule, this rule takes precedence. Use short-lived branches from `main`, verify changes, and merge back to `main`.
+
 ## Development workflow and research phases
 
 `main` is the active development branch. Create short-lived feature/fix branches from `main` and merge validated changes back to `main`. Research phases do not determine Git branch selection, and no `phase-N` branch synchronization is required. Existing phase branches can remain as historical references without being advanced or deleted.
 
-The programme is currently in **research Phase 1**. Phase 2 is optional and may be skipped. Phases 3 and 4 concern research analyses and results, not distinct coding or pipeline branches. Preserve all existing privacy, scientific-method, locked-paper, and module-boundary constraints.
+The research papers may be numbered, but software modules are developed continuously; no codebase is currently in a numbered development phase. Preserve all existing privacy, scientific-method, locked-paper, and module-boundary constraints.
 
 # Agent guidance
 
@@ -31,7 +37,7 @@ This repository owns reusable analysis code: analytical contracts, NLP/embedding
 
 ## AI26 active pipeline scope
 
-**This repository's `main` branch contains the active AI26 implementation (research Phase 1).**
+**This repository's `main` branch contains the continuous AI26 implementation.**
 
 - AI26 is the only active/default study in this repository. New code, configuration, tests, examples, documentation, commands and agent work MUST assume AI26 unless Tomi explicitly says otherwise.
 - EP24, Hungary26 and Brazil26 are out of scope here. They will live in separate project repositories. Do not add new EP24/Hungary26/Brazil26 pipelines, codebooks, launchers, dashboards, adapters, deployment documentation or project-specific defaults here.
@@ -57,7 +63,7 @@ Agents may summarize or contextualize results, but must not silently promote pro
 
 ## AI26 active study
 
-AI26 (`Ideological contestation over AI`) is the active and default study for this repository. The current `main` pipeline is AI26 Phase 2. Use `codebooks/public/seed_ai_formations.md` as the publication-safe conceptual reference, Do not spend current work making APIs generically multi-study unless Tomi explicitly requests it.
+AI26 (`Ideological contestation over AI`) is the active and default study for this repository. The current `main` implementation supports the live AI26 study. Use `codebooks/public/seed_ai_formations.md` as the publication-safe conceptual reference, Do not spend current work making APIs generically multi-study unless Tomi explicitly requests it.
 
 The six AI26 computational formation labels (`accelerationism`, `doomerism`, `left-wing accelerationism`, `ai safety`, `ai critical`, `anti-ai`) are provisional sensitising categories and aggregation anchors, not a closed ontology. Do not infer them from actor identity, source list, keywords or a single statement. Multi-label overlap, uncertainty and abstention are valid.
 
