@@ -50,16 +50,22 @@ def test_stages_is_readable_without_json(capsys) -> None:
 
 
 def test_prompt_ids_resolve_to_the_files_behind_them(capsys) -> None:
-    """The point of the subcommand: the exact prompt a run used, with its hash."""
+    """The point of the subcommand: the exact prompt a run used, with its hash.
+
+    The digest covers the **text**, not the file's on-disk bytes: those differ on a checkout whose
+    line endings were converted, and a digest that cannot verify the text beside it is not a
+    provenance record (issue #382, upstream #298's class). On an LF checkout the two are equal, so
+    this pins the same values CI has always seen.
+    """
     assert ai26.main(["render-prompt", "--stage", "discourse", "--profile", "ai26", "--json"]) == 0
     record = capsys_json(capsys)
     assert record["system_prompt_id"] == "laclau.system"
     assert record["task_prompt_id"] == "laclau.discourse_analysis"
     assert record["files"], "the discourse prompt exists and must be found"
     for item in record["files"]:
-        payload = (REPO_ROOT / item["path"]).read_bytes()
-        assert hashlib.sha256(payload).hexdigest() == item["sha256"]
-        assert item["chars"] == len(payload)
+        text = (REPO_ROOT / item["path"]).read_text(encoding="utf-8")
+        assert hashlib.sha256(text.encode("utf-8")).hexdigest() == item["sha256"]
+        assert item["chars"] == len(text)
         assert item["version"]
 
 
