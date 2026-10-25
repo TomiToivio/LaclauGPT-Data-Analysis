@@ -88,9 +88,28 @@ Healthy signals, in order of authority:
 * `AI26 Laskin analysis end worker_status=0 report_status=0 status=0` — the authoritative line;
 * bounded claims (`claims` 5-12) with `completed` in the same range, and a drained queue showing
   `idle`;
+* `AI26 seed disposition=...` — what the zero meant, when the pass published nothing (see below);
 * `already running; exiting cleanly` — the flock doing its job when ticks overlap, not an error;
 * the periodic report's `generated` and `records_considered` moving by exactly the work the cycle
   completed. If they do not move together, something is wrong with durability, not with the model.
+
+### An `idle` cycle is not proof that the corpus is finished
+
+A cycle that published nothing used to look the same whatever the cause. It now names the zero:
+
+| `disposition=` | means | what to do |
+| --- | --- | --- |
+| `seeded` | work was published | nothing |
+| `no_new_work` | rows arrived, all already analysed at this generation | nothing |
+| `all_rejected` | rows arrived, every one refused as an unusable handoff | read the quarantine lines above it |
+| `budget_zero` | `--max-tasks 0` | nothing; you asked for no work |
+| `upstream_empty` | **Collection handed over nothing for this run** | check the frozen run id, `project_id` and Phase 1 `date_after` against what Collection is publishing |
+
+`upstream_empty` is logged as a **warning** and it is the only one that matters: it is the case
+where an idle cycle is being read as evidence *about the corpus* when it is really evidence about
+the handoff. The usual cause is a frozen manifest whose run identity or date window has drifted
+from Collection's, and the symptom is a pipeline that looks finished forever while nothing is
+analysed. Confirm with the ready-handoff count before believing either reading.
 
 Lines that are **not** faults:
 
