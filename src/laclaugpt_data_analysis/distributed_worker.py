@@ -503,7 +503,10 @@ class AI26Handler:
 
     def __call__(self, task: TaskEnvelope) -> dict[str, Any]:
         record = self.handoff.resolve(task.record_ref)
-        context = self.context
+        # Each record gets isolated project/context state. Analysis stages may update
+        # provenance or nested configuration while processing; sharing those mutations
+        # with subsequent records makes results order-dependent (EP24 #301 class).
+        context = self.context.model_copy(deep=True)
         if self.stager is not None:
             # Materialise referenced objects before any multimodal model call. A
             # retriable failure aborts so the task retries instead of silently
