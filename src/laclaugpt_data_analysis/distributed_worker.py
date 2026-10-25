@@ -668,6 +668,43 @@ class AI26TaskWorker(TaskWorker):
 #: One bad row must be visible, but a corpus-wide identity regression must not fill the log.
 _REJECTION_DETAIL_LIMIT = 20
 
+#: What a seed cycle found when it published nothing. A cycle that publishes
+#: nothing is not one situation but several, and before #382 they were
+#: indistinguishable in the cron log.
+SEED_SEEDED = "seeded"
+SEED_BUDGET_ZERO = "budget_zero"
+SEED_UPSTREAM_EMPTY = "upstream_empty"
+SEED_ALL_REJECTED = "all_rejected"
+SEED_NO_NEW_WORK = "no_new_work"
+
+
+def seed_disposition(diagnostics: dict[str, int]) -> str:
+    """Classify a seed cycle from its counts, without touching a queue or a store.
+
+    ``upstream_empty`` is the one that matters: it means Collection handed over
+    nothing for this run at all, so an idle analysis cycle is *not* evidence that
+    the corpus is fully analysed. It may equally mean the frozen run id, the
+    project id, or the Phase 1 date window no longer matches what Collection is
+    publishing -- a pipeline that is silently reading nothing looks exactly like a
+    pipeline with nothing left to do.
+
+    ``all_rejected`` is its mirror image and must not be confused with it: rows *did*
+    arrive, and every one of them was refused. Reporting that as "no new work" would
+    turn an identity regression into a quiet queue.
+
+    This is the complement of the handoff quarantine: the quarantine names rows that
+    arrived and could not be used, this names what the zero means.
+    """
+    if diagnostics.get("published", 0) > 0:
+        return SEED_SEEDED
+    if diagnostics.get("limit", 0) < 1:
+        return SEED_BUDGET_ZERO
+    if diagnostics.get("examined", 0) == 0:
+        return SEED_UPSTREAM_EMPTY
+    if diagnostics.get("rejected", 0) > 0 and diagnostics["rejected"] >= diagnostics["examined"]:
+        return SEED_ALL_REJECTED
+    return SEED_NO_NEW_WORK
+
 
 def seed_ready_tasks(
     binding: WorkerBinding,
@@ -679,11 +716,12 @@ def seed_ready_tasks(
     page_size: int | None = None,
     fingerprint: str = "",
     rejected: list[dict[str, str]] | None = None,
+    diagnostics: dict[str, int] | None = None,
 ) -> int:
     """Queue ready handoffs, quarantining any that cannot become a task (issue #382).
 
-    A ready handoff that is missing its identity — no ``source_url``, no ``handoff_key``, or a
-    ``run_id`` that does not match the frozen manifest — raises inside
+    A ready handoff that is missing its identity -- no ``source_url``, no ``handoff_key``, or a
+    ``run_id`` that does not match the frozen manifest -- raises inside
     :meth:`WorkerBinding.task_from_handoff`. Before this change that exception propagated out of
     the whole seeding pass, so **one malformed row stopped every remaining record in the batch and
     every later tick re-read the same row and failed again**: the pipeline stalled until a human
@@ -694,7 +732,7 @@ def seed_ready_tasks(
     where it was provable, and rows that could not be identified at all had to be quarantined with
     an audit rather than dropped or allowed to block the job.
 
-    So a rejected handoff is now **skipped, named and counted** — never silently discarded, because
+    So a rejected handoff is now **skipped, named and counted** -- never silently discarded, because
     it stays in the collection and stays visible:
 
     * if ``rejected`` is given, one record per rejection is appended with the handoff key and the
@@ -704,71 +742,97 @@ def seed_ready_tasks(
     * seeding continues, and the record stays ``ready`` upstream, so the next tick retries it. A
       quarantine is not a deletion.
 
+    The two out-parameters answer different halves of the same question. ``rejected`` explains rows
+    that *arrived and could not be used*. ``diagnostics`` explains a pass that published **nothing**,
+    where the counts behind the zero are the whole answer: work already done at this generation,
+    permanent failures, a zero budget, or nothing handed over at all. Without it those cases were
+    the same empty log line. See :func:`seed_disposition`.
+
     Return value stays the number of tasks **published**, so the meaning a caller already relies on
     is unchanged.
     """
-    if limit < 1:
-        return 0
-    batch_size = max(1, page_size or limit)
-    count = 0
-    offset = 0
+    counts = {
+        "limit": max(limit, 0),
+        "examined": 0,
+        "published": 0,
+        "already_analyzed": 0,
+        "terminal_failure": 0,
+        "rearmed": 0,
+        "rejected": 0,
+    }
     rejections = 0
-    while count < limit:
-        envelopes = handoff.ready_handoffs(binding.manifest.run_id, limit=batch_size, offset=offset)
-        if not envelopes:
-            break
-        offset += len(envelopes)
-        for envelope in envelopes:
-            try:
-                task = binding.task_from_handoff(envelope)
-            except (KeyError, TypeError, ValueError) as exc:
-                rejections += 1
-                record = {
-                    "handoff_key": str(envelope.get("handoff_key") or ""),
-                    "run_id": str(envelope.get("run_id") or ""),
-                    "reason": f"{type(exc).__name__}: {exc}",
-                }
-                if rejected is not None:
-                    rejected.append(record)
-                if rejections <= _REJECTION_DETAIL_LIMIT:
-                    logger.warning(
-                        "AI26 handoff quarantined at seed: handoff_key=%s reason=%s "
-                        "(it stays ready upstream and is retried next cycle)",
-                        record["handoff_key"] or "<missing>",
-                        record["reason"],
-                    )
-                continue
-            if durable_store.has_result(task.idempotency_key, fingerprint):
-                continue
-            if durable_store.has_terminal_failure(task.idempotency_key):
-                rearmed = _maybe_rearm_terminal_failure_for_higher_budget(
-                    durable_store, task.idempotency_key
-                )
-                if rearmed:
-                    logger.info(
-                        "Automatically re-armed %s terminal truncation failure record(s) "
-                        "for %s during seed after structured-output ceiling increase",
-                        rearmed,
-                        task.idempotency_key,
-                    )
-                if durable_store.has_terminal_failure(task.idempotency_key):
-                    continue
-            queue.publish(task)
-            count += 1
-            if count >= limit:
+    try:
+        if limit < 1:
+            return 0
+        batch_size = max(1, page_size or limit)
+        offset = 0
+        while counts["published"] < limit:
+            envelopes = handoff.ready_handoffs(
+                binding.manifest.run_id, limit=batch_size, offset=offset
+            )
+            if not envelopes:
                 break
-        if len(envelopes) < batch_size:
-            break
-    if rejections > _REJECTION_DETAIL_LIMIT:
-        logger.error(
-            "AI26 handoff quarantine: %d ready handoff(s) could not become tasks this cycle; "
-            "%d named individually above, %d more suppressed. They remain ready upstream and "
-            "will be retried, so this will repeat every cycle until the identities are repaired.",
-            rejections,
-            _REJECTION_DETAIL_LIMIT,
-            rejections - _REJECTION_DETAIL_LIMIT,
-        )
-    return count
+            offset += len(envelopes)
+            counts["examined"] += len(envelopes)
+            for envelope in envelopes:
+                try:
+                    task = binding.task_from_handoff(envelope)
+                except (KeyError, TypeError, ValueError) as exc:
+                    rejections += 1
+                    record = {
+                        "handoff_key": str(envelope.get("handoff_key") or ""),
+                        "run_id": str(envelope.get("run_id") or ""),
+                        "reason": f"{type(exc).__name__}: {exc}",
+                    }
+                    if rejected is not None:
+                        rejected.append(record)
+                    if rejections <= _REJECTION_DETAIL_LIMIT:
+                        logger.warning(
+                            "AI26 handoff quarantined at seed: handoff_key=%s reason=%s "
+                            "(it stays ready upstream and is retried next cycle)",
+                            record["handoff_key"] or "<missing>",
+                            record["reason"],
+                        )
+                    continue
+                if durable_store.has_result(task.idempotency_key, fingerprint):
+                    counts["already_analyzed"] += 1
+                    continue
+                if durable_store.has_terminal_failure(task.idempotency_key):
+                    rearmed = _maybe_rearm_terminal_failure_for_higher_budget(
+                        durable_store, task.idempotency_key
+                    )
+                    if rearmed:
+                        counts["rearmed"] += rearmed
+                        logger.info(
+                            "Automatically re-armed %s terminal truncation failure record(s) "
+                            "for %s during seed after structured-output ceiling increase",
+                            rearmed,
+                            task.idempotency_key,
+                        )
+                    if durable_store.has_terminal_failure(task.idempotency_key):
+                        counts["terminal_failure"] += 1
+                        continue
+                queue.publish(task)
+                counts["published"] += 1
+                if counts["published"] >= limit:
+                    break
+            if len(envelopes) < batch_size:
+                break
+        counts["rejected"] = rejections
+        if rejections > _REJECTION_DETAIL_LIMIT:
+            logger.error(
+                "AI26 handoff quarantine: %d ready handoff(s) could not become tasks this cycle; "
+                "%d named individually above, %d more suppressed. They remain ready upstream and "
+                "will be retried, so this will repeat every cycle until the identities are repaired.",
+                rejections,
+                _REJECTION_DETAIL_LIMIT,
+                rejections - _REJECTION_DETAIL_LIMIT,
+            )
+        return counts["published"]
+    finally:
+        if diagnostics is not None:
+            diagnostics.clear()
+            diagnostics.update(counts)
 
 
 def build_worker(binding: WorkerBinding, settings: Settings) -> tuple[TaskWorker, MongoCollectionHandoff]:
@@ -929,6 +993,7 @@ def main(argv: list[str] | None = None) -> int:
         logger.info("Re-armed terminal failure %s: records=%d", idempotency_key, rearmed)
     seeded = 0
     rejected_handoffs: list[dict[str, str]] = []
+    seed_diagnostics: dict[str, int] = {}
     if args.seed_ready:
         seeded = seed_ready_tasks(
             binding,
@@ -938,7 +1003,27 @@ def main(argv: list[str] | None = None) -> int:
             limit=max(args.max_tasks, 0),
             fingerprint=worker.generation_fingerprint,
             rejected=rejected_handoffs,
+            diagnostics=seed_diagnostics,
         )
+        disposition = seed_disposition(seed_diagnostics)
+        if disposition == SEED_UPSTREAM_EMPTY:
+            # An idle analysis cycle and an empty upstream are the same log line
+            # unless this is said out loud. Do not let a drained queue stand in
+            # for a drained corpus.
+            logger.warning(
+                "AI26 seed found no ready handoff for run %s (examined=0 limit=%d): "
+                "Collection handed over nothing. Confirm the frozen run id, project_id "
+                "and Phase 1 date window before reading an idle cycle as a complete corpus.",
+                binding.manifest.run_id,
+                args.max_tasks,
+            )
+        else:
+            logger.info(
+                "AI26 seed disposition=%s run=%s %s",
+                disposition,
+                binding.manifest.run_id,
+                seed_diagnostics,
+            )
     counts, failure_classes = _run_bounded_cycle(
         worker,
         max_tasks=args.max_tasks,

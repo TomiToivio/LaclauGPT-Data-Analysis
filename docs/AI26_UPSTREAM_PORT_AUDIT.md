@@ -90,7 +90,7 @@ against the earlier disposition, because a disposition can age.
 | [#305](https://github.com/TomiToivio/LaclauGPT-Multimodal-Analysis/pull/305) | A double-escaped character class in an identity regex never matched, so recovery silently returned nothing | any AI26 identifier parsing | **Not applicable, and checked** — HEPP24's `YYYYMMDD` id convention does not exist here, and no regex in `src/` carries a doubled escape | `grep -rn 'r"[^"]*\\\\[dws]' src/` → no matches (2026-10-25) |
 | [#304](https://github.com/TomiToivio/LaclauGPT-Multimodal-Analysis/pull/304) | One unidentifiable row aborted a whole batch; rows that could not be identified were neither quarantined nor audited | `distributed_worker.seed_ready_tasks` | **Ported** — a handoff that cannot become a task is skipped, named, counted and left ready upstream instead of raising out of the seeding pass | `tests/test_issue_382_seed_quarantine.py` (10 tests) |
 | [#303](https://github.com/TomiToivio/LaclauGPT-Multimodal-Analysis/pull/303) | Missing source identity could not be recovered, and inventing one was worse than failing | `WorkerBinding.task_from_handoff` | **Deliberately not ported** — AI26's identity is the Collection handoff key and its `source_url`; there is no composite `_storage_id` to reconstruct from, and AI26 must not synthesise an identity it was not given | `task_from_handoff` (identity comes from the handoff only); `TaskEnvelope.validate` refuses an empty `record_ref` |
-| [#302](https://github.com/TomiToivio/LaclauGPT-Multimodal-Analysis/pull/302) | A completed-and-eligible subset was reported as a misleading "no eligible rows" warning | `distributed_worker` cycle report | **Already present** — "no work left" is the `idle` outcome, and the alarming "no progress despite N seeded" warning is gated on `seeded > 0`, so a fully processed corpus does not trigger it | `_run_bounded_cycle` (`"idle"`), the `seeded > 0` guard before the warning |
+| [#302](https://github.com/TomiToivio/LaclauGPT-Multimodal-Analysis/pull/302) | A completed-and-eligible subset was reported with the same message as an empty or misconfigured source | `distributed_worker.seed_ready_tasks`, cycle log | **Ported, second pass** — the first reading of this row said "already present" and it was wrong; see below. `seed_ready_tasks` now fills a count mapping and `seed_disposition` names the zero: `seeded` / `upstream_empty` / `all_rejected` / `budget_zero` / `no_new_work` | `tests/test_issue_382_seed_disposition.py` (8 tests) |
 | [#301](https://github.com/TomiToivio/LaclauGPT-Multimodal-Analysis/pull/301) | A mutated context was written into the cumulative frame and rejected at checkpoint, losing completed calls | task envelope ↔ frozen manifest | **Already present, and stronger** — a task carries `config_revision` and `codebook_revision` and is refused when either differs from the frozen manifest, before the claim | `WorkerBinding.validate_task` (five-way manifest comparison) |
 | [#300](https://github.com/TomiToivio/LaclauGPT-Multimodal-Analysis/pull/300) | Per-row exception detail was discarded; a stale derived cache was reused; the failure report was not durable | `DurableTaskStore.write_failure` | **Already present in adapted form** — the failure journal stores the error string plus a `diagnostics` mapping per idempotency key, and terminal failures are a separate state that is not silently retried | `write_failure(..., diagnostics=...)`; `has_terminal_failure`; `tests/test_issue_300_terminal_truncation.py` |
 | [#299](https://github.com/TomiToivio/LaclauGPT-Multimodal-Analysis/pull/299) | A staging batch aborted on a row with a missing media filename | `staging.stage` | **Already present** — staging verifies size and, where the record supplies one, SHA-256, and returns a per-object result rather than raising out of the batch | `staging.py` (cache-hit verification, per-object `StagedObject`) |
@@ -113,3 +113,33 @@ That is a permanent stall that looks like success — acceptance criterion 4's "
 false-complete" in its AI26 form, and the same class as upstream #299/#303/#304 seen from three
 angles. The fix keeps the return contract (tasks published) and adds an optional accumulator, so
 existing callers and their six assertions are untouched.
+
+### #302, second pass: what the first reading missed
+
+The quarantine above stops a *refused* row from being silent. It does not stop a **zero from
+being silent**, and the first pass through this table read the existing code as if it did.
+
+The reasoning there was that "no work left" is the `idle` outcome and the alarming warning is
+gated on `seeded > 0`. Both statements are true, and together they say the opposite of what was
+concluded: the alarm is *suppressed exactly when nothing was handed over*. A cycle where Collection
+returns nothing and a cycle where every record is already analysed produce the same `idle` outcome,
+the same empty `failure_classes`, the same `seeded == 0`, and exit status 0.
+
+That matters because the mismatch this pipeline can suffer is not "too much work". It is a frozen
+run manifest whose `run_id`, `project_id` or Phase 1 `date_after` no longer matches what Collection
+is publishing. When that happens nothing arrives, every hourly tick is idle, and the log reads like
+a finished corpus forever. "Drained queue" is not evidence of "drained corpus".
+
+So `seed_ready_tasks` reports the counts behind its zero, and `seed_disposition` names it:
+
+| disposition | means | level |
+| --- | --- | --- |
+| `seeded` | work was published | INFO |
+| `no_new_work` | rows arrived, all already analysed at this generation | INFO |
+| `all_rejected` | rows arrived, every one refused by the quarantine | INFO, with the quarantine log |
+| `budget_zero` | `--max-tasks 0`, so no work was attempted | INFO |
+| `upstream_empty` | **Collection handed over nothing** | WARNING, naming the run id |
+
+The empty case is the one that earns a warning, because it is the only one where an idle cycle is
+being read as evidence about the corpus. The rest are ordinary and stay at INFO so the hourly log
+stays readable.
