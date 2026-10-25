@@ -664,6 +664,11 @@ class AI26TaskWorker(TaskWorker):
             return "retry"
 
 
+#: How many rejected handoffs a single seeding pass names individually before summarising the rest.
+#: One bad row must be visible, but a corpus-wide identity regression must not fill the log.
+_REJECTION_DETAIL_LIMIT = 20
+
+
 def seed_ready_tasks(
     binding: WorkerBinding,
     handoff: MongoCollectionHandoff,
@@ -673,19 +678,66 @@ def seed_ready_tasks(
     limit: int,
     page_size: int | None = None,
     fingerprint: str = "",
+    rejected: list[dict[str, str]] | None = None,
 ) -> int:
+    """Queue ready handoffs, quarantining any that cannot become a task (issue #382).
+
+    A ready handoff that is missing its identity — no ``source_url``, no ``handoff_key``, or a
+    ``run_id`` that does not match the frozen manifest — raises inside
+    :meth:`WorkerBinding.task_from_handoff`. Before this change that exception propagated out of
+    the whole seeding pass, so **one malformed row stopped every remaining record in the batch and
+    every later tick re-read the same row and failed again**: the pipeline stalled until a human
+    noticed, and the stall looked like an idle cycle rather than a refusal.
+
+    The upstream Multimodal-Analysis fixes #299, #303 and #304 all describe this class from three
+    angles: one unidentifiable media row crashed a country batch, identity had to be *recovered*
+    where it was provable, and rows that could not be identified at all had to be quarantined with
+    an audit rather than dropped or allowed to block the job.
+
+    So a rejected handoff is now **skipped, named and counted** — never silently discarded, because
+    it stays in the collection and stays visible:
+
+    * if ``rejected`` is given, one record per rejection is appended with the handoff key and the
+      reason, so a caller can persist or report it;
+    * the first :data:`_REJECTION_DETAIL_LIMIT` are logged individually and the remainder summed,
+      so a systemic failure is loud once rather than loud ten thousand times;
+    * seeding continues, and the record stays ``ready`` upstream, so the next tick retries it. A
+      quarantine is not a deletion.
+
+    Return value stays the number of tasks **published**, so the meaning a caller already relies on
+    is unchanged.
+    """
     if limit < 1:
         return 0
     batch_size = max(1, page_size or limit)
     count = 0
     offset = 0
+    rejections = 0
     while count < limit:
         envelopes = handoff.ready_handoffs(binding.manifest.run_id, limit=batch_size, offset=offset)
         if not envelopes:
             break
         offset += len(envelopes)
         for envelope in envelopes:
-            task = binding.task_from_handoff(envelope)
+            try:
+                task = binding.task_from_handoff(envelope)
+            except (KeyError, TypeError, ValueError) as exc:
+                rejections += 1
+                record = {
+                    "handoff_key": str(envelope.get("handoff_key") or ""),
+                    "run_id": str(envelope.get("run_id") or ""),
+                    "reason": f"{type(exc).__name__}: {exc}",
+                }
+                if rejected is not None:
+                    rejected.append(record)
+                if rejections <= _REJECTION_DETAIL_LIMIT:
+                    logger.warning(
+                        "AI26 handoff quarantined at seed: handoff_key=%s reason=%s "
+                        "(it stays ready upstream and is retried next cycle)",
+                        record["handoff_key"] or "<missing>",
+                        record["reason"],
+                    )
+                continue
             if durable_store.has_result(task.idempotency_key, fingerprint):
                 continue
             if durable_store.has_terminal_failure(task.idempotency_key):
@@ -707,6 +759,15 @@ def seed_ready_tasks(
                 break
         if len(envelopes) < batch_size:
             break
+    if rejections > _REJECTION_DETAIL_LIMIT:
+        logger.error(
+            "AI26 handoff quarantine: %d ready handoff(s) could not become tasks this cycle; "
+            "%d named individually above, %d more suppressed. They remain ready upstream and "
+            "will be retried, so this will repeat every cycle until the identities are repaired.",
+            rejections,
+            _REJECTION_DETAIL_LIMIT,
+            rejections - _REJECTION_DETAIL_LIMIT,
+        )
     return count
 
 
@@ -867,6 +928,7 @@ def main(argv: list[str] | None = None) -> int:
         rearmed = worker.durable_store.rearm_terminal_failure(idempotency_key)
         logger.info("Re-armed terminal failure %s: records=%d", idempotency_key, rearmed)
     seeded = 0
+    rejected_handoffs: list[dict[str, str]] = []
     if args.seed_ready:
         seeded = seed_ready_tasks(
             binding,
@@ -875,6 +937,7 @@ def main(argv: list[str] | None = None) -> int:
             worker.durable_store,
             limit=max(args.max_tasks, 0),
             fingerprint=worker.generation_fingerprint,
+            rejected=rejected_handoffs,
         )
     counts, failure_classes = _run_bounded_cycle(
         worker,
@@ -897,12 +960,20 @@ def main(argv: list[str] | None = None) -> int:
             counts["duplicate"],
         )
     failure_summary = worker.durable_store.failure_summary()
+    counts["handoff_rejected"] = len(rejected_handoffs)
     logger.info(
         "AI26 worker cycle: %s failure_classes=%s failure_summary=%s",
         counts,
         failure_classes,
         failure_summary,
     )
+    if rejected_handoffs:
+        logger.error(
+            "AI26 handoff quarantine this cycle: %d ready handoff(s) could not be turned into "
+            "tasks and were skipped, not deleted. First key: %s",
+            len(rejected_handoffs),
+            rejected_handoffs[0]["handoff_key"] or "<missing>",
+        )
     return _cycle_exit_code(counts)
 
 

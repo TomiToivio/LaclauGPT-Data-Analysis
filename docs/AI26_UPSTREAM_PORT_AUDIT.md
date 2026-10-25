@@ -77,3 +77,39 @@ No pipeline semantics, codebook, prompt or schema was altered. No upstream code 
 - [x] Locked AI26 Phase 1 behaviour intact — no prompt, codebook or schema touched.
 - [x] Running Laskin pipeline verified against the deployed revision (see the issue comment for the
       measured cycle and the deployed SHA).
+
+## Delta since #372: the upstream changes reviewed for #382 (2026-10-25)
+
+The audit above was closed against upstream `main` at the time of #372. This section reconciles it
+with upstream `c3ffc569dea1b2c008000075f23bbea46ef8dfc8`, which contains nine merged PRs and one
+unnumbered commit **newer** than that review. Each row was read against the current AI26 code, not
+against the earlier disposition, because a disposition can age.
+
+| Upstream | Failure class | AI26 path | Disposition | Evidence |
+| --- | --- | --- | --- | --- |
+| [#305](https://github.com/TomiToivio/LaclauGPT-Multimodal-Analysis/pull/305) | A double-escaped character class in an identity regex never matched, so recovery silently returned nothing | any AI26 identifier parsing | **Not applicable, and checked** — HEPP24's `YYYYMMDD` id convention does not exist here, and no regex in `src/` carries a doubled escape | `grep -rn 'r"[^"]*\\\\[dws]' src/` → no matches (2026-10-25) |
+| [#304](https://github.com/TomiToivio/LaclauGPT-Multimodal-Analysis/pull/304) | One unidentifiable row aborted a whole batch; rows that could not be identified were neither quarantined nor audited | `distributed_worker.seed_ready_tasks` | **Ported** — a handoff that cannot become a task is skipped, named, counted and left ready upstream instead of raising out of the seeding pass | `tests/test_issue_382_seed_quarantine.py` (10 tests) |
+| [#303](https://github.com/TomiToivio/LaclauGPT-Multimodal-Analysis/pull/303) | Missing source identity could not be recovered, and inventing one was worse than failing | `WorkerBinding.task_from_handoff` | **Deliberately not ported** — AI26's identity is the Collection handoff key and its `source_url`; there is no composite `_storage_id` to reconstruct from, and AI26 must not synthesise an identity it was not given | `task_from_handoff` (identity comes from the handoff only); `TaskEnvelope.validate` refuses an empty `record_ref` |
+| [#302](https://github.com/TomiToivio/LaclauGPT-Multimodal-Analysis/pull/302) | A completed-and-eligible subset was reported as a misleading "no eligible rows" warning | `distributed_worker` cycle report | **Already present** — "no work left" is the `idle` outcome, and the alarming "no progress despite N seeded" warning is gated on `seeded > 0`, so a fully processed corpus does not trigger it | `_run_bounded_cycle` (`"idle"`), the `seeded > 0` guard before the warning |
+| [#301](https://github.com/TomiToivio/LaclauGPT-Multimodal-Analysis/pull/301) | A mutated context was written into the cumulative frame and rejected at checkpoint, losing completed calls | task envelope ↔ frozen manifest | **Already present, and stronger** — a task carries `config_revision` and `codebook_revision` and is refused when either differs from the frozen manifest, before the claim | `WorkerBinding.validate_task` (five-way manifest comparison) |
+| [#300](https://github.com/TomiToivio/LaclauGPT-Multimodal-Analysis/pull/300) | Per-row exception detail was discarded; a stale derived cache was reused; the failure report was not durable | `DurableTaskStore.write_failure` | **Already present in adapted form** — the failure journal stores the error string plus a `diagnostics` mapping per idempotency key, and terminal failures are a separate state that is not silently retried | `write_failure(..., diagnostics=...)`; `has_terminal_failure`; `tests/test_issue_300_terminal_truncation.py` |
+| [#299](https://github.com/TomiToivio/LaclauGPT-Multimodal-Analysis/pull/299) | A staging batch aborted on a row with a missing media filename | `staging.stage` | **Already present** — staging verifies size and, where the record supplies one, SHA-256, and returns a per-object result rather than raising out of the batch | `staging.py` (cache-hit verification, per-object `StagedObject`) |
+| [#298](https://github.com/TomiToivio/LaclauGPT-Multimodal-Analysis/pull/298) | An unset nullable status crashed a normalisation step | stage results | **Not applicable** — AI26's status vocabularies are closed `Literal`s that carry an explicit `not_applicable` member rather than a nullable field | `critical_ai.FindingStatus`, `dna_statement_coding.AgreementStatus` |
+| [#297](https://github.com/TomiToivio/LaclauGPT-Multimodal-Analysis/pull/297) | A non-empty but truncated cached clip was reused forever | `staging.py` cache | **Already present, and stronger** — a cache hit is validated by size and checksum, so a truncated artefact is rebuilt rather than reused | `staging.py` module docstring and `stage()` |
+| `812aedf` (unnumbered) | A truncated model response was cached and reused | model calls | **Not applicable** — AI26 keeps no LLM response cache; a retry re-asks the model, and truncation is a terminal failure with its own re-arm path | `grep -rln "reply_cache\|llm_cache\|response_cache" src/` → no matches |
+
+### The one defect this port fixed
+
+`seed_ready_tasks` converted each ready handoff with no error boundary. One handoff missing its
+`source_url` — or carrying a `run_id` that did not match the frozen manifest — raised out of the
+**entire** seeding pass. The consequences compounded:
+
+1. every record after the bad one in that page was never queued that cycle;
+2. the bad row stayed `ready` in the collection, so the next tick read it first and failed again;
+3. the cycle then reported `idle` with zero work, which reads like a drained corpus rather than a
+   refusal.
+
+That is a permanent stall that looks like success — acceptance criterion 4's "stuck retry loops /
+false-complete" in its AI26 form, and the same class as upstream #299/#303/#304 seen from three
+angles. The fix keeps the return contract (tasks published) and adds an optional accumulator, so
+existing callers and their six assertions are untouched.
