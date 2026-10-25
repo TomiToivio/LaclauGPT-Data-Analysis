@@ -362,3 +362,99 @@ def test_provenance_never_carries_credentials_or_absolute_paths(tmp_path: Path) 
         "object_checksum",
         "object_reason",
     }
+
+
+# --- cache trust: an entry is reused only while it can still be believed (issue #382) ---
+
+
+def test_empty_cached_entry_is_refetched_not_reused(tmp_path: Path) -> None:
+    """A zero-byte cache entry is not an object; it is an interrupted write.
+
+    Upstream #297's failure class in AI26 form: "the file exists" was the only test, so a clip
+    truncated by an interrupted download was reused forever and failed in the reader instead.
+    """
+    store = FakeObjectStore({REF: PAYLOAD})
+    stager = _stager(tmp_path, store)
+    stager._target(REF).parent.mkdir(parents=True, exist_ok=True)
+    stager._target(REF).write_bytes(b"")
+
+    item = stager.stage(REF)
+
+    assert item.status == "downloaded"
+    assert item.path is not None and item.path.read_bytes() == PAYLOAD
+    assert store.downloads == [REF]
+    assert stager.invalidated_cache_hits == 1
+
+
+def test_stale_cached_entry_is_refetched_when_the_store_reports_another_size(
+    tmp_path: Path,
+) -> None:
+    """A cache entry whose size disagrees with the store is stale, not a hit."""
+    store = FakeObjectStore({REF: PAYLOAD})
+    stager = _stager(tmp_path, store)
+    stager._target(REF).parent.mkdir(parents=True, exist_ok=True)
+    stager._target(REF).write_bytes(b"older-and-shorter")
+
+    item = stager.stage(REF)
+
+    assert item.status == "downloaded"
+    assert item.path is not None and item.path.read_bytes() == PAYLOAD
+    assert store.downloads == [REF]
+    assert stager.invalidated_cache_hits == 1
+
+
+def test_cached_entry_is_kept_when_the_store_cannot_answer(tmp_path: Path) -> None:
+    """An outage must not discard media that was already staged successfully."""
+    store = FakeObjectStore({REF: PAYLOAD})
+    stager = _stager(tmp_path, store)
+    stager.stage(REF)
+    store.stat_error = TimeoutError("connection reset")
+
+    item = stager.stage(REF)
+
+    assert item.status == "cached"
+    assert store.downloads == [REF]
+    assert stager.invalidated_cache_hits == 0
+
+
+def test_cached_entry_is_kept_when_the_object_is_gone_remotely(tmp_path: Path) -> None:
+    """The local copy is the only remaining copy; it is not a reason to fail the record."""
+    store = FakeObjectStore({REF: PAYLOAD})
+    stager = _stager(tmp_path, store)
+    stager.stage(REF)
+    del store.objects[REF]
+
+    item = stager.stage(REF)
+
+    assert item.status == "cached"
+    assert store.downloads == [REF]
+
+
+def test_cache_size_verification_can_be_disabled(tmp_path: Path) -> None:
+    """The metadata call per cache hit is a deliberate trade-off, not a rule."""
+    store = FakeObjectStore({REF: PAYLOAD})
+    stager = _stager(tmp_path, store, verify_cached_size=False)
+    stager._target(REF).parent.mkdir(parents=True, exist_ok=True)
+    stager._target(REF).write_bytes(b"older-and-shorter")
+
+    item = stager.stage(REF)
+
+    assert item.status == "cached"
+    assert store.downloads == []
+    assert store.stat_calls == []
+
+
+def test_stage_record_reports_invalidated_cache_hits(tmp_path: Path) -> None:
+    """The count is diagnostic evidence, not a hidden download."""
+    store = FakeObjectStore({REF: PAYLOAD})
+    stager = _stager(tmp_path, store)
+    stager._target(REF).parent.mkdir(parents=True, exist_ok=True)
+    stager._target(REF).write_bytes(b"")
+
+    report = stager.stage_record(_record(media_ref=REF))
+
+    assert report.invalidated == 1
+    assert report.downloads == 1
+    assert report.cache_hits == 0
+    assert report.provenance()["staging_invalidated_cache_hits"] == 1
+    assert report.ok

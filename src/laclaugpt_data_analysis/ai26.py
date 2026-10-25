@@ -126,14 +126,20 @@ def _prompt_record(stage: str, profile: str) -> dict[str, Any]:
     }
     for prompt_id in (system_id, task_id):
         for candidate in prompt_files(prompt_id):
-            payload = candidate.read_bytes()
+            # Hash and count the text this command publishes, not the file's on-disk bytes.
+            # On a checkout whose line endings were converted (CRLF) those differ, so hashing
+            # bytes published a digest that could not verify the text shipped beside it —
+            # upstream #298's class (a representation mismatch across a round trip), caught by
+            # tests/test_issue_341_ai26_cli.py on such a checkout. On an LF checkout the two
+            # digests are identical, so published values do not move.
+            text = candidate.read_text(encoding="utf-8")
             record["files"].append(
                 {
                     "prompt_id": prompt_id,
                     "version": candidate.stem,
                     "path": str(candidate.relative_to(REPOSITORY_ROOT)),
-                    "sha256": hashlib.sha256(payload).hexdigest(),
-                    "chars": len(payload),
+                    "sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+                    "chars": len(text),
                 }
             )
     return record

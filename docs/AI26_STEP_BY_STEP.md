@@ -41,7 +41,7 @@ Collection's stable handoff key is `hash(collection_id + source_url + revision)`
 ## Laskin operator gates (nothing activated by this change)
 
 1. Install current package in a private Laskin checkout as documented in `docs/AI26_LASKIN_ANALYSIS.md`. Use the existing `scripts/run_ai26_laskin.sh`; **do not deploy the human-readable scaffold as a competing worker**.
-2. Run `python tools/check_ai26_contracts.py --collection ../LaclauGPT-Data-Collection --visualization ../LaclauGPT-Data-Visualization` on adjacent checked-out repos. This fails on the current verified 1.2.0/1.1.0 strict-version mismatch.
+2. Run `python tools/check_ai26_contracts.py --collection ../LaclauGPT-Data-Collection --visualization ../LaclauGPT-Data-Visualization` on adjacent checked-out repos. It exits **1** on the current 1.2.0/1.1.0 mismatch and names the repository that must accept the emitted version (Data Collection still declares 1.1.0); Visualization's `enum` accepts both. Exit **2** means a schema could not be read, and the message names the file (issue #382).
 3. Use `scripts/run_ai26_laskin.sh --check` after provisioning Laskin private config, Ollama and dependencies. This is not proof of runtime correctness unless exit codes and logs are checked.
 4. Run bounded small-sample manual pilot, retain source IDs and stage statuses, review output against source evidence, and check Collection input/Visualization display with the same real Mongo DB and collection settings.
 5. Only after schema resolution, integration tests, representative human review and sign-off, enable staggered cron using the documented installer. No cron activation or production store migration is part of this PR.

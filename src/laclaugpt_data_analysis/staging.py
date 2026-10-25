@@ -82,6 +82,7 @@ class StagingPolicy:
         max_cache_bytes: int | None = 8 * 1024**3,
         max_object_bytes: int | None = 512 * 1024**2,
         max_age_seconds: int = 14 * 24 * 3600,
+        verify_cached_size: bool = True,
     ) -> None:
         if max_cache_bytes is not None and max_cache_bytes < 1:
             raise ValueError("max_cache_bytes must be positive (or None to disable)")
@@ -92,6 +93,13 @@ class StagingPolicy:
         self.max_cache_bytes = max_cache_bytes
         self.max_object_bytes = max_object_bytes
         self.max_age_seconds = max_age_seconds
+        #: Compare a cache entry against the store's reported size before reusing it when the
+        #: record carries no checksum. One metadata call per cache hit; the alternative is
+        #: upstream #297's failure mode, where a truncated or replaced object is reused forever
+        #: because "the file exists" was the only test. Entries whose remote size cannot be
+        #: established (store without ``stat_ref``, network error, object gone) are still reused:
+        #: dropping a perfectly good local copy because the network is down would lose data.
+        self.verify_cached_size = verify_cached_size
         if max_cache_bytes is None and max_age_seconds == 0:
             logger.warning(
                 "media staging cache pruning is DISABLED; staged objects are retained "
@@ -165,6 +173,10 @@ class StagingReport:
     staged: list[StagedObject] = field(default_factory=list)
     cache_hits: int = 0
     downloads: int = 0
+    #: Cache entries that were present but refused (empty, checksum or size mismatch) and were
+    #: fetched again. Counted separately from ``downloads`` so a cache that keeps going bad is
+    #: visible rather than looking like ordinary first-time work.
+    invalidated: int = 0
     pruned_files: int = 0
     pruned_bytes: int = 0
 
@@ -184,6 +196,7 @@ class StagingReport:
             "staged_objects": [item.provenance() for item in self.staged],
             "staging_cache_hits": self.cache_hits,
             "staging_downloads": self.downloads,
+            "staging_invalidated_cache_hits": self.invalidated,
         }
 
 
@@ -234,6 +247,10 @@ class MediaStager:
         self.cache_root = Path(cache_root)
         self.policy = policy or StagingPolicy()
         self.project_id = project_id
+        #: Cache entries this stager refused to reuse, since it was created or since the last
+        #: ``stage_record``. Non-zero here means the cache held something that could not be
+        #: believed — the diagnostic upstream #300 asks for, without a second log stream.
+        self.invalidated_cache_hits = 0
 
     def cache_key(self, ref: str) -> str:
         return _digest(f"{self.project_id}\n{ref}")
@@ -246,7 +263,15 @@ class MediaStager:
         return self.cache_root / key[:2] / key / name
 
     def stage(self, ref: str, *, checksum: str | None = None) -> StagedObject:
-        """Stage one object reference, reusing a verified cache hit when possible."""
+        """Stage one object reference, reusing a verified cache hit when possible.
+
+        A cache entry is reused only when it can still be believed: a checksum that matches, or
+        (when the record carries none) a size that agrees with what the store reports. An empty
+        file is never a valid object — an interrupted write, a cleanup or a restore can leave one,
+        and reusing it pushes the failure onto whichever reader opens it next (upstream #297's
+        class). The remote object is never touched; an entry that fails verification is deleted
+        locally and fetched again.
+        """
         key = self.cache_key(ref)
         target = self._target(ref)
 
@@ -265,7 +290,14 @@ class MediaStager:
                     )
                 logger.debug("cached object failed checksum verification; refetching")
                 target.unlink(missing_ok=True)
-            else:
+                self.invalidated_cache_hits += 1
+            elif size <= 0:
+                logger.warning(
+                    "cached object is empty; refetching ref=%s cache_key=%s", ref, key
+                )
+                target.unlink(missing_ok=True)
+                self.invalidated_cache_hits += 1
+            elif not self._cached_size_is_stale(ref, size):
                 return StagedObject(
                     ref=ref,
                     path=target,
@@ -273,6 +305,9 @@ class MediaStager:
                     byte_size=size,
                     cache_key=key,
                 )
+            else:
+                target.unlink(missing_ok=True)
+                self.invalidated_cache_hits += 1
 
         # Confirm the remote object exists before spending bandwidth, and use the
         # reported size to enforce the per-object bound. Stores that do not expose
@@ -377,6 +412,37 @@ class MediaStager:
             cache_key=key,
         )
 
+    def _cached_size_is_stale(self, ref: str, cached_size: int) -> bool:
+        """Whether the store reports a different size for ``ref`` than the cache entry has.
+
+        ``False`` when the sizes agree, or when the question cannot be answered: no ``stat_ref``
+        on the store, a transport error, or an object that has since disappeared remotely. Those
+        are all cases where the local copy is the best information available, so it is kept — a
+        network outage must not throw away media that was already staged successfully.
+        """
+        if not self.policy.verify_cached_size:
+            return False
+        stat = getattr(self.store, "stat_ref", None)
+        if stat is None:
+            return False
+        try:
+            info = stat(ref)
+        except Exception as exc:  # noqa: BLE001 - unanswerable means "keep what we have"
+            logger.debug("cannot verify cached object %s: %s", ref, exc)
+            return False
+        remote_size = (info or {}).get("byte_size")
+        if remote_size is None:
+            return False
+        if int(remote_size) == cached_size:
+            return False
+        logger.warning(
+            "cached object %s is %d bytes but the store reports %d; refetching",
+            ref,
+            cached_size,
+            int(remote_size),
+        )
+        return True
+
     def _download(self, ref: str, target: Path) -> Path:
         """Download via whichever contract the store exposes.
 
@@ -397,6 +463,7 @@ class MediaStager:
     def stage_record(self, record: Any, *, prefix: str = "") -> StagingReport:
         """Stage every object a record references, then apply the cache policy."""
         report = StagingReport()
+        self.invalidated_cache_hits = 0
         checksums = self._record_checksums(record)
         for ref in object_references(record, prefix=prefix):
             item = self.stage(ref, checksum=checksums.get(ref))
@@ -408,6 +475,7 @@ class MediaStager:
         pruned_files, pruned_bytes = self.prune_cache()
         report.pruned_files = pruned_files
         report.pruned_bytes = pruned_bytes
+        report.invalidated = self.invalidated_cache_hits
         return report
 
     def _record_checksums(self, record: Any) -> dict[str, str]:
