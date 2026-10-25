@@ -3,7 +3,7 @@
 from types import SimpleNamespace
 
 from laclaugpt_data_analysis import distributed_worker
-from laclaugpt_data_analysis.pipeline_context import PipelineContext
+from laclaugpt_data_analysis.canonical_pipeline import PipelineContext
 
 
 def test_handler_isolates_mutable_context_between_records(monkeypatch):
