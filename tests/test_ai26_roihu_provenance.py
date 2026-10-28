@@ -134,9 +134,14 @@ def fake_launcher_env(tmp_path: Path) -> dict[str, str]:
         stub = bins / name
         stub.write_text("#!/bin/sh\nexit 0\n")
         stub.chmod(0o755)
-    # The project venv is real: the launcher calls `python -m laclaugpt_data_analysis.preflight`
-    # and a stub interpreter would test the stub instead of the guard.
-    venv = ROOT / ".venv"
+    # The launcher only checks that $VENV/bin/python is executable and then activates it, so the
+    # fixture builds a throwaway venv around the interpreter running these tests. Assuming a
+    # checkout-local `.venv` made this test pass on a developer machine and fail in CI, where
+    # dependencies come from actions/setup-python and no `.venv` exists.
+    venv = tmp_path / "venv"
+    (venv / "bin").mkdir(parents=True)
+    (venv / "bin" / "python").symlink_to(sys.executable)
+    (venv / "bin" / "activate").write_text("", encoding="utf-8")
 
     cfg = _private_dir(tmp_path)
     env_file = tmp_path / "roihu.env"
@@ -221,3 +226,86 @@ def test_launcher_has_exactly_one_exit_trap() -> None:
     traps = [line for line in text.splitlines() if line.startswith("trap ")]
     assert len(traps) == 1, traps
     assert "cleanup" in traps[0]
+
+def _launcher_repo(tmp_path: Path) -> Path:
+    """A throwaway repo root holding the launcher plus stubs for the cluster-only pieces.
+
+    `preflight_ai26.sh` is stubbed to succeed: this test is about the exit trap, and the real
+    preflight is fail-closed on unreachable MongoDB/Redis/Allas by design.
+    """
+    root = tmp_path / "repo"
+    roihu = root / "scripts" / "roihu"
+    roihu.mkdir(parents=True)
+    (roihu / "ai26_full_pipeline.sbatch").write_text(SBATCH.read_text(), encoding="utf-8")
+    (roihu / "preflight_ai26.sh").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    (roihu / "record_provenance.py").write_text(RECORDER.read_text(), encoding="utf-8")
+    return root
+
+
+def _stub_bins(tmp_path: Path) -> Path:
+    bins = tmp_path / "bins"
+    bins.mkdir()
+    (bins / "module").write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    # `serve` must stay alive so the trap has something to kill; the rest succeed.
+    (bins / "ollama").write_text(
+        '#!/bin/sh\nif [ "${1:-}" = "serve" ]; then exec sleep 120; fi\nexit 0\n', encoding="utf-8"
+    )
+    (bins / "srun").write_text("#!/bin/sh\nexit 7\n", encoding="utf-8")
+    for name in ("module", "ollama", "srun"):
+        (bins / name).chmod(0o755)
+    return bins
+
+
+def test_failed_worker_is_recorded_as_failed_not_successful(tmp_path: Path) -> None:
+    """The trap must not lose the worker's status to its own `kill`.
+
+    `cleanup` runs `kill ... || true` before recording, which rewrites `$?`. Reading the status
+    after that wrote `worker_status: 0` for every failed run — a provenance record that reports
+    failures as successes, which is worse than no record at all.
+    """
+    root = _launcher_repo(tmp_path)
+    bins = _stub_bins(tmp_path)
+    venv = tmp_path / "venv"
+    (venv / "bin").mkdir(parents=True)
+    (venv / "bin" / "python").symlink_to(sys.executable)
+    (venv / "bin" / "activate").write_text("", encoding="utf-8")
+    cfg = _private_dir(tmp_path)
+    prov = tmp_path / "provenance.json"
+    env_file = tmp_path / "roihu.env"
+    env_file.write_text(
+        "LACLAUGPT_RUN_ID=roihu-test-abc123\n"
+        f"LACLAUGPT_PRIVATE_CONFIG_DIR={cfg}\n"
+        "LACLAUGPT_MONGODB_URI=mongodb://example.invalid\n"
+        "LACLAUGPT_REDIS_URL=redis://example.invalid:6379/0\n"
+        "LACLAUGPT_S3_ENDPOINT=https://example.invalid\n"
+        "LACLAUGPT_S3_BUCKET=example\n"
+        f"LACLAUGPT_ROIHU_LOG_DIR={tmp_path / 'logs'}\n"
+        f"LACLAUGPT_ROIHU_VENV={venv}\n"
+        f"LACLAUGPT_ROIHU_PROVENANCE={prov}\n",
+        encoding="utf-8",
+    )
+    env_file.chmod(0o600)
+    env = _env(
+        LACLAUGPT_ENV_FILE=str(env_file),
+        LACLAUGPT_REPO_ROOT=str(root),
+        SLURM_JOB_ID="4242",
+    )
+    env["PATH"] = f"{bins}:{env['PATH']}"
+
+    result = subprocess.run(
+        ["bash", str(root / "scripts" / "roihu" / "ai26_full_pipeline.sbatch")],
+        env=env, capture_output=True, text=True, cwd=str(root), timeout=120,
+    )
+
+    assert result.returncode == 7, result.stdout + result.stderr
+    document = json.loads(prov.read_text())
+    assert str(document["worker_status"]) == "7", document.get("worker_status")
+    assert document["end"]["slurm"]["slurm_job_id"] == "4242"
+
+
+def test_trap_is_registered_before_the_model_readiness_checks() -> None:
+    """A late trap leaves a running Ollama behind when startup or the model check fails."""
+    text = SBATCH.read_text()
+    trap_at = text.index("trap cleanup EXIT INT TERM")
+    assert trap_at < text.index("ollama list"), "trap must be registered before readiness polling"
+    assert trap_at < text.index("ollama show"), "trap must be registered before the model check"
