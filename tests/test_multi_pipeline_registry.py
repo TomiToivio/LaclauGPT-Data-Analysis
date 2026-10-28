@@ -118,11 +118,19 @@ def test_vendored_files_match_their_recorded_hashes(pipeline_id: str):
     provenance = json.loads((snapshot / "PROVENANCE.json").read_text())
     assert provenance["source_ref"] == spec.source_ref
     checked = 0
+    modified = set(provenance.get("local_modifications", []))
     for path, meta in provenance["files"].items():
         target = snapshot / meta["dest"]
         assert target.is_file(), f"vendored file missing: {path}"
         digest = hashlib.sha256(target.read_bytes()).hexdigest()
-        assert digest == meta["sha256"], f"vendored file changed: {path}"
+        if path in modified:
+            # A documented local change: the upstream hash is kept alongside it, so the
+            # file is still traceable to what was imported and the reason is on record.
+            assert meta.get("local_sha256") == digest, f"local change hash drifted: {path}"
+            assert meta.get("upstream_sha256"), f"upstream hash lost: {path}"
+            assert meta.get("local_changes"), f"local change undocumented: {path}"
+        else:
+            assert digest == meta["sha256"], f"vendored file changed: {path}"
         checked += 1
     assert checked == provenance["file_count"] > 0
 

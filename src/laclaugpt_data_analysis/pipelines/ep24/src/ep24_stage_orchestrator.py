@@ -38,7 +38,7 @@ def countries() -> list[str]:
     else:
         root = Path(os.getenv(
             "LACLAUGPT_EP24_INPUT_ROOT",
-            "/scratch/project_2009497/LaclauGPT-Private/analysis/ep24_reprocess/data/to_reprocess",
+            "/scratch/<csc-project>/LaclauGPT-Private/analysis/ep24_reprocess/data/to_reprocess",
         ))
         raw = [p.stem.removeprefix("ep24_").casefold() for p in root.glob("ep24_*.csv")]
     return sorted(
@@ -267,7 +267,7 @@ def persist_batch(
         # Preserve a durable failure report instead of relying on the
         # temporary per-batch CSV (deleted by TemporaryDirectory on exit).
         report_dir = Path(os.getenv("LACLAUGPT_EP24_OUTPUT_ROOT",
-            "/scratch/project_2009497/LaclauGPT-Private/analysis/ep24_reprocess/outputs"))
+            "/scratch/<csc-project>/LaclauGPT-Private/analysis/ep24_reprocess/outputs"))
         report_country = os.getenv("LACLAUGPT_COUNTRY", "unknown").strip().casefold()
         report = report_dir / report_country / f"step_{step:02d}_failed_batch.csv"
         report.parent.mkdir(parents=True, exist_ok=True)
@@ -378,7 +378,7 @@ def run_country(
     output_root = Path(
         os.getenv(
             "LACLAUGPT_EP24_OUTPUT_ROOT",
-            "/scratch/project_2009497/LaclauGPT-Private/analysis/ep24_reprocess/outputs",
+            "/scratch/<csc-project>/LaclauGPT-Private/analysis/ep24_reprocess/outputs",
         )
     )
     batch_size = max(1, int(os.getenv("LACLAUGPT_STAGE_BATCH_SIZE", "25")))

@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 
 _DEFAULT_PRIVATE_ROOT = Path(
-    "/scratch/project_2009497/LaclauGPT-Private/analysis/ep24_reprocess"
+    "/scratch/<csc-project>/LaclauGPT-Private/analysis/ep24_reprocess"
 )
 
 

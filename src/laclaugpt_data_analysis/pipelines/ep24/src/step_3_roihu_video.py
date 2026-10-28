@@ -22,7 +22,7 @@ def _bridge_env() -> None:
     # An explicit per-job log override remains supported.
     private_root = os.getenv(
         "LACLAUGPT_MULTIMODAL_PRIVATE_ROOT",
-        "/scratch/project_2009497/LaclauGPT-Private/analysis/ep24_reprocess",
+        "/scratch/<csc-project>/LaclauGPT-Private/analysis/ep24_reprocess",
     )
     os.environ.setdefault(
         "LACLAUGPT_VLLM_TEST_LOG", os.path.join(private_root, "logs", "video.log")

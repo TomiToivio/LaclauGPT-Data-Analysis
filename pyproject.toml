@@ -133,6 +133,7 @@ pythonpath = ["src", ".", "laclaugpt"]
 # Vendored upstream snapshots keep their own style: reformatting them would change the
 # per-file hashes in PROVENANCE.json and stop them being the implementation that was
 # imported.
+force-exclude = true
 extend-exclude = [
     "src/laclaugpt_data_analysis/pipelines/ep24",
     "src/laclaugpt_data_analysis/pipelines/ep24_legacy",

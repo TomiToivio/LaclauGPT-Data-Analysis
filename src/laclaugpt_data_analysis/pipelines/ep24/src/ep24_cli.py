@@ -101,11 +101,11 @@ def _configure_direct_paths(step: int, country: str) -> None:
     """Fill direct-run paths only when the caller did not provide explicit ones."""
     input_root = Path(os.getenv(
         "LACLAUGPT_EP24_INPUT_ROOT",
-        "/scratch/project_2009497/LaclauGPT-Private/analysis/ep24_reprocess/data/to_reprocess",
+        "/scratch/<csc-project>/LaclauGPT-Private/analysis/ep24_reprocess/data/to_reprocess",
     ))
     output_root = Path(os.getenv(
         "LACLAUGPT_EP24_OUTPUT_ROOT",
-        "/scratch/project_2009497/LaclauGPT-Private/analysis/ep24_reprocess/outputs",
+        "/scratch/<csc-project>/LaclauGPT-Private/analysis/ep24_reprocess/outputs",
     ))
 
     if not os.getenv("LACLAUGPT_INPUT_CSV"):

@@ -24,7 +24,12 @@
     "ep24_bootstrap.py": {
       "bytes": 6046,
       "dest": "src/ep24_bootstrap.py",
-      "sha256": "a2b6917719eefa51186d3d70b7900070a598a3a24eae1267185fea47d574534d"
+      "local_changes": [
+        "Replaced the concrete CSC project identifier in default paths with '<csc-project>': a project id is private even when the code around it is public, and this snapshot is published in a public repository."
+      ],
+      "local_sha256": "8e00b5cb28116b13b16ccb7b6139f5e34c91ac08cd5bdc3c4c996e6865084207",
+      "sha256": "a2b6917719eefa51186d3d70b7900070a598a3a24eae1267185fea47d574534d",
+      "upstream_sha256": "a2b6917719eefa51186d3d70b7900070a598a3a24eae1267185fea47d574534d"
     },
     "ep24_cleaner.py": {
       "bytes": 19279,
@@ -34,7 +39,12 @@
     "ep24_cli.py": {
       "bytes": 6081,
       "dest": "src/ep24_cli.py",
-      "sha256": "b0bf518ad6453fdf065edbad3013116d363f6b2f43479910d59f77f4fa728015"
+      "local_changes": [
+        "Replaced a concrete CSC project identifier with '<csc-project>': a project id is private even when the surrounding code is public, and this snapshot is published."
+      ],
+      "local_sha256": "58a83f9a663e2c70b21b0ec6a7a088bedaaded67d2ae7f654398357fd8907154",
+      "sha256": "b0bf518ad6453fdf065edbad3013116d363f6b2f43479910d59f77f4fa728015",
+      "upstream_sha256": "b0bf518ad6453fdf065edbad3013116d363f6b2f43479910d59f77f4fa728015"
     },
     "ep24_context.py": {
       "bytes": 6372,
@@ -124,7 +134,12 @@
     "ep24_settings.py": {
       "bytes": 6182,
       "dest": "src/ep24_settings.py",
-      "sha256": "03ccc6aa6ea934753bcb5305b8d829b3a7352c6e4fe64b6a61a6312351b4b74c"
+      "local_changes": [
+        "Replaced a concrete CSC project identifier with '<csc-project>': a project id is private even when the surrounding code is public, and this snapshot is published."
+      ],
+      "local_sha256": "65b5cddaf9199354e2a008745ffa0be61d52f0c5d293cee4aa3dc4f10d88cbfd",
+      "sha256": "03ccc6aa6ea934753bcb5305b8d829b3a7352c6e4fe64b6a61a6312351b4b74c",
+      "upstream_sha256": "03ccc6aa6ea934753bcb5305b8d829b3a7352c6e4fe64b6a61a6312351b4b74c"
     },
     "ep24_sna.py": {
       "bytes": 30008,
@@ -139,7 +154,12 @@
     "ep24_stage_orchestrator.py": {
       "bytes": 30388,
       "dest": "src/ep24_stage_orchestrator.py",
-      "sha256": "318c5377feba301e8e0506910eb2823df1ca21a0cbf76fe9e305431d34f97b89"
+      "local_changes": [
+        "Replaced a concrete CSC project identifier with '<csc-project>': a project id is private even when the surrounding code is public, and this snapshot is published."
+      ],
+      "local_sha256": "d9272bebbf22cdaa3476a4c5ae92912d0e33a567b84408dde67c9c4a989fb6ce",
+      "sha256": "318c5377feba301e8e0506910eb2823df1ca21a0cbf76fe9e305431d34f97b89",
+      "upstream_sha256": "318c5377feba301e8e0506910eb2823df1ca21a0cbf76fe9e305431d34f97b89"
     },
     "ep24_stage_state.py": {
       "bytes": 8763,
@@ -249,7 +269,12 @@
     "roihu_preprocess.py": {
       "bytes": 31790,
       "dest": "src/roihu_preprocess.py",
-      "sha256": "629ba31f14afb4cf6e99cded9304669228919694c12bb704c693084e2eb2312a"
+      "local_changes": [
+        "Replaced a concrete CSC project identifier with '<csc-project>': a project id is private even when the surrounding code is public, and this snapshot is published."
+      ],
+      "local_sha256": "9166c63926b36987ee997fc5df7758b89a00a8e4cee5fa81db99dffe269549eb",
+      "sha256": "629ba31f14afb4cf6e99cded9304669228919694c12bb704c693084e2eb2312a",
+      "upstream_sha256": "629ba31f14afb4cf6e99cded9304669228919694c12bb704c693084e2eb2312a"
     },
     "roihu_rdf.py": {
       "bytes": 42290,
@@ -424,7 +449,12 @@
     "step_3_roihu_video.py": {
       "bytes": 1464,
       "dest": "src/step_3_roihu_video.py",
-      "sha256": "b8f362424c4add0a50074c8abaaaffc69b473d0d5e2493fe649f1ee0c3f198e2"
+      "local_changes": [
+        "Replaced a concrete CSC project identifier with '<csc-project>': a project id is private even when the surrounding code is public, and this snapshot is published."
+      ],
+      "local_sha256": "ef60ddeeb0095d67d1839389ea16505ab6bae2ae947703107ca699369a44b111",
+      "sha256": "b8f362424c4add0a50074c8abaaaffc69b473d0d5e2493fe649f1ee0c3f198e2",
+      "upstream_sha256": "b8f362424c4add0a50074c8abaaaffc69b473d0d5e2493fe649f1ee0c3f198e2"
     },
     "step_4_roihu_summary.py": {
       "bytes": 370,
@@ -460,6 +490,14 @@
   "imported_at": "2026-10-28T17:31:45+00:00",
   "imported_by": "tools/vendor_pipeline.py",
   "license": "See upstream repository",
+  "local_modifications": [
+    "ep24_bootstrap.py",
+    "ep24_cli.py",
+    "ep24_settings.py",
+    "ep24_stage_orchestrator.py",
+    "roihu_preprocess.py",
+    "step_3_roihu_video.py"
+  ],
   "pipeline_id": "ep24",
   "source_ref": "db123759fe21b194275d87d6ccc3b7c4f98a2055",
   "source_repository": "TomiToivio/LaclauGPT-Multimodal-Analysis",
