@@ -156,8 +156,8 @@ def pipeline_keys(*, pipeline_id: str, project_id: str, run_id: str) -> dict[str
     run = str(run_id or "").strip()
     if not run:
         raise ValueError("run_id is required")
-    if "/" in run or ":" in run:
-        raise ValueError(f"run_id must not contain ':' or '/': {run!r}")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", run) or run in {".", ".."}:
+        raise ValueError("run_id must be a safe 1-128 character namespace segment")
     scope = f"{project}:{spec.pipeline_id}:{run}"
     return {
         "scope": scope,
