@@ -14,6 +14,36 @@ Create a private environment file with permissions 600 outside version control (
 
 The private config directory must contain `run-manifest.json`, `analysis.json`, and `codebook.json`. Manifest must match the test run ID, configuration and codebook SHA-256 hashes, model and public Git revision; follow `docs/AI26_DISTRIBUTED_WORKER.md`. **Keep canonical source records in the shared MongoDB but isolate test task/run namespaces.** Before the test, confirm the Redis stream and MongoDB output keys are scoped by run ID (inspect existing implementation and query the actual keys); a run ID alone is not sufficient isolation if the deployed worker shares a global queue. Do not submit until this is proven. Seed only a bounded, explicitly selected sample into that isolated namespace. Roihu's script intentionally does not use `--seed-ready` to prevent surprising production task creation.
 
+## Prove the wiring without spending a task
+
+```bash
+LACLAUGPT_DRY_RUN=1 bash scripts/roihu/ai26_full_pipeline.sbatch
+```
+
+Prints the run id, isolated stream name, task bound, model, config directory, host and Git
+SHA, then exits **before** preflight and before any claim. It deliberately does not
+require MongoDB, Redis or Allas: preflight is fail-closed on unreachable services, which
+would make the dry run useless precisely on a host being prepared. Add
+`LACLAUGPT_DRY_RUN_PREFLIGHT=1` to include the real preflight anyway.
+
+## Provenance of every run
+
+Each job writes `provenance_<job id>.json` beside the logs (`LACLAUGPT_ROIHU_PROVENANCE`
+overrides the path), with a `start` and an `end` block:
+
+| field | why it is there |
+| --- | --- |
+| `run_id`, `project_id`, `worker_id` | identifies the isolated namespace the work belonged to |
+| `host`, `machine`, `platform`, `python` | says where it ran, which is how nondeterminism is explained later |
+| `git_sha` | the exact code revision, suffixed `-dirty` if the tree was modified — a run from a modified tree must not claim the commit's behaviour |
+| `model`, `llm_mode`, `cloud_fallback_allowed` | the model actually used, and that no cloud fallback was permitted |
+| `frozen_config` | SHA-256 of `run-manifest.json`, `analysis.json`, `codebook.json` |
+| `slurm` | job id, partition, account, CPUs, memory, GPUs, array index |
+| `worker_status`, `elapsed_seconds` | the outcome and duration, recorded on exit including on failure |
+
+This is what makes a Roihu run comparable to a concurrent Laskin run instead of merely
+finished.
+
 ## Submit and inspect
 
 From the repository checkout with the private environment path configured:
@@ -40,22 +70,29 @@ The Slurm directives are examples; check live CSC partition/GPU availability and
 7. Kill/requeue a bounded test job; inspect lease/reclaim and duplicate prevention. Test missing media and incompatible manifests.
 8. Save a redacted report: date, commit, run ID, stage completeness, per-stage timings, record counts, failures, Allas object checks, Laskin unaffected, and any outstanding blocks.
 
+## Still requires the cluster
+
+Nothing in this repository can perform these, and the issue must not be marked complete
+until they are done on a real allocation:
+
+1. **Install on Roihu** — CSC modules, ARM64/GH200 PyTorch, FFmpeg, a compatible Ollama
+   binary and the pre-pulled model.
+2. **A real `sbatch` submission** through the canonical pipeline, with stage-by-stage
+   evidence that every required stage ran (running the worker does not prove optional
+   stages were enabled).
+3. **Live isolation check** — confirm from inside the allocation that the Redis stream and
+   group are the `roihu-test-*` ones, and that production keys are untouched.
+4. **Concurrent observation** — Laskin cron healthy while the Roihu job runs, with no
+   double-claiming or overwritten results.
+5. **Interruption and reclaim** — kill and requeue a bounded job; confirm no duplicate
+   results.
+6. **The comparison report** — counts, timings, failures, storage paths, and an explanation
+   of any hardware or model nondeterminism.
+
 ## Limits and safety
 
 This repository change cannot itself submit CSC jobs, install project credentials, prove Roihu GPU/model compatibility or establish live Mongo/Redis/Allas connectivity. Do not mark the issue fully complete until a real Slurm run and simultaneous Laskin observation have been performed. Never seed/claim production tasks from the test. Existing production Laskin wrapper is unchanged.
 
-## Dry run and provenance (added after the initial deployment landed)
+### Compatibility with the earlier Roihu deployment
 
-Plan a submission without touching modules, services or the model:
-
-```bash
-AI26_DRY_RUN=1 bash scripts/roihu/ai26_full_pipeline.sbatch
-```
-
-Every real run writes `runs/run-manifest-<stamp>.json` under the private config directory, recording run
-id, Slurm job id, worker id, Git SHA, model, task limit, GPU shape, elapsed seconds and the worker exit
-status. It is written on failure too, so a broken run stays auditable. No credentials or research content
-is written to it.
-
-Guards that are verified offline: a non-`roihu-test-*` run id is refused, a world-readable env file is
-refused, a task limit above 25 is refused, and the dry run exits cleanly before any module load.
+The existing `AI26_DRY_RUN=1` invocation remains supported alongside `LACLAUGPT_DRY_RUN=1`. The original private `run-manifest-<stamp>.json` summary is superseded by the richer `provenance_<job id>.json` start/end manifest. Production tasks must never be seeded by the test worker.

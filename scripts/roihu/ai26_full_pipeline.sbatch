@@ -29,18 +29,26 @@ set +a
 }
 [[ "${LACLAUGPT_MAX_TASKS:-5}" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid task limit" >&2; exit 2; }
 [[ "${LACLAUGPT_MAX_TASKS:-5}" -le 25 ]] || { echo "Test limit >25 refused" >&2; exit 2; }
-
-# Plan-only mode: exercises every guard above, touches no service and no module.
-if [[ "${AI26_DRY_RUN:-0}" == "1" ]]; then
-  echo "DRY RUN — would run:"
-  echo "  preflight:    bash scripts/roihu/preflight_ai26.sh"
-  echo "  worker:       laclaugpt-analysis-worker --max-tasks ${LACLAUGPT_MAX_TASKS:-5} --worker-id roihu-${SLURM_JOB_ID:-manual}"
-  echo "  run id:       ${LACLAUGPT_RUN_ID}"
-  echo "  model:        ${LACLAUGPT_OLLAMA_MODEL:-gemma4:12b}"
-  echo "  git:          $(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
-  echo "  provenance:   ${LACLAUGPT_RUN_MANIFEST_DIR:-$LACLAUGPT_PRIVATE_CONFIG_DIR/runs}/run-manifest-<stamp>.json"
+# Dry run: prove the wiring without claiming a single task and without requiring the
+# distributed services. Preflight is fail-closed on unreachable MongoDB/Redis/Allas, so
+# running it here would make the dry run impossible exactly where it is most useful —
+# on a host being prepared. Set LACLAUGPT_DRY_RUN_PREFLIGHT=1 to include it.
+if [[ "${LACLAUGPT_DRY_RUN:-${AI26_DRY_RUN:-0}}" == "1" ]]; then
+  echo "DRY RUN: no task will be claimed and the worker will not start"
+  echo "  run id    : $LACLAUGPT_RUN_ID (isolated stream analysis:$LACLAUGPT_RUN_ID:tasks)"
+  echo "  project   : ${LACLAUGPT_PROJECT_ID:-ai26}"
+  echo "  max tasks : ${LACLAUGPT_MAX_TASKS:-5}"
+  echo "  model     : ${LACLAUGPT_OLLAMA_MODEL:-gemma4:12b}"
+  echo "  config    : $LACLAUGPT_PRIVATE_CONFIG_DIR"
+  echo "  host      : $(hostname)"
+  echo "  git sha   : $(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+  if [[ "${LACLAUGPT_DRY_RUN_PREFLIGHT:-0}" == "1" ]]; then
+    echo "  running preflight because LACLAUGPT_DRY_RUN_PREFLIGHT=1"
+    bash scripts/roihu/preflight_ai26.sh || echo "  preflight reported problems (see above)"
+  fi
   exit 0
 fi
+
 module --force purge
 module load gcc/14.3.0
 module load python-pytorch/2.13
@@ -64,7 +72,6 @@ LOGDIR=${LACLAUGPT_ROIHU_LOG_DIR:-"$LACLAUGPT_PRIVATE_CONFIG_DIR/logs"}
 mkdir -p "$LOGDIR"
 ollama serve >"$LOGDIR/ollama_${SLURM_JOB_ID:-manual}.log" 2>&1 &
 OLLAMA_PID=$!
-trap 'kill "$OLLAMA_PID" 2>/dev/null || true' EXIT INT TERM
 ready=0
 for _ in {1..60}; do
   if ollama list >/dev/null 2>&1; then ready=1; break; fi
@@ -77,9 +84,32 @@ ollama show "$LACLAUGPT_OLLAMA_MODEL" >/dev/null 2>&1 || {
 # Never seed the production queue. Pre-seed bounded test tasks into the isolated run
 # using the documented worker protocol. Existing worker runs canonical stages.
 WORKER_ID="roihu-${SLURM_JOB_ID:-manual}-${SLURM_ARRAY_TASK_ID:-0}"
-RUN_STARTED_AT=$(date -u +%Y%m%dT%H%M%SZ)
-RUN_STARTED_EPOCH=$(date +%s)
-set +e
+export LACLAUGPT_WORKER_ID="$WORKER_ID"
+
+# #390: a bounded test that cannot be identified afterwards cannot be compared with the
+# concurrent Laskin run. Record job id, host, Git SHA, model and frozen config hashes
+# before anything is claimed, and again on exit with the worker's status and duration.
+PROVENANCE="${LACLAUGPT_ROIHU_PROVENANCE:-$LOGDIR/provenance_${SLURM_JOB_ID:-manual}.json}"
+STARTED_AT=$(date +%s)
+python scripts/roihu/record_provenance.py --phase start --out "$PROVENANCE" \
+  --root "$ROOT" --config-dir "$LACLAUGPT_PRIVATE_CONFIG_DIR" || {
+  echo "Provenance recording failed before the run" >&2; exit 4; }
+
+record_end() {
+  local status=$?
+  python scripts/roihu/record_provenance.py --phase end --out "$PROVENANCE" \
+    --root "$ROOT" --config-dir "$LACLAUGPT_PRIVATE_CONFIG_DIR" \
+    --status "$status" --elapsed-seconds "$(( $(date +%s) - STARTED_AT ))" || true
+}
+# A single exit trap: bash keeps only the last one registered, so two traps would
+# silently drop either the model process or the end-of-run provenance.
+cleanup() {
+  kill "${OLLAMA_PID:-}" 2>/dev/null || true
+  record_end
+}
+trap cleanup EXIT INT TERM
+
+
 srun --ntasks=1 laclaugpt-analysis-worker \
   --run-manifest "$LACLAUGPT_PRIVATE_CONFIG_DIR/run-manifest.json" \
   --private-config "$LACLAUGPT_PRIVATE_CONFIG_DIR/analysis.json" \
@@ -87,37 +117,4 @@ srun --ntasks=1 laclaugpt-analysis-worker \
   --worker-id "$WORKER_ID" \
   --max-tasks "${LACLAUGPT_MAX_TASKS:-5}" \
   --reclaim-idle-ms "${LACLAUGPT_RECLAIM_IDLE_MS:-300000}"
-worker_status=$?
-set -e
-RUN_ELAPSED=$(( $(date +%s) - RUN_STARTED_EPOCH ))
-
-# Provenance: what actually ran, on which hardware, against which code. No credentials, no research
-# content. Written even on failure so a broken run is still auditable.
-MANIFEST_DIR=${LACLAUGPT_RUN_MANIFEST_DIR:-"$LACLAUGPT_PRIVATE_CONFIG_DIR/runs"}
-mkdir -p "$MANIFEST_DIR"
-cat > "$MANIFEST_DIR/run-manifest-$RUN_STARTED_AT.json" <<JSON
-{
-  "run_id": "${LACLAUGPT_RUN_ID}",
-  "project_id": "ai26",
-  "machine": "roihu",
-  "execution": "slurm",
-  "slurm_job_id": "${SLURM_JOB_ID:-manual}",
-  "worker_id": "${WORKER_ID}",
-  "git_sha": "$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)",
-  "ollama_model": "${LACLAUGPT_OLLAMA_MODEL:-gemma4:12b}",
-  "max_tasks": ${LACLAUGPT_MAX_TASKS:-5},
-  "gpu": "gh200:1",
-  "worker_exit_status": ${worker_status},
-  "elapsed_seconds": ${RUN_ELAPSED},
-  "started_at": "${RUN_STARTED_AT}"
-}
-JSON
-
-if [[ "$worker_status" -eq 0 ]]; then
-  echo "Roihu AI26 test worker completed: $WORKER_ID (${RUN_ELAPSED}s)"
-  echo "Provenance: $MANIFEST_DIR/run-manifest-$RUN_STARTED_AT.json"
-else
-  echo "Roihu AI26 test worker FAILED: $WORKER_ID (status $worker_status)" >&2
-  echo "Provenance: $MANIFEST_DIR/run-manifest-$RUN_STARTED_AT.json" >&2
-  exit "$worker_status"
-fi
+echo "Roihu AI26 test worker completed: $WORKER_ID"
