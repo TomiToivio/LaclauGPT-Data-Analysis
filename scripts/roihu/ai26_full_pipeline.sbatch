@@ -64,10 +64,15 @@ export LLM_MODE=local LLM_ALLOW_CLOUD_FALLBACK=0
 export LACLAUGPT_OLLAMA_MODEL=${LACLAUGPT_OLLAMA_MODEL:-gemma4:12b}
 export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-8}
 cd "$ROOT"
-bash scripts/roihu/preflight_ai26.sh
 # One local model process per allocated job; no dependence on a login-node model server.
 command -v ollama >/dev/null || { echo "Install compatible ARM64 Ollama (private project directory)" >&2; exit 2; }
 export OLLAMA_HOST="http://127.0.0.1:$((20000 + ${SLURM_JOB_ID:-1} % 20000))"
+# The canonical settings loader uses LACLAUGPT_LLM_ENDPOINT/MODEL, not only
+# the Ollama CLI variables. A test job must never query the Laskin endpoint.
+export LACLAUGPT_LLM_ENDPOINT="$OLLAMA_HOST"
+export LACLAUGPT_LLM_MODEL="$LACLAUGPT_OLLAMA_MODEL"
+export LACLAUGPT_LLM_MODE=local-ollama
+export LACLAUGPT_CLOUD_ALLOWED=false
 LOGDIR=${LACLAUGPT_ROIHU_LOG_DIR:-"$LACLAUGPT_PRIVATE_CONFIG_DIR/logs"}
 mkdir -p "$LOGDIR"
 ollama serve >"$LOGDIR/ollama_${SLURM_JOB_ID:-manual}.log" 2>&1 &
@@ -81,6 +86,9 @@ done
 ollama show "$LACLAUGPT_OLLAMA_MODEL" >/dev/null 2>&1 || {
   echo "Required local model missing; pre-pull on Roihu; no automatic cloud fallback" >&2; exit 3;
 }
+# Strict preflight checks the reachable Ollama server and the actual frozen model.
+# It must run only after the job-local service is ready.
+bash scripts/roihu/preflight_ai26.sh
 # Never seed the production queue. Pre-seed bounded test tasks into the isolated run
 # using the documented worker protocol. Existing worker runs canonical stages.
 WORKER_ID="roihu-${SLURM_JOB_ID:-manual}-${SLURM_ARRAY_TASK_ID:-0}"
