@@ -81,7 +81,7 @@ def collect(root: Path, config_dir: Path | None) -> dict:
         "host": platform.node(),
         "machine": os.environ.get("LACLAUGPT_MACHINE", ""),
         "execution": os.environ.get("LACLAUGPT_EXECUTION", ""),
-        "model": os.environ.get("LACLAUGPT_OLLAMA_MODEL", ""),
+        "ollama_model": os.environ.get("LACLAUGPT_OLLAMA_MODEL", ""),
         "llm_mode": os.environ.get("LLM_MODE", ""),
         "cloud_fallback_allowed": os.environ.get("LLM_ALLOW_CLOUD_FALLBACK", ""),
         "python": platform.python_version(),
@@ -126,7 +126,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         document.setdefault("start", {})
         document["end"] = facts
-        document["worker_status"] = args.status
+        document["worker_exit_status"] = args.status
         document["elapsed_seconds"] = args.elapsed_seconds
 
     args.out.parent.mkdir(parents=True, exist_ok=True)

@@ -67,7 +67,7 @@ def test_start_phase_records_the_facts_needed_to_reproduce(tmp_path: Path) -> No
     doc = json.loads(out.read_text())
     start = doc["start"]
     assert start["run_id"] == "roihu-test-abc123"
-    assert start["model"] == "gemma4:12b"
+    assert start["ollama_model"] == "gemma4:12b"
     assert start["slurm"]["slurm_job_id"] == "4242"
     assert start["host"]
     # The frozen configuration is identified by hash, not by path.
@@ -87,7 +87,7 @@ def test_end_phase_keeps_the_start_and_adds_status(tmp_path: Path) -> None:
         )
     doc = json.loads(out.read_text())
     assert doc["start"]["run_id"] == "roihu-test-abc123", "start must survive the end write"
-    assert doc["worker_status"] == "1"
+    assert doc["worker_exit_status"] == "1"
     assert doc["elapsed_seconds"] == 97
     assert doc["end"]["git_sha"] is not None
 

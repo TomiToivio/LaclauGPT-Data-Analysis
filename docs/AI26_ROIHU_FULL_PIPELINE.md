@@ -93,6 +93,18 @@ until they are done on a real allocation:
 
 This repository change cannot itself submit CSC jobs, install project credentials, prove Roihu GPU/model compatibility or establish live Mongo/Redis/Allas connectivity. Do not mark the issue fully complete until a real Slurm run and simultaneous Laskin observation have been performed. Never seed/claim production tasks from the test. Existing production Laskin wrapper is unchanged.
 
-### Compatibility with the earlier Roihu deployment
+## Dry run and provenance (added after the initial deployment landed)
 
-The existing `AI26_DRY_RUN=1` invocation remains supported alongside `LACLAUGPT_DRY_RUN=1`. The original private `run-manifest-<stamp>.json` summary is superseded by the richer `provenance_<job id>.json` start/end manifest. Production tasks must never be seeded by the test worker.
+Plan a submission without touching modules, services or the model:
+
+```bash
+AI26_DRY_RUN=1 bash scripts/roihu/ai26_full_pipeline.sbatch
+```
+
+Every real run writes `runs/run-manifest-<stamp>.json` under the private config directory, recording run
+id, Slurm job id, worker id, Git SHA, model, task limit, GPU shape, elapsed seconds and the worker exit
+status. It is written on failure too, so a broken run stays auditable. No credentials or research content
+is written to it.
+
+Guards that are verified offline: a non-`roihu-test-*` run id is refused, a world-readable env file is
+refused, a task limit above 25 is refused, and the dry run exits cleanly before any module load.
