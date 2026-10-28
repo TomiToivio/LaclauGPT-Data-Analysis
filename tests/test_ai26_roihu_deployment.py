@@ -39,3 +39,12 @@ def test_test_run_preflight_is_fail_closed():
     assert "config_sha256" in text
     assert "codebook_sha256" in text
     assert "preflight --strict" in text
+
+
+def test_job_local_model_endpoint_is_used_by_canonical_preflight():
+    text = (ROIHU / "ai26_full_pipeline.sbatch").read_text()
+    assert 'export LACLAUGPT_LLM_ENDPOINT="$OLLAMA_HOST"' in text
+    assert 'export LACLAUGPT_LLM_MODEL="$LACLAUGPT_OLLAMA_MODEL"' in text
+    assert "export LACLAUGPT_CLOUD_ALLOWED=false" in text
+    assert text.index('ollama serve >') < text.index('bash scripts/roihu/preflight_ai26.sh')
+    assert text.index('ollama show "$LACLAUGPT_OLLAMA_MODEL"') < text.index('bash scripts/roihu/preflight_ai26.sh')
