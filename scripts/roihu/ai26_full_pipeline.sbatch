@@ -29,6 +29,18 @@ set +a
 }
 [[ "${LACLAUGPT_MAX_TASKS:-5}" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid task limit" >&2; exit 2; }
 [[ "${LACLAUGPT_MAX_TASKS:-5}" -le 25 ]] || { echo "Test limit >25 refused" >&2; exit 2; }
+
+# Plan-only mode: exercises every guard above, touches no service and no module.
+if [[ "${AI26_DRY_RUN:-0}" == "1" ]]; then
+  echo "DRY RUN — would run:"
+  echo "  preflight:    bash scripts/roihu/preflight_ai26.sh"
+  echo "  worker:       laclaugpt-analysis-worker --max-tasks ${LACLAUGPT_MAX_TASKS:-5} --worker-id roihu-${SLURM_JOB_ID:-manual}"
+  echo "  run id:       ${LACLAUGPT_RUN_ID}"
+  echo "  model:        ${LACLAUGPT_OLLAMA_MODEL:-gemma4:12b}"
+  echo "  git:          $(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+  echo "  provenance:   ${LACLAUGPT_RUN_MANIFEST_DIR:-$LACLAUGPT_PRIVATE_CONFIG_DIR/runs}/run-manifest-<stamp>.json"
+  exit 0
+fi
 module --force purge
 module load gcc/14.3.0
 module load python-pytorch/2.13
@@ -65,6 +77,9 @@ ollama show "$LACLAUGPT_OLLAMA_MODEL" >/dev/null 2>&1 || {
 # Never seed the production queue. Pre-seed bounded test tasks into the isolated run
 # using the documented worker protocol. Existing worker runs canonical stages.
 WORKER_ID="roihu-${SLURM_JOB_ID:-manual}-${SLURM_ARRAY_TASK_ID:-0}"
+RUN_STARTED_AT=$(date -u +%Y%m%dT%H%M%SZ)
+RUN_STARTED_EPOCH=$(date +%s)
+set +e
 srun --ntasks=1 laclaugpt-analysis-worker \
   --run-manifest "$LACLAUGPT_PRIVATE_CONFIG_DIR/run-manifest.json" \
   --private-config "$LACLAUGPT_PRIVATE_CONFIG_DIR/analysis.json" \
@@ -72,4 +87,37 @@ srun --ntasks=1 laclaugpt-analysis-worker \
   --worker-id "$WORKER_ID" \
   --max-tasks "${LACLAUGPT_MAX_TASKS:-5}" \
   --reclaim-idle-ms "${LACLAUGPT_RECLAIM_IDLE_MS:-300000}"
-echo "Roihu AI26 test worker completed: $WORKER_ID"
+worker_status=$?
+set -e
+RUN_ELAPSED=$(( $(date +%s) - RUN_STARTED_EPOCH ))
+
+# Provenance: what actually ran, on which hardware, against which code. No credentials, no research
+# content. Written even on failure so a broken run is still auditable.
+MANIFEST_DIR=${LACLAUGPT_RUN_MANIFEST_DIR:-"$LACLAUGPT_PRIVATE_CONFIG_DIR/runs"}
+mkdir -p "$MANIFEST_DIR"
+cat > "$MANIFEST_DIR/run-manifest-$RUN_STARTED_AT.json" <<JSON
+{
+  "run_id": "${LACLAUGPT_RUN_ID}",
+  "project_id": "ai26",
+  "machine": "roihu",
+  "execution": "slurm",
+  "slurm_job_id": "${SLURM_JOB_ID:-manual}",
+  "worker_id": "${WORKER_ID}",
+  "git_sha": "$(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)",
+  "ollama_model": "${LACLAUGPT_OLLAMA_MODEL:-gemma4:12b}",
+  "max_tasks": ${LACLAUGPT_MAX_TASKS:-5},
+  "gpu": "gh200:1",
+  "worker_exit_status": ${worker_status},
+  "elapsed_seconds": ${RUN_ELAPSED},
+  "started_at": "${RUN_STARTED_AT}"
+}
+JSON
+
+if [[ "$worker_status" -eq 0 ]]; then
+  echo "Roihu AI26 test worker completed: $WORKER_ID (${RUN_ELAPSED}s)"
+  echo "Provenance: $MANIFEST_DIR/run-manifest-$RUN_STARTED_AT.json"
+else
+  echo "Roihu AI26 test worker FAILED: $WORKER_ID (status $worker_status)" >&2
+  echo "Provenance: $MANIFEST_DIR/run-manifest-$RUN_STARTED_AT.json" >&2
+  exit "$worker_status"
+fi
