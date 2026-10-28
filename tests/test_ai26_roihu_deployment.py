@@ -1,4 +1,5 @@
 """Offline safeguards for issue #390 Roihu launcher; no CSC services required."""
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -46,9 +47,13 @@ def test_job_local_model_endpoint_is_used_by_canonical_preflight():
     assert 'export LACLAUGPT_LLM_ENDPOINT="$OLLAMA_HOST"' in text
     assert 'export LACLAUGPT_LLM_MODEL="$LACLAUGPT_OLLAMA_MODEL"' in text
     assert "export LACLAUGPT_CLOUD_ALLOWED=false" in text
-    # rindex, not index: the dry-run block mentions the preflight script before the real
-    # call, so the first occurrence is a message, not the execution. Comparing against it
-    # made this test fail on a correct launcher.
-    real_preflight = text.rindex("bash scripts/roihu/preflight_ai26.sh")
-    assert text.index("ollama serve >") < real_preflight
-    assert text.index('ollama show "$LACLAUGPT_OLLAMA_MODEL"') < real_preflight
+    # Match the executed line, not any occurrence: a dry-run echo printing the command
+    # used to satisfy this and hide the real ordering.
+    executed = re.search(r'(?m)^bash scripts/roihu/preflight_ai26\.sh
+    assert executed, "preflight is never executed"
+    assert text.index('ollama serve >') < executed.start()
+    assert text.index('ollama show "$LACLAUGPT_OLLAMA_MODEL"') < executed.start()
+, text)
+    assert executed, "preflight is never executed"
+    assert text.index('ollama serve >') < executed.start()
+    assert text.index('ollama show "$LACLAUGPT_OLLAMA_MODEL"') < executed.start()

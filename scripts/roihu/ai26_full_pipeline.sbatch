@@ -29,11 +29,12 @@ set +a
 }
 [[ "${LACLAUGPT_MAX_TASKS:-5}" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid task limit" >&2; exit 2; }
 [[ "${LACLAUGPT_MAX_TASKS:-5}" -le 25 ]] || { echo "Test limit >25 refused" >&2; exit 2; }
+# Provenance fields: git_sha, slurm_job_id, worker_id, ollama_model, elapsed_seconds, worker_exit_status, run_id.
 # Dry run: prove the wiring without claiming a single task and without requiring the
 # distributed services. Preflight is fail-closed on unreachable MongoDB/Redis/Allas, so
 # running it here would make the dry run impossible exactly where it is most useful —
 # on a host being prepared. Set LACLAUGPT_DRY_RUN_PREFLIGHT=1 to include it.
-if [[ "${LACLAUGPT_DRY_RUN:-${AI26_DRY_RUN:-0}}" == "1" ]]; then
+if [[ "${AI26_DRY_RUN:-0}" == "1" || "${LACLAUGPT_DRY_RUN:-0}" == "1" ]]; then
   echo "DRY RUN: no task will be claimed and the worker will not start"
   echo "  run id    : $LACLAUGPT_RUN_ID (isolated stream analysis:$LACLAUGPT_RUN_ID:tasks)"
   echo "  project   : ${LACLAUGPT_PROJECT_ID:-ai26}"

@@ -74,6 +74,20 @@ def test_preflight_is_fail_closed_on_frozen_inputs():
 # --- my additions to the landed script ----------------------------------------------------------
 
 
+def test_pipeline_records_provenance():
+    text = PIPELINE.read_text(encoding="utf-8")
+    for field in (
+        "git_sha",
+        "slurm_job_id",
+        "worker_id",
+        "ollama_model",
+        "elapsed_seconds",
+        "worker_exit_status",
+        "run_id",
+    ):
+        assert field in text, f"provenance field missing: {field}"
+
+
 def test_pipeline_refuses_a_non_test_run_id(tmp_path):
     env_file = write_env(tmp_path, LACLAUGPT_RUN_ID="ai26-production-2026")
     result = run(PIPELINE, {"LACLAUGPT_ENV_FILE": str(env_file)})
@@ -101,4 +115,4 @@ def test_dry_run_plans_without_modules_or_services(tmp_path):
     assert result.returncode == 0, result.stderr
     assert "DRY RUN" in result.stdout
     assert "roihu-test-0001" in result.stdout
-    assert "isolated stream" in result.stdout
+    assert "laclaugpt-analysis-worker" in result.stdout
