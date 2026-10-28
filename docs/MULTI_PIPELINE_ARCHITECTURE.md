@@ -23,6 +23,20 @@ silently changing the science. That test already earned its place: `ruff --fix` 
 files during this work, the checksum test caught it, the snapshot was restored, and the vendor
 directories are now excluded from Ruff.
 
+## One deliberate deviation from upstream
+
+Five vendored files hard-coded a concrete CSC deployment path (`/scratch/project_2009497/...`). A
+public repository must not publish a project identifier, so each occurrence is replaced with
+`project_XXXXXXX`. Both hashes are recorded per file — `upstream_sha256` and the committed `sha256` —
+and the deviation is listed under `compatibility_deviations` (D-1). Nothing else changed: the
+checksum test compares committed bytes against the recorded post-redaction hash, so this one edit is
+auditable rather than invisible.
+
+The vendored trees are also excluded from the repository's "bounded Redis client" static rule. That
+rule governs this repository's own adapters; rewriting a byte-identical snapshot would break the
+fidelity contract. The risk is real and recorded: when the EP24 scripts are executed, the
+compatibility wrapper must supply bounded clients.
+
 ## Finding: the upstream code is scripts, not importable modules
 
 Naively importing the snapshot executes it. `puhti_populism.py` runs `for country in countries:` at
