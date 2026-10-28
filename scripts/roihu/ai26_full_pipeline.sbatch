@@ -29,22 +29,20 @@ set +a
 }
 [[ "${LACLAUGPT_MAX_TASKS:-5}" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid task limit" >&2; exit 2; }
 [[ "${LACLAUGPT_MAX_TASKS:-5}" -le 25 ]] || { echo "Test limit >25 refused" >&2; exit 2; }
-# Plan-only mode: exercises every guard above, touches no service and no module.
-# Both env names are accepted because both were implemented independently — AI26_DRY_RUN
-# and LACLAUGPT_DRY_RUN — and a dry run that silently ignores the one an operator set is
-# worse than either name alone.
+# Provenance fields: git_sha, slurm_job_id, worker_id, ollama_model, elapsed_seconds, worker_exit_status, run_id.
+# Dry run: prove the wiring without claiming a single task and without requiring the
+# distributed services. Preflight is fail-closed on unreachable MongoDB/Redis/Allas, so
+# running it here would make the dry run impossible exactly where it is most useful —
+# on a host being prepared. Set LACLAUGPT_DRY_RUN_PREFLIGHT=1 to include it.
 if [[ "${AI26_DRY_RUN:-0}" == "1" || "${LACLAUGPT_DRY_RUN:-0}" == "1" ]]; then
-  echo "DRY RUN — no task will be claimed and the worker will not start"
-  echo "  preflight:    (not executed here; see the runbook)"
-  echo "  worker:       laclaugpt-analysis-worker --max-tasks ${LACLAUGPT_MAX_TASKS:-5} --worker-id roihu-${SLURM_JOB_ID:-manual}"
-  echo "  run id:       ${LACLAUGPT_RUN_ID} (isolated stream analysis:${LACLAUGPT_RUN_ID}:tasks)"
-  echo "  model:        ${LACLAUGPT_OLLAMA_MODEL:-gemma4:12b}"
-  echo "  config:       ${LACLAUGPT_PRIVATE_CONFIG_DIR}"
-  echo "  host:         $(hostname)"
-  echo "  git:          $(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
-  echo "  provenance:   ${LACLAUGPT_ROIHU_PROVENANCE:-${LACLAUGPT_ROIHU_LOG_DIR:-$LACLAUGPT_PRIVATE_CONFIG_DIR/logs}/provenance_${SLURM_JOB_ID:-manual}.json}"
-  # Preflight is fail-closed on unreachable MongoDB/Redis/Allas, so it is opt-in here:
-  # requiring it would make the dry run unusable on exactly the host being prepared.
+  echo "DRY RUN: no task will be claimed and the worker will not start"
+  echo "  run id    : $LACLAUGPT_RUN_ID (isolated stream analysis:$LACLAUGPT_RUN_ID:tasks)"
+  echo "  project   : ${LACLAUGPT_PROJECT_ID:-ai26}"
+  echo "  max tasks : ${LACLAUGPT_MAX_TASKS:-5}"
+  echo "  model     : ${LACLAUGPT_OLLAMA_MODEL:-gemma4:12b}"
+  echo "  config    : $LACLAUGPT_PRIVATE_CONFIG_DIR"
+  echo "  host      : $(hostname)"
+  echo "  git sha   : $(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
   if [[ "${LACLAUGPT_DRY_RUN_PREFLIGHT:-0}" == "1" ]]; then
     echo "  running preflight because LACLAUGPT_DRY_RUN_PREFLIGHT=1"
     bash scripts/roihu/preflight_ai26.sh || echo "  preflight reported problems (see above)"
@@ -78,6 +76,36 @@ export LACLAUGPT_LLM_MODE=local-ollama
 export LACLAUGPT_CLOUD_ALLOWED=false
 LOGDIR=${LACLAUGPT_ROIHU_LOG_DIR:-"$LACLAUGPT_PRIVATE_CONFIG_DIR/logs"}
 mkdir -p "$LOGDIR"
+# #390: a bounded test that cannot be identified afterwards cannot be compared with the
+# concurrent Laskin run. Record job id, host, Git SHA, model and frozen config hashes
+# before anything is claimed, and again on exit with the worker's status and duration.
+PROVENANCE="${LACLAUGPT_ROIHU_PROVENANCE:-$LOGDIR/provenance_${SLURM_JOB_ID:-manual}.json}"
+PROVENANCE_STARTED=0
+STARTED_AT=$(date +%s)
+OLLAMA_PID=""
+
+record_end() {
+  local status="$1"
+  # Nothing to finish if the start record never landed; a half-written provenance file
+  # would look like a run that began and silently vanished.
+  [[ "$PROVENANCE_STARTED" == "1" ]] || return 0
+  python scripts/roihu/record_provenance.py --phase end --out "$PROVENANCE" \
+    --root "$ROOT" --config-dir "$LACLAUGPT_PRIVATE_CONFIG_DIR" \
+    --status "$status" --elapsed-seconds "$(( $(date +%s) - STARTED_AT ))" || true
+}
+
+cleanup() {
+  # The incoming status must be captured FIRST: `kill ... || true` rewrites $?, so reading
+  # it afterwards records every failed run as worker_status 0 -- a provenance file that
+  # reports failures as successes.
+  local status=$?
+  kill "${OLLAMA_PID:-}" 2>/dev/null || true
+  record_end "$status"
+}
+# Registered the moment the server exists, so the startup, missing-model and
+# provenance-initialisation failure paths below also stop it. Bash keeps only the last
+# EXIT trap, so this single trap carries both the cleanup and the end record.
+trap cleanup EXIT INT TERM
 ollama serve >"$LOGDIR/ollama_${SLURM_JOB_ID:-manual}.log" 2>&1 &
 OLLAMA_PID=$!
 ready=0
@@ -94,33 +122,14 @@ ollama show "$LACLAUGPT_OLLAMA_MODEL" >/dev/null 2>&1 || {
 bash scripts/roihu/preflight_ai26.sh
 # Never seed the production queue. Pre-seed bounded test tasks into the isolated run
 # using the documented worker protocol. Existing worker runs canonical stages.
-# Provenance records: run_id, worker_id, git_sha, slurm_job_id, ollama_model,
-# elapsed_seconds, worker_exit_status, frozen config/codebook hashes.
 WORKER_ID="roihu-${SLURM_JOB_ID:-manual}-${SLURM_ARRAY_TASK_ID:-0}"
 export LACLAUGPT_WORKER_ID="$WORKER_ID"
 
-# #390: a bounded test that cannot be identified afterwards cannot be compared with the
-# concurrent Laskin run. Record job id, host, Git SHA, model and frozen config hashes
-# before anything is claimed, and again on exit with the worker's status and duration.
-PROVENANCE="${LACLAUGPT_ROIHU_PROVENANCE:-$LOGDIR/provenance_${SLURM_JOB_ID:-manual}.json}"
-STARTED_AT=$(date +%s)
 python scripts/roihu/record_provenance.py --phase start --out "$PROVENANCE" \
   --root "$ROOT" --config-dir "$LACLAUGPT_PRIVATE_CONFIG_DIR" || {
   echo "Provenance recording failed before the run" >&2; exit 4; }
+PROVENANCE_STARTED=1
 
-record_end() {
-  local status=$?
-  python scripts/roihu/record_provenance.py --phase end --out "$PROVENANCE" \
-    --root "$ROOT" --config-dir "$LACLAUGPT_PRIVATE_CONFIG_DIR" \
-    --status "$status" --elapsed-seconds "$(( $(date +%s) - STARTED_AT ))" || true
-}
-# A single exit trap: bash keeps only the last one registered, so two traps would
-# silently drop either the model process or the end-of-run provenance.
-cleanup() {
-  kill "${OLLAMA_PID:-}" 2>/dev/null || true
-  record_end
-}
-trap cleanup EXIT INT TERM
 
 
 srun --ntasks=1 laclaugpt-analysis-worker \
