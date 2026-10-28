@@ -70,6 +70,36 @@ command -v ollama >/dev/null || { echo "Install compatible ARM64 Ollama (private
 export OLLAMA_HOST="http://127.0.0.1:$((20000 + ${SLURM_JOB_ID:-1} % 20000))"
 LOGDIR=${LACLAUGPT_ROIHU_LOG_DIR:-"$LACLAUGPT_PRIVATE_CONFIG_DIR/logs"}
 mkdir -p "$LOGDIR"
+# #390: a bounded test that cannot be identified afterwards cannot be compared with the
+# concurrent Laskin run. Record job id, host, Git SHA, model and frozen config hashes
+# before anything is claimed, and again on exit with the worker's status and duration.
+PROVENANCE="${LACLAUGPT_ROIHU_PROVENANCE:-$LOGDIR/provenance_${SLURM_JOB_ID:-manual}.json}"
+PROVENANCE_STARTED=0
+STARTED_AT=$(date +%s)
+OLLAMA_PID=""
+
+record_end() {
+  local status="$1"
+  # Nothing to finish if the start record never landed; a half-written provenance file
+  # would look like a run that began and silently vanished.
+  [[ "$PROVENANCE_STARTED" == "1" ]] || return 0
+  python scripts/roihu/record_provenance.py --phase end --out "$PROVENANCE" \
+    --root "$ROOT" --config-dir "$LACLAUGPT_PRIVATE_CONFIG_DIR" \
+    --status "$status" --elapsed-seconds "$(( $(date +%s) - STARTED_AT ))" || true
+}
+
+cleanup() {
+  # The incoming status must be captured FIRST: `kill ... || true` rewrites $?, so reading
+  # it afterwards records every failed run as worker_status 0 -- a provenance file that
+  # reports failures as successes.
+  local status=$?
+  kill "${OLLAMA_PID:-}" 2>/dev/null || true
+  record_end "$status"
+}
+# Registered the moment the server exists, so the startup, missing-model and
+# provenance-initialisation failure paths below also stop it. Bash keeps only the last
+# EXIT trap, so this single trap carries both the cleanup and the end record.
+trap cleanup EXIT INT TERM
 ollama serve >"$LOGDIR/ollama_${SLURM_JOB_ID:-manual}.log" 2>&1 &
 OLLAMA_PID=$!
 ready=0
@@ -86,28 +116,11 @@ ollama show "$LACLAUGPT_OLLAMA_MODEL" >/dev/null 2>&1 || {
 WORKER_ID="roihu-${SLURM_JOB_ID:-manual}-${SLURM_ARRAY_TASK_ID:-0}"
 export LACLAUGPT_WORKER_ID="$WORKER_ID"
 
-# #390: a bounded test that cannot be identified afterwards cannot be compared with the
-# concurrent Laskin run. Record job id, host, Git SHA, model and frozen config hashes
-# before anything is claimed, and again on exit with the worker's status and duration.
-PROVENANCE="${LACLAUGPT_ROIHU_PROVENANCE:-$LOGDIR/provenance_${SLURM_JOB_ID:-manual}.json}"
-STARTED_AT=$(date +%s)
 python scripts/roihu/record_provenance.py --phase start --out "$PROVENANCE" \
   --root "$ROOT" --config-dir "$LACLAUGPT_PRIVATE_CONFIG_DIR" || {
   echo "Provenance recording failed before the run" >&2; exit 4; }
+PROVENANCE_STARTED=1
 
-record_end() {
-  local status=$?
-  python scripts/roihu/record_provenance.py --phase end --out "$PROVENANCE" \
-    --root "$ROOT" --config-dir "$LACLAUGPT_PRIVATE_CONFIG_DIR" \
-    --status "$status" --elapsed-seconds "$(( $(date +%s) - STARTED_AT ))" || true
-}
-# A single exit trap: bash keeps only the last one registered, so two traps would
-# silently drop either the model process or the end-of-run provenance.
-cleanup() {
-  kill "${OLLAMA_PID:-}" 2>/dev/null || true
-  record_end
-}
-trap cleanup EXIT INT TERM
 
 
 srun --ntasks=1 laclaugpt-analysis-worker \
