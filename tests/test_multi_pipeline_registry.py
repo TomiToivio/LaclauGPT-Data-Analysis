@@ -161,3 +161,10 @@ def test_cli_refuses_unknown_pipeline(capsys):
 
     assert main(["pipelines", "show", "nope"]) == 2
     assert "unknown pipeline" in capsys.readouterr().err
+
+
+def test_run_id_rejects_unsafe_namespace_segments():
+    for run_id in ("../production", "..", ".", "a b", "a\\nb", "x\\t", "a\\\\b", "☃", "a" * 129):
+        with pytest.raises(ValueError):
+            pipeline_keys(pipeline_id="ep24", project_id="ep24", run_id=run_id)
+    assert pipeline_keys(pipeline_id="ep24", project_id="ep24", run_id="roihu-test-001")["s3_prefix"].endswith("roihu-test-001")
