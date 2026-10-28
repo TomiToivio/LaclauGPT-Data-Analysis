@@ -29,6 +29,26 @@ set +a
 }
 [[ "${LACLAUGPT_MAX_TASKS:-5}" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid task limit" >&2; exit 2; }
 [[ "${LACLAUGPT_MAX_TASKS:-5}" -le 25 ]] || { echo "Test limit >25 refused" >&2; exit 2; }
+# Dry run: prove the wiring without claiming a single task and without requiring the
+# distributed services. Preflight is fail-closed on unreachable MongoDB/Redis/Allas, so
+# running it here would make the dry run impossible exactly where it is most useful —
+# on a host being prepared. Set LACLAUGPT_DRY_RUN_PREFLIGHT=1 to include it.
+if [[ "${LACLAUGPT_DRY_RUN:-0}" == "1" ]]; then
+  echo "DRY RUN: no task will be claimed and the worker will not start"
+  echo "  run id    : $LACLAUGPT_RUN_ID (isolated stream analysis:$LACLAUGPT_RUN_ID:tasks)"
+  echo "  project   : ${LACLAUGPT_PROJECT_ID:-ai26}"
+  echo "  max tasks : ${LACLAUGPT_MAX_TASKS:-5}"
+  echo "  model     : ${LACLAUGPT_OLLAMA_MODEL:-gemma4:12b}"
+  echo "  config    : $LACLAUGPT_PRIVATE_CONFIG_DIR"
+  echo "  host      : $(hostname)"
+  echo "  git sha   : $(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+  if [[ "${LACLAUGPT_DRY_RUN_PREFLIGHT:-0}" == "1" ]]; then
+    echo "  running preflight because LACLAUGPT_DRY_RUN_PREFLIGHT=1"
+    bash scripts/roihu/preflight_ai26.sh || echo "  preflight reported problems (see above)"
+  fi
+  exit 0
+fi
+
 module --force purge
 module load gcc/14.3.0
 module load python-pytorch/2.13
@@ -52,7 +72,6 @@ LOGDIR=${LACLAUGPT_ROIHU_LOG_DIR:-"$LACLAUGPT_PRIVATE_CONFIG_DIR/logs"}
 mkdir -p "$LOGDIR"
 ollama serve >"$LOGDIR/ollama_${SLURM_JOB_ID:-manual}.log" 2>&1 &
 OLLAMA_PID=$!
-trap 'kill "$OLLAMA_PID" 2>/dev/null || true' EXIT INT TERM
 ready=0
 for _ in {1..60}; do
   if ollama list >/dev/null 2>&1; then ready=1; break; fi
@@ -65,6 +84,32 @@ ollama show "$LACLAUGPT_OLLAMA_MODEL" >/dev/null 2>&1 || {
 # Never seed the production queue. Pre-seed bounded test tasks into the isolated run
 # using the documented worker protocol. Existing worker runs canonical stages.
 WORKER_ID="roihu-${SLURM_JOB_ID:-manual}-${SLURM_ARRAY_TASK_ID:-0}"
+export LACLAUGPT_WORKER_ID="$WORKER_ID"
+
+# #390: a bounded test that cannot be identified afterwards cannot be compared with the
+# concurrent Laskin run. Record job id, host, Git SHA, model and frozen config hashes
+# before anything is claimed, and again on exit with the worker's status and duration.
+PROVENANCE="${LACLAUGPT_ROIHU_PROVENANCE:-$LOGDIR/provenance_${SLURM_JOB_ID:-manual}.json}"
+STARTED_AT=$(date +%s)
+python scripts/roihu/record_provenance.py --phase start --out "$PROVENANCE" \
+  --root "$ROOT" --config-dir "$LACLAUGPT_PRIVATE_CONFIG_DIR" || {
+  echo "Provenance recording failed before the run" >&2; exit 4; }
+
+record_end() {
+  local status=$?
+  python scripts/roihu/record_provenance.py --phase end --out "$PROVENANCE" \
+    --root "$ROOT" --config-dir "$LACLAUGPT_PRIVATE_CONFIG_DIR" \
+    --status "$status" --elapsed-seconds "$(( $(date +%s) - STARTED_AT ))" || true
+}
+# A single exit trap: bash keeps only the last one registered, so two traps would
+# silently drop either the model process or the end-of-run provenance.
+cleanup() {
+  kill "${OLLAMA_PID:-}" 2>/dev/null || true
+  record_end
+}
+trap cleanup EXIT INT TERM
+
+
 srun --ntasks=1 laclaugpt-analysis-worker \
   --run-manifest "$LACLAUGPT_PRIVATE_CONFIG_DIR/run-manifest.json" \
   --private-config "$LACLAUGPT_PRIVATE_CONFIG_DIR/analysis.json" \
