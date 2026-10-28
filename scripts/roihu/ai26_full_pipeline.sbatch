@@ -29,6 +29,7 @@ set +a
 }
 [[ "${LACLAUGPT_MAX_TASKS:-5}" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid task limit" >&2; exit 2; }
 [[ "${LACLAUGPT_MAX_TASKS:-5}" -le 25 ]] || { echo "Test limit >25 refused" >&2; exit 2; }
+# Provenance fields: git_sha, slurm_job_id, worker_id, ollama_model, elapsed_seconds, worker_exit_status, run_id.
 # Plan-only mode: exercises every guard above, touches no service and no module.
 # Both env names are accepted because both were implemented independently — AI26_DRY_RUN
 # and LACLAUGPT_DRY_RUN — and a dry run that silently ignores the one an operator set is
@@ -78,6 +79,36 @@ export LACLAUGPT_LLM_MODE=local-ollama
 export LACLAUGPT_CLOUD_ALLOWED=false
 LOGDIR=${LACLAUGPT_ROIHU_LOG_DIR:-"$LACLAUGPT_PRIVATE_CONFIG_DIR/logs"}
 mkdir -p "$LOGDIR"
+# #390: a bounded test that cannot be identified afterwards cannot be compared with the
+# concurrent Laskin run. Record job id, host, Git SHA, model and frozen config hashes
+# before anything is claimed, and again on exit with the worker's status and duration.
+PROVENANCE="${LACLAUGPT_ROIHU_PROVENANCE:-$LOGDIR/provenance_${SLURM_JOB_ID:-manual}.json}"
+PROVENANCE_STARTED=0
+STARTED_AT=$(date +%s)
+OLLAMA_PID=""
+
+record_end() {
+  local status="$1"
+  # Nothing to finish if the start record never landed; a half-written provenance file
+  # would look like a run that began and silently vanished.
+  [[ "$PROVENANCE_STARTED" == "1" ]] || return 0
+  python scripts/roihu/record_provenance.py --phase end --out "$PROVENANCE" \
+    --root "$ROOT" --config-dir "$LACLAUGPT_PRIVATE_CONFIG_DIR" \
+    --status "$status" --elapsed-seconds "$(( $(date +%s) - STARTED_AT ))" || true
+}
+
+cleanup() {
+  # The incoming status must be captured FIRST: `kill ... || true` rewrites $?, so reading
+  # it afterwards records every failed run as worker_status 0 -- a provenance file that
+  # reports failures as successes.
+  local status=$?
+  kill "${OLLAMA_PID:-}" 2>/dev/null || true
+  record_end "$status"
+}
+# Registered the moment the server exists, so the startup, missing-model and
+# provenance-initialisation failure paths below also stop it. Bash keeps only the last
+# EXIT trap, so this single trap carries both the cleanup and the end record.
+trap cleanup EXIT INT TERM
 ollama serve >"$LOGDIR/ollama_${SLURM_JOB_ID:-manual}.log" 2>&1 &
 OLLAMA_PID=$!
 ready=0
@@ -99,28 +130,11 @@ bash scripts/roihu/preflight_ai26.sh
 WORKER_ID="roihu-${SLURM_JOB_ID:-manual}-${SLURM_ARRAY_TASK_ID:-0}"
 export LACLAUGPT_WORKER_ID="$WORKER_ID"
 
-# #390: a bounded test that cannot be identified afterwards cannot be compared with the
-# concurrent Laskin run. Record job id, host, Git SHA, model and frozen config hashes
-# before anything is claimed, and again on exit with the worker's status and duration.
-PROVENANCE="${LACLAUGPT_ROIHU_PROVENANCE:-$LOGDIR/provenance_${SLURM_JOB_ID:-manual}.json}"
-STARTED_AT=$(date +%s)
 python scripts/roihu/record_provenance.py --phase start --out "$PROVENANCE" \
   --root "$ROOT" --config-dir "$LACLAUGPT_PRIVATE_CONFIG_DIR" || {
   echo "Provenance recording failed before the run" >&2; exit 4; }
+PROVENANCE_STARTED=1
 
-record_end() {
-  local status=$?
-  python scripts/roihu/record_provenance.py --phase end --out "$PROVENANCE" \
-    --root "$ROOT" --config-dir "$LACLAUGPT_PRIVATE_CONFIG_DIR" \
-    --status "$status" --elapsed-seconds "$(( $(date +%s) - STARTED_AT ))" || true
-}
-# A single exit trap: bash keeps only the last one registered, so two traps would
-# silently drop either the model process or the end-of-run provenance.
-cleanup() {
-  kill "${OLLAMA_PID:-}" 2>/dev/null || true
-  record_end
-}
-trap cleanup EXIT INT TERM
 
 
 srun --ntasks=1 laclaugpt-analysis-worker \
