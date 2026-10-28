@@ -744,7 +744,7 @@ def main() -> int:
     root = Path(
         os.getenv(
             "LACLAUGPT_EP24_INPUT_ROOT",
-            "/scratch/project_2009497/LaclauGPT-Private/analysis/ep24_reprocess/data/to_reprocess",
+            "/scratch/project_XXXXXXX/LaclauGPT-Private/analysis/ep24_reprocess/data/to_reprocess",
         )
     )
     output_root = Path(os.getenv("LACLAUGPT_EP24_OUTPUT_ROOT", "./csv"))

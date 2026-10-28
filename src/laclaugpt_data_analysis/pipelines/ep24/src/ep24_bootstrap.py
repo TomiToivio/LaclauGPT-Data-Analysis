@@ -132,15 +132,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input-root", type=Path,
         default=Path(os.getenv("LACLAUGPT_EP24_INPUT_ROOT",
-            "/scratch/project_2009497/LaclauGPT-Private/analysis/ep24_reprocess/data/to_reprocess")))
+            "/scratch/project_XXXXXXX/LaclauGPT-Private/analysis/ep24_reprocess/data/to_reprocess")))
     parser.add_argument("--private-root", type=Path,
         default=Path(os.getenv(
             "LACLAUGPT_EP24_PRIVATE_ROOT",
-            "/scratch/project_2009497/LaclauGPT-Private/analysis/ep24_reprocess",
+            "/scratch/project_XXXXXXX/LaclauGPT-Private/analysis/ep24_reprocess",
         )))
     parser.add_argument("--backup-root", type=Path,
         default=Path(os.getenv("LACLAUGPT_EP24_OUTPUT_ROOT",
-            "/scratch/project_2009497/LaclauGPT-Private/analysis/ep24_reprocess/outputs")))
+            "/scratch/project_XXXXXXX/LaclauGPT-Private/analysis/ep24_reprocess/outputs")))
     parser.add_argument("--country")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
