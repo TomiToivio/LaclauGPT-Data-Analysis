@@ -1,8 +1,8 @@
 """Offline safeguards for issue #390 Roihu launcher; no CSC services required."""
 import re
-from pathlib import Path
 import shutil
 import subprocess
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ROIHU = ROOT / "scripts" / "roihu"
