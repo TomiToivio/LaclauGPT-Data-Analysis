@@ -46,5 +46,9 @@ def test_job_local_model_endpoint_is_used_by_canonical_preflight():
     assert 'export LACLAUGPT_LLM_ENDPOINT="$OLLAMA_HOST"' in text
     assert 'export LACLAUGPT_LLM_MODEL="$LACLAUGPT_OLLAMA_MODEL"' in text
     assert "export LACLAUGPT_CLOUD_ALLOWED=false" in text
-    assert text.index('ollama serve >') < text.index('bash scripts/roihu/preflight_ai26.sh')
-    assert text.index('ollama show "$LACLAUGPT_OLLAMA_MODEL"') < text.index('bash scripts/roihu/preflight_ai26.sh')
+    # rindex, not index: the dry-run block mentions the preflight script before the real
+    # call, so the first occurrence is a message, not the execution. Comparing against it
+    # made this test fail on a correct launcher.
+    real_preflight = text.rindex("bash scripts/roihu/preflight_ai26.sh")
+    assert text.index("ollama serve >") < real_preflight
+    assert text.index('ollama show "$LACLAUGPT_OLLAMA_MODEL"') < real_preflight
