@@ -136,7 +136,14 @@ def fake_launcher_env(tmp_path: Path) -> dict[str, str]:
         stub.chmod(0o755)
     # The project venv is real: the launcher calls `python -m laclaugpt_data_analysis.preflight`
     # and a stub interpreter would test the stub instead of the guard.
-    venv = ROOT / ".venv"
+    # A venv-shaped directory pointing at the interpreter running the tests. Using the
+    # local .venv fails in CI, and the CI interpreter's install root has no bin/python —
+    # either way the launcher's own "install the venv first" guard trips before the guard
+    # under test can run.
+    venv = tmp_path / "venv"
+    (venv / "bin").mkdir(parents=True)
+    (venv / "bin" / "python").symlink_to(sys.executable)
+    (venv / "bin" / "activate").write_text(f'export PATH="{venv / "bin"}:$PATH"\n')
 
     cfg = _private_dir(tmp_path)
     env_file = tmp_path / "roihu.env"
