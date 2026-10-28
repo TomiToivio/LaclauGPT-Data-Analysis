@@ -29,19 +29,22 @@ set +a
 }
 [[ "${LACLAUGPT_MAX_TASKS:-5}" =~ ^[1-9][0-9]*$ ]] || { echo "Invalid task limit" >&2; exit 2; }
 [[ "${LACLAUGPT_MAX_TASKS:-5}" -le 25 ]] || { echo "Test limit >25 refused" >&2; exit 2; }
-# Dry run: prove the wiring without claiming a single task and without requiring the
-# distributed services. Preflight is fail-closed on unreachable MongoDB/Redis/Allas, so
-# running it here would make the dry run impossible exactly where it is most useful —
-# on a host being prepared. Set LACLAUGPT_DRY_RUN_PREFLIGHT=1 to include it.
-if [[ "${LACLAUGPT_DRY_RUN:-${AI26_DRY_RUN:-0}}" == "1" ]]; then
-  echo "DRY RUN: no task will be claimed and the worker will not start"
-  echo "  run id    : $LACLAUGPT_RUN_ID (isolated stream analysis:$LACLAUGPT_RUN_ID:tasks)"
-  echo "  project   : ${LACLAUGPT_PROJECT_ID:-ai26}"
-  echo "  max tasks : ${LACLAUGPT_MAX_TASKS:-5}"
-  echo "  model     : ${LACLAUGPT_OLLAMA_MODEL:-gemma4:12b}"
-  echo "  config    : $LACLAUGPT_PRIVATE_CONFIG_DIR"
-  echo "  host      : $(hostname)"
-  echo "  git sha   : $(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+# Plan-only mode: exercises every guard above, touches no service and no module.
+# Both env names are accepted because both were implemented independently — AI26_DRY_RUN
+# and LACLAUGPT_DRY_RUN — and a dry run that silently ignores the one an operator set is
+# worse than either name alone.
+if [[ "${AI26_DRY_RUN:-0}" == "1" || "${LACLAUGPT_DRY_RUN:-0}" == "1" ]]; then
+  echo "DRY RUN — no task will be claimed and the worker will not start"
+  echo "  preflight:    (not executed here; see the runbook)"
+  echo "  worker:       laclaugpt-analysis-worker --max-tasks ${LACLAUGPT_MAX_TASKS:-5} --worker-id roihu-${SLURM_JOB_ID:-manual}"
+  echo "  run id:       ${LACLAUGPT_RUN_ID} (isolated stream analysis:${LACLAUGPT_RUN_ID}:tasks)"
+  echo "  model:        ${LACLAUGPT_OLLAMA_MODEL:-gemma4:12b}"
+  echo "  config:       ${LACLAUGPT_PRIVATE_CONFIG_DIR}"
+  echo "  host:         $(hostname)"
+  echo "  git:          $(git -C "$ROOT" rev-parse HEAD 2>/dev/null || echo unknown)"
+  echo "  provenance:   ${LACLAUGPT_ROIHU_PROVENANCE:-${LACLAUGPT_ROIHU_LOG_DIR:-$LACLAUGPT_PRIVATE_CONFIG_DIR/logs}/provenance_${SLURM_JOB_ID:-manual}.json}"
+  # Preflight is fail-closed on unreachable MongoDB/Redis/Allas, so it is opt-in here:
+  # requiring it would make the dry run unusable on exactly the host being prepared.
   if [[ "${LACLAUGPT_DRY_RUN_PREFLIGHT:-0}" == "1" ]]; then
     echo "  running preflight because LACLAUGPT_DRY_RUN_PREFLIGHT=1"
     bash scripts/roihu/preflight_ai26.sh || echo "  preflight reported problems (see above)"
@@ -91,6 +94,8 @@ ollama show "$LACLAUGPT_OLLAMA_MODEL" >/dev/null 2>&1 || {
 bash scripts/roihu/preflight_ai26.sh
 # Never seed the production queue. Pre-seed bounded test tasks into the isolated run
 # using the documented worker protocol. Existing worker runs canonical stages.
+# Provenance records: run_id, worker_id, git_sha, slurm_job_id, ollama_model,
+# elapsed_seconds, worker_exit_status, frozen config/codebook hashes.
 WORKER_ID="roihu-${SLURM_JOB_ID:-manual}-${SLURM_ARRAY_TASK_ID:-0}"
 export LACLAUGPT_WORKER_ID="$WORKER_ID"
 
