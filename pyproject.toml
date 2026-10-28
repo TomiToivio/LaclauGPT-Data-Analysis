@@ -24,12 +24,12 @@ laclaugpt-phase1-laskin = "laclaugpt_data_analysis.phase1_laskin:main"
 laclaugpt-phase1-laskin-report = "laclaugpt_data_analysis.phase1_laskin_report:main"
 laclaugpt-phase1-config = "laclaugpt_data_analysis.phase1_config_cli:main"
 laclaugpt-reprocess = "laclaugpt_data_analysis.contextual_entrypoints:reprocessing_main"
-laclaugpt-analysis-pipelines = "laclaugpt_data_analysis.pipelines.cli:main"
 laclaugpt-ep24 = "laclaugpt_data_analysis.ep24_reprocessing:main"
 laclaugpt-summarize-period = "laclaugpt_data_analysis.periodic_summary:main"
 laclaugpt-preflight = "laclaugpt_data_analysis.preflight:main"
 laclaugpt-freeze-ai26 = "laclaugpt_data_analysis.freeze_run:main"
 laclaugpt-hungary26-roihu = "laclaugpt_data_analysis.hungary26_roihu:main"
+laclaugpt-analysis = "laclaugpt_data_analysis.pipelines.cli:main"
 
 [project.optional-dependencies]
 analysis = [
@@ -130,16 +130,15 @@ addopts = "-q --strict-markers"
 pythonpath = ["src", ".", "laclaugpt"]
 
 [tool.ruff]
-# Vendored upstream snapshots keep their own style: reformatting them would change the
-# per-file hashes in PROVENANCE.json and stop them being the implementation that was
-# imported.
-extend-exclude = [
-    "src/laclaugpt_data_analysis/pipelines/ep24",
-    "src/laclaugpt_data_analysis/pipelines/ep24_legacy",
-]
 target-version = "py311"
 line-length = 100
 src = ["src", "tests"]
+# Vendored upstream snapshots must stay byte-identical to the commit recorded in
+# docs/EP24_SOURCE_INVENTORY.json. Formatting them silently rewrites the science.
+extend-exclude = [
+  "src/laclaugpt_data_analysis/pipelines/ep24/vendor",
+  "src/laclaugpt_data_analysis/pipelines/ep24_legacy/vendor",
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

@@ -1,114 +1,79 @@
 # Multi-pipeline architecture (#399)
 
-This repository analyses more than one project. Before #399 it had one runnable pipeline
-and AI26 was the *implementation* rather than an entry in a catalogue, so running EP24
-meant running a different checkout. A pipeline is now a named, explicit choice.
+The repository now carries **three selectable analysis implementations** instead of assuming AI26 is
+the only pipeline. Selection is explicit; a wrong id fails.
 
-## Registered pipelines
-
-| id | implementation | stages | status |
+| id | implementation | source | exec |
 | --- | --- | --- | --- |
-| `ai26` | AI26 canonical stages in this repository | 7 | production; unchanged by #399 |
-| `ep24` | current EP24, Roihu Step 0–9, imported from upstream `main` | 10 | importable and selectable here |
-| `ep24-legacy` | historical Puhti-era EP24, imported from upstream `legacy` | 5 | preserved for reproduction; needs its compatibility environment |
+| `ai26` | AI26 canonical (in-tree) | this repo | in-process |
+| `ep24` | EP24 current, Roihu Step 0–9 | Multimodal `main` @ `db123759` | script |
+| `ep24-legacy` | EP24 legacy, Puhti era | Multimodal `legacy` @ `e011c342` | script |
+
+## What was imported
+
+A **byte-identical snapshot**, not an adaptation:
+
+- EP24 current: 38 modules (`ep24_*.py`, `step_0`…`step_9`), 10,419 lines.
+- EP24 legacy: 5 modules (`puhti_preprocess`, `puhti_frame`, `puhti_summary`, `puhti_populism`,
+  `puhti_postprocess`), 1,454 lines.
+- 483 KB total, each file recorded with its SHA-256 in `docs/EP24_SOURCE_INVENTORY.json`.
+
+A test recomputes every checksum, so an accidental formatter run or hand edit fails CI rather than
+silently changing the science. That test already earned its place: `ruff --fix` rewrote 43 vendored
+files during this work, the checksum test caught it, the snapshot was restored, and the vendor
+directories are now excluded from Ruff.
+
+## Finding: the upstream code is scripts, not importable modules
+
+Naively importing the snapshot executes it. `puhti_populism.py` runs `for country in countries:` at
+module level, `puhti_summary.py` opens a SQLite file, and several `ep24_*` modules parse `argv` on
+import. Importing them is *running the analysis*.
+
+So the registry records `execution="script"` for both EP24 versions, and the test suite **compiles**
+every vendored file instead of importing it — proving the snapshot is intact without executing a
+pipeline. Running them is a separate, documented step under a compatibility environment; that is the
+difference between "the code is here" and "the pipeline ran".
+
+## Selection
 
 ```bash
-laclaugpt-analysis-pipelines list
-laclaugpt-analysis-pipelines show ep24
-laclaugpt-analysis-pipelines check ep24 --strict
-laclaugpt-analysis-pipelines namespace ep24 --run-id my-run
+laclaugpt-analysis pipelines list
+laclaugpt-analysis pipelines show ep24-legacy --json
 ```
 
-Selection is explicit. There is **no default and no fallback**: a caller that does not
-name a pipeline does not get one silently chosen for it.
+```python
+from laclaugpt_data_analysis.pipelines import get_pipeline
 
-## Four identities that must not be confused
-
-| identity | example | why it is separate |
-| --- | --- | --- |
-| project / dataset | `ep24` | what the records are |
-| pipeline implementation version | `ep24` @ `db123759…` | which code analysed them |
-| scientific configuration / codebook version | private codebook SHA | what the coding rules were |
-| execution run id | `roihu-test-abc123` | which attempt produced this |
-
-Two versions must be able to analyse the **same input** without their outputs becoming
-indistinguishable. The pipeline id is therefore part of every durable key, not metadata
-attached afterwards:
-
-```
-analysis:ep24:my-run:tasks            analysis_results__ep24
-analysis:ep24-legacy:my-run:tasks     analysis_results__ep24-legacy
+spec = get_pipeline("ep24-legacy")   # raises UnknownPipeline, never falls back
+spec.source_sha, spec.stages, spec.execution
 ```
 
-A shared stream would let one version consume the other's tasks; a shared result
-collection would let one overwrite the other. `pipeline_namespace()` returns these keys
-and a test asserts all five are distinct across the three pipelines for one run id.
+AI26 keeps its existing entry points (`laclaugpt-analysis-worker`, Laskin cron contracts); the registry
+is additive, and a test asserts the worker entry point still points where it did.
 
-## Imported implementations, not wrappers
+## Namespace separation
 
-Both EP24 versions are vendored snapshots, produced by `tools/vendor_pipeline.py` from a
-**pinned commit**:
-
-- `src/laclaugpt_data_analysis/pipelines/ep24/` — 91 files from upstream `main`
-  (`db123759fe21b194275d87d6ccc3b7c4f98a2055`), including `step_0…step_9`, `ep24_pipeline`,
-  `ep24_cli`, `ep24_schema`, `scripts/ep24` and `config`.
-- `src/laclaugpt_data_analysis/pipelines/ep24_legacy/` — the 5 historical scripts
-  (`puhti_preprocess`, `puhti_frame`, `puhti_summary`, `puhti_populism`,
-  `puhti_postprocess`) from upstream `legacy`
-  (`e011c34274c41923e801c32c824c5afa7468e1a1`).
-
-Each snapshot carries `PROVENANCE.json`: source repository, exact SHA, license, per-file
-SHA-256 and the import policy. `test_vendored_files_match_their_recorded_hashes` re-hashes
-every file, so drift is detected rather than suspected.
-
-Upstream's own test suite is deliberately **not** vendored: it targets upstream's
-environment and would be collected by this repository's CI, failing for reasons that say
-nothing about the import.
-
-### Sync policy
-
-The snapshots are frozen. Upstream is not a runtime dependency, because a branch
-reference would mean the "historical" implementation silently changing. To take an
-upstream change: pin a new SHA, run `tools/vendor_pipeline.py` into a scratch directory,
-review the diff, then re-import with `--force` and record why in the PR. The tool refuses
-to overwrite an existing snapshot without that flag.
-
-## Legacy EP24 is preserved, not modernised
-
-`ep24-legacy` imports `cv2`, `easyocr`, `ollama` and `pandas`. Those are *its* historical
-requirements, and they are declared rather than installed here:
+`pipeline_keys()` derives every execution key from project **and pipeline** and run:
 
 ```
-$ laclaugpt-analysis-pipelines check ep24-legacy --strict
-{ "import_error": "ModuleNotFoundError: No module named 'easyocr'", "selectable": false }
+laclaugpt:<project>:<pipeline>:<run>:stream:tasks
+laclaugpt:<project>:<pipeline>:<run>:group:workers
+laclaugpt:<project>:<pipeline>:<run>:stream:dead
+<project>__<pipeline>__analysis_results
+<project>/<pipeline>/<run>/…            (Allas prefix)
 ```
 
-It exits non-zero. That is the correct answer, not a bug: the alternative — declaring it
-selectable — would let a caller believe a historical run happened when nothing ran.
-Reproduce it in an isolated environment built from its own requirements; do not add
-OpenCV and EASYOCR to this package to make a registry row look green.
-
-## AI26 is unchanged
-
-The registry describes AI26 with the stage names that actually exist in
-`laclaugpt_data_analysis/stages/`; a test fails if that list drifts. The Laskin realtime
-runner keeps its CLI and environment contract, and no AI26 module imports the pipelines
-package.
-
-## Adding a pipeline
-
-1. `tools/vendor_pipeline.py` from a pinned SHA into `pipelines/<id>/` (or write native
-   code in this repository for anything not imported).
-2. Register a `PipelineSpec` in `pipelines/__init__.py` with stages, entry module and
-   declared requirements.
-3. Add the namespace check: two pipelines on one run id must produce different keys.
-4. Declare requirements honestly — a missing dependency must show up in `check`, not in
-   the middle of a run.
+Tests assert that AI26, EP24 and EP24-legacy produce three distinct values for every key even with an
+identical run id — the same frozen record analysed by two versions must never share a queue or a
+result collection. Result *collections* stay per-pipeline; the run id lives on each document, which is
+asserted so nobody assumes run-level collection isolation that does not exist.
 
 ## What is not done
 
-- No live EP24 run has been executed from this repository, on Roihu or elsewhere; the
-  EP24 Roihu orchestration scripts are vendored but not wired to this package's worker.
-- The legacy compatibility environment is documented, not provisioned.
-- Version-aware comparison of one frozen EP24 sample across current and legacy is
-  prepared for (separate namespaces and provenance) but not exercised.
+- **Running either EP24 snapshot has not been executed.** The code is imported and parseable; no
+  legacy compatibility environment, no Roihu submission, no sample run.
+- Current EP24's Roihu install/preflight/submit scripts are **not** adapted here.
+- Version-aware comparison of a frozen sample across EP24 and EP24-legacy is not implemented.
+- `ai26` remains in-tree rather than moved under `pipelines/ai26/`: moving a running production
+  pipeline is a destructive change that belongs in its own PR with the migration notes the issue asks
+  for, not in the same change that introduces the registry.
