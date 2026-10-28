@@ -1,0 +1,233 @@
+{
+  "source_repository": "https://github.com/TomiToivio/LaclauGPT-Multimodal-Analysis",
+  "imported_at_utc": "2026-10-28T17:31:20Z",
+  "pipelines": {
+    "ep24": {
+      "source_ref": "main",
+      "source_sha": "db123759fe21b194275d87d6ccc3b7c4f98a2055",
+      "files": [
+        {
+          "source_path": "ep24_allas.py",
+          "sha256": "ab9a271f1793968c64e0bc7be71f2cd43800ed5ef1d4c055cf6f3477c04c47ac",
+          "lines": 73
+        },
+        {
+          "source_path": "ep24_backups.py",
+          "sha256": "b7aa8b3440fa30158dd38221ef3fae0a7e313cc44aade684909cae0edcfa7d01",
+          "lines": 78
+        },
+        {
+          "source_path": "ep24_bootstrap.py",
+          "sha256": "a2b6917719eefa51186d3d70b7900070a598a3a24eae1267185fea47d574534d",
+          "lines": 164
+        },
+        {
+          "source_path": "ep24_cleaner.py",
+          "sha256": "785fc580ce43af7d359c89432162016fd0ad021f34ec76e2c6f8c83aa2964aba",
+          "lines": 526
+        },
+        {
+          "source_path": "ep24_cli.py",
+          "sha256": "b0bf518ad6453fdf065edbad3013116d363f6b2f43479910d59f77f4fa728015",
+          "lines": 179
+        },
+        {
+          "source_path": "ep24_context.py",
+          "sha256": "28b8b8dadccf8f647549ca3866b4e4b0235c88786ce715bca4ace0829abc64f4",
+          "lines": 159
+        },
+        {
+          "source_path": "ep24_coverage_audit.py",
+          "sha256": "30c1954f8a70350810dc2a49d4def16c2e2fb49f85f4456509919099f1cc0f7a",
+          "lines": 176
+        },
+        {
+          "source_path": "ep24_db.py",
+          "sha256": "ce54e71dcc0343b8b93e7e170eb2e4164bc80c4f998473004fed2f29b55c564b",
+          "lines": 22
+        },
+        {
+          "source_path": "ep24_dna.py",
+          "sha256": "8e1654d17437d89b4523de4e50227dc68fa1c2b9ee0e83fd3f5bb8035b6aab25",
+          "lines": 761
+        },
+        {
+          "source_path": "ep24_entities.py",
+          "sha256": "697fd60ad949d76f78005ffbb8b5fa70e97f2f0855c97c2a127099c2098e9d57",
+          "lines": 1019
+        },
+        {
+          "source_path": "ep24_input_schema.py",
+          "sha256": "a6d890e716a3feac35e124e465fb060c13647166153574ffd3fa4072676b0d29",
+          "lines": 283
+        },
+        {
+          "source_path": "ep24_legacy_clean.py",
+          "sha256": "810d1ddbae0590b0c5eaf196a17c707151a2ccc0c2cd78ca9c9fd75ea4b632e4",
+          "lines": 646
+        },
+        {
+          "source_path": "ep24_memory.py",
+          "sha256": "f17751e102ad9df44f88270f7ed0da6c06f9516db404b2f4abebf5a62b9b2190",
+          "lines": 58
+        },
+        {
+          "source_path": "ep24_models.py",
+          "sha256": "3ca0092daedbd2decc16e3075a12d45d98ae8b0238f9c90050f034bae4da21ed",
+          "lines": 25
+        },
+        {
+          "source_path": "ep24_mongo_dashboard_export.py",
+          "sha256": "1c874fb575bdc2d2dd792e6761ba455904e42b38f3655fd2e7219acac366033a",
+          "lines": 476
+        },
+        {
+          "source_path": "ep24_mongo_export.py",
+          "sha256": "e390a82f2f47ad1d7f0f117aa28710de10cc7426e3d7fe467b6aa09ed9a68f9d",
+          "lines": 437
+        },
+        {
+          "source_path": "ep24_pipeline.py",
+          "sha256": "8fb3c026c8868ae05a45dcfa9fa3de1df972daff0a7c2b5fe358bc9af12ca687",
+          "lines": 256
+        },
+        {
+          "source_path": "ep24_prompt_contract.py",
+          "sha256": "86e33df85438a6d706e1779afefe0ae8f0f996e1afeeb8a6f9f9c27348758168",
+          "lines": 723
+        },
+        {
+          "source_path": "ep24_rag.py",
+          "sha256": "3ae132ba6c8085a0ed696264bc68030250057d29538a6b2318ccb2b4f0a8a570",
+          "lines": 103
+        },
+        {
+          "source_path": "ep24_redis.py",
+          "sha256": "f27cd25434009654a610129d4dd3e0b06fa02057b6e39e7a62c36e6dd3b73514",
+          "lines": 43
+        },
+        {
+          "source_path": "ep24_result_reporting.py",
+          "sha256": "64a1d77b008f7df14a53b538027731c841f59375cfdc51035021cdda4903c660",
+          "lines": 107
+        },
+        {
+          "source_path": "ep24_schema.py",
+          "sha256": "591cee78c5162307d1835c66d20b68728503762365e767b8eef124354b5448e4",
+          "lines": 71
+        },
+        {
+          "source_path": "ep24_settings.py",
+          "sha256": "03ccc6aa6ea934753bcb5305b8d829b3a7352c6e4fe64b6a61a6312351b4b74c",
+          "lines": 164
+        },
+        {
+          "source_path": "ep24_sna.py",
+          "sha256": "54c7e8fdd03479e5ba1d69b1614cdce8931eb4d050a2854b8fa9b7917e68635e",
+          "lines": 737
+        },
+        {
+          "source_path": "ep24_stage_contract.py",
+          "sha256": "0fc80ecf385918095769058e06b254df1bf45e7a4b740209074d362b207e9cfc",
+          "lines": 284
+        },
+        {
+          "source_path": "ep24_stage_orchestrator.py",
+          "sha256": "318c5377feba301e8e0506910eb2823df1ca21a0cbf76fe9e305431d34f97b89",
+          "lines": 741
+        },
+        {
+          "source_path": "ep24_stage_state.py",
+          "sha256": "260d82dbaf33a7d15a2aae9ee536f624fbdb32d61cd07b23dac439984e86960b",
+          "lines": 237
+        },
+        {
+          "source_path": "ep24_video.py",
+          "sha256": "6a064e582800a575ddce3e7c8385267eb528a8f00a4af6df8d6475e839209466",
+          "lines": 298
+        },
+        {
+          "source_path": "step_0_roihu_import.py",
+          "sha256": "446920565b063c7c48ebe81e76bb79d0e871cae11b9002e2372428478faf0e0b",
+          "lines": 137
+        },
+        {
+          "source_path": "step_1_roihu_preprocess.py",
+          "sha256": "dbbf4888e33fcf845d22138f0872df0d8c4006fd6df64bb56a99d9be1c627dc7",
+          "lines": 19
+        },
+        {
+          "source_path": "step_2_roihu_frame.py",
+          "sha256": "de716e63fbe3168fff6a6e53652624be3ab25933cb021f0a6df638ee8ee3d95b",
+          "lines": 15
+        },
+        {
+          "source_path": "step_3_roihu_video.py",
+          "sha256": "b8f362424c4add0a50074c8abaaaffc69b473d0d5e2493fe649f1ee0c3f198e2",
+          "lines": 39
+        },
+        {
+          "source_path": "step_4_roihu_summary.py",
+          "sha256": "2f5d6623f17e3f8175d6e7021ea1922f0015271a0d2038f096a4e4a34ef791bc",
+          "lines": 10
+        },
+        {
+          "source_path": "step_5_roihu_postprocess.py",
+          "sha256": "2b136d6b176c737e3b9d708f49f6937f3be9cfaf4c63931a8ba6e1ec50bee262",
+          "lines": 10
+        },
+        {
+          "source_path": "step_6_roihu_discourse_analysis.py",
+          "sha256": "d1deb1db6a6c5ce52b36c37c7154d4c98cc7517069f7af918d101e3db9259025",
+          "lines": 13
+        },
+        {
+          "source_path": "step_7_roihu_discourse_network_analysis.py",
+          "sha256": "a1896af68bb5a511388306b051dbde610eaa4944f22a37d35181e08c0d731526",
+          "lines": 811
+        },
+        {
+          "source_path": "step_8_roihu_social_network_analysis.py",
+          "sha256": "9641fb2b90b1f5aebabbe62c70a0d87709137ce9faab94e33d84faf580ee7bca",
+          "lines": 502
+        },
+        {
+          "source_path": "step_9_roihu_rdf.py",
+          "sha256": "c61a8641d8836412e58db5d11bc31788610d5224ad0cd52e187b4549b269bc39",
+          "lines": 17
+        }
+      ]
+    },
+    "ep24-legacy": {
+      "source_ref": "legacy",
+      "source_sha": "e011c34274c41923e801c32c824c5afa7468e1a1",
+      "files": [
+        {
+          "source_path": "puhti_frame.py",
+          "sha256": "1229825e440cfa95786ed031bd2c8345bf70ef4ab6562318d2c5cb07d93c7dd1",
+          "lines": 212
+        },
+        {
+          "source_path": "puhti_populism.py",
+          "sha256": "f82db2c939fd9f48c83f24a905c70b866a1dea6d2e39d6949aaebfe0dd260d6c",
+          "lines": 392
+        },
+        {
+          "source_path": "puhti_postprocess.py",
+          "sha256": "e46ef81dd25684ddef776b8bc83bf76683465a2229771644407887680c0999c1",
+          "lines": 172
+        },
+        {
+          "source_path": "puhti_preprocess.py",
+          "sha256": "432e0daadd04523121b499070c14f7f2194ae45b6eeccb8cac1d80776cc13f7f",
+          "lines": 334
+        },
+        {
+          "source_path": "puhti_summary.py",
+          "sha256": "0124234898796b825cc06c1dec75382d037a3ab9e84963d64fd20ec744315ae8",
+          "lines": 344
+        }
+      ]
+    }
+  }
+}
