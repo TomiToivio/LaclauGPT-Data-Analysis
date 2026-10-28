@@ -92,3 +92,7 @@ until they are done on a real allocation:
 ## Limits and safety
 
 This repository change cannot itself submit CSC jobs, install project credentials, prove Roihu GPU/model compatibility or establish live Mongo/Redis/Allas connectivity. Do not mark the issue fully complete until a real Slurm run and simultaneous Laskin observation have been performed. Never seed/claim production tasks from the test. Existing production Laskin wrapper is unchanged.
+
+### Compatibility with the earlier Roihu deployment
+
+The existing `AI26_DRY_RUN=1` invocation remains supported alongside `LACLAUGPT_DRY_RUN=1`. The original private `run-manifest-<stamp>.json` summary is superseded by the richer `provenance_<job id>.json` start/end manifest. Production tasks must never be seeded by the test worker.

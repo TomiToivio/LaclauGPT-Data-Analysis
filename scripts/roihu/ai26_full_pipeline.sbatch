@@ -33,7 +33,7 @@ set +a
 # distributed services. Preflight is fail-closed on unreachable MongoDB/Redis/Allas, so
 # running it here would make the dry run impossible exactly where it is most useful —
 # on a host being prepared. Set LACLAUGPT_DRY_RUN_PREFLIGHT=1 to include it.
-if [[ "${LACLAUGPT_DRY_RUN:-0}" == "1" ]]; then
+if [[ "${LACLAUGPT_DRY_RUN:-${AI26_DRY_RUN:-0}}" == "1" ]]; then
   echo "DRY RUN: no task will be claimed and the worker will not start"
   echo "  run id    : $LACLAUGPT_RUN_ID (isolated stream analysis:$LACLAUGPT_RUN_ID:tasks)"
   echo "  project   : ${LACLAUGPT_PROJECT_ID:-ai26}"
