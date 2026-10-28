@@ -1,0 +1,37 @@
+{
+  "file_count": 5,
+  "files": {
+    "puhti_frame.py": {
+      "bytes": 11277,
+      "dest": "src/puhti_frame.py",
+      "sha256": "1229825e440cfa95786ed031bd2c8345bf70ef4ab6562318d2c5cb07d93c7dd1"
+    },
+    "puhti_populism.py": {
+      "bytes": 17052,
+      "dest": "src/puhti_populism.py",
+      "sha256": "f82db2c939fd9f48c83f24a905c70b866a1dea6d2e39d6949aaebfe0dd260d6c"
+    },
+    "puhti_postprocess.py": {
+      "bytes": 5440,
+      "dest": "src/puhti_postprocess.py",
+      "sha256": "e46ef81dd25684ddef776b8bc83bf76683465a2229771644407887680c0999c1"
+    },
+    "puhti_preprocess.py": {
+      "bytes": 11170,
+      "dest": "src/puhti_preprocess.py",
+      "sha256": "432e0daadd04523121b499070c14f7f2194ae45b6eeccb8cac1d80776cc13f7f"
+    },
+    "puhti_summary.py": {
+      "bytes": 14951,
+      "dest": "src/puhti_summary.py",
+      "sha256": "0124234898796b825cc06c1dec75382d037a3ab9e84963d64fd20ec744315ae8"
+    }
+  },
+  "imported_at": "2026-10-28T17:31:45+00:00",
+  "imported_by": "tools/vendor_pipeline.py",
+  "license": "See upstream repository",
+  "pipeline_id": "ep24-legacy",
+  "source_ref": "e011c34274c41923e801c32c824c5afa7468e1a1",
+  "source_repository": "TomiToivio/LaclauGPT-Multimodal-Analysis",
+  "sync_policy": "Frozen snapshot. Upstream is not a runtime dependency. Re-import only by pinning a new SHA and recording the diff; never by pulling a branch."
+}

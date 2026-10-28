@@ -1,0 +1,467 @@
+{
+  "file_count": 91,
+  "files": {
+    "asr_backend.py": {
+      "bytes": 9041,
+      "dest": "src/asr_backend.py",
+      "sha256": "776ef8d463ffc1977172f9ca0e88e79239ebe648dda319aa145229b1ffcfa6cb"
+    },
+    "diagnose_ep24_step6.py": {
+      "bytes": 2235,
+      "dest": "src/diagnose_ep24_step6.py",
+      "sha256": "633b0514a6bce0416f64151501bdd4b772a852cd76f583623cf28638b75b8586"
+    },
+    "ep24_allas.py": {
+      "bytes": 3151,
+      "dest": "src/ep24_allas.py",
+      "sha256": "ab9a271f1793968c64e0bc7be71f2cd43800ed5ef1d4c055cf6f3477c04c47ac"
+    },
+    "ep24_backups.py": {
+      "bytes": 2685,
+      "dest": "src/ep24_backups.py",
+      "sha256": "b7aa8b3440fa30158dd38221ef3fae0a7e313cc44aade684909cae0edcfa7d01"
+    },
+    "ep24_bootstrap.py": {
+      "bytes": 6046,
+      "dest": "src/ep24_bootstrap.py",
+      "sha256": "a2b6917719eefa51186d3d70b7900070a598a3a24eae1267185fea47d574534d"
+    },
+    "ep24_cleaner.py": {
+      "bytes": 19279,
+      "dest": "src/ep24_cleaner.py",
+      "sha256": "785fc580ce43af7d359c89432162016fd0ad021f34ec76e2c6f8c83aa2964aba"
+    },
+    "ep24_cli.py": {
+      "bytes": 6081,
+      "dest": "src/ep24_cli.py",
+      "sha256": "b0bf518ad6453fdf065edbad3013116d363f6b2f43479910d59f77f4fa728015"
+    },
+    "ep24_context.py": {
+      "bytes": 6372,
+      "dest": "src/ep24_context.py",
+      "sha256": "28b8b8dadccf8f647549ca3866b4e4b0235c88786ce715bca4ace0829abc64f4"
+    },
+    "ep24_coverage_audit.py": {
+      "bytes": 6806,
+      "dest": "src/ep24_coverage_audit.py",
+      "sha256": "30c1954f8a70350810dc2a49d4def16c2e2fb49f85f4456509919099f1cc0f7a"
+    },
+    "ep24_db.py": {
+      "bytes": 627,
+      "dest": "src/ep24_db.py",
+      "sha256": "ce54e71dcc0343b8b93e7e170eb2e4164bc80c4f998473004fed2f29b55c564b"
+    },
+    "ep24_dna.py": {
+      "bytes": 30218,
+      "dest": "src/ep24_dna.py",
+      "sha256": "8e1654d17437d89b4523de4e50227dc68fa1c2b9ee0e83fd3f5bb8035b6aab25"
+    },
+    "ep24_entities.py": {
+      "bytes": 43268,
+      "dest": "src/ep24_entities.py",
+      "sha256": "697fd60ad949d76f78005ffbb8b5fa70e97f2f0855c97c2a127099c2098e9d57"
+    },
+    "ep24_input_schema.py": {
+      "bytes": 10821,
+      "dest": "src/ep24_input_schema.py",
+      "sha256": "a6d890e716a3feac35e124e465fb060c13647166153574ffd3fa4072676b0d29"
+    },
+    "ep24_legacy_clean.py": {
+      "bytes": 26534,
+      "dest": "src/ep24_legacy_clean.py",
+      "sha256": "810d1ddbae0590b0c5eaf196a17c707151a2ccc0c2cd78ca9c9fd75ea4b632e4"
+    },
+    "ep24_memory.py": {
+      "bytes": 2301,
+      "dest": "src/ep24_memory.py",
+      "sha256": "f17751e102ad9df44f88270f7ed0da6c06f9516db404b2f4abebf5a62b9b2190"
+    },
+    "ep24_models.py": {
+      "bytes": 878,
+      "dest": "src/ep24_models.py",
+      "sha256": "3ca0092daedbd2decc16e3075a12d45d98ae8b0238f9c90050f034bae4da21ed"
+    },
+    "ep24_mongo_dashboard_export.py": {
+      "bytes": 23424,
+      "dest": "src/ep24_mongo_dashboard_export.py",
+      "sha256": "1c874fb575bdc2d2dd792e6761ba455904e42b38f3655fd2e7219acac366033a"
+    },
+    "ep24_mongo_export.py": {
+      "bytes": 18080,
+      "dest": "src/ep24_mongo_export.py",
+      "sha256": "e390a82f2f47ad1d7f0f117aa28710de10cc7426e3d7fe467b6aa09ed9a68f9d"
+    },
+    "ep24_pipeline.py": {
+      "bytes": 9566,
+      "dest": "src/ep24_pipeline.py",
+      "sha256": "8fb3c026c8868ae05a45dcfa9fa3de1df972daff0a7c2b5fe358bc9af12ca687"
+    },
+    "ep24_prompt_contract.py": {
+      "bytes": 29293,
+      "dest": "src/ep24_prompt_contract.py",
+      "sha256": "86e33df85438a6d706e1779afefe0ae8f0f996e1afeeb8a6f9f9c27348758168"
+    },
+    "ep24_rag.py": {
+      "bytes": 3489,
+      "dest": "src/ep24_rag.py",
+      "sha256": "3ae132ba6c8085a0ed696264bc68030250057d29538a6b2318ccb2b4f0a8a570"
+    },
+    "ep24_redis.py": {
+      "bytes": 1439,
+      "dest": "src/ep24_redis.py",
+      "sha256": "f27cd25434009654a610129d4dd3e0b06fa02057b6e39e7a62c36e6dd3b73514"
+    },
+    "ep24_result_reporting.py": {
+      "bytes": 5739,
+      "dest": "src/ep24_result_reporting.py",
+      "sha256": "64a1d77b008f7df14a53b538027731c841f59375cfdc51035021cdda4903c660"
+    },
+    "ep24_schema.py": {
+      "bytes": 2419,
+      "dest": "src/ep24_schema.py",
+      "sha256": "591cee78c5162307d1835c66d20b68728503762365e767b8eef124354b5448e4"
+    },
+    "ep24_settings.py": {
+      "bytes": 6182,
+      "dest": "src/ep24_settings.py",
+      "sha256": "03ccc6aa6ea934753bcb5305b8d829b3a7352c6e4fe64b6a61a6312351b4b74c"
+    },
+    "ep24_sna.py": {
+      "bytes": 30008,
+      "dest": "src/ep24_sna.py",
+      "sha256": "54c7e8fdd03479e5ba1d69b1614cdce8931eb4d050a2854b8fa9b7917e68635e"
+    },
+    "ep24_stage_contract.py": {
+      "bytes": 11839,
+      "dest": "src/ep24_stage_contract.py",
+      "sha256": "0fc80ecf385918095769058e06b254df1bf45e7a4b740209074d362b207e9cfc"
+    },
+    "ep24_stage_orchestrator.py": {
+      "bytes": 30388,
+      "dest": "src/ep24_stage_orchestrator.py",
+      "sha256": "318c5377feba301e8e0506910eb2823df1ca21a0cbf76fe9e305431d34f97b89"
+    },
+    "ep24_stage_state.py": {
+      "bytes": 8763,
+      "dest": "src/ep24_stage_state.py",
+      "sha256": "260d82dbaf33a7d15a2aae9ee536f624fbdb32d61cd07b23dac439984e86960b"
+    },
+    "ep24_video.py": {
+      "bytes": 9497,
+      "dest": "src/ep24_video.py",
+      "sha256": "6a064e582800a575ddce3e7c8385267eb528a8f00a4af6df8d6475e839209466"
+    },
+    "examples/step7_dna_demo.py": {
+      "bytes": 4464,
+      "dest": "src/examples/step7_dna_demo.py",
+      "sha256": "7c3bdcf108d52941fd878664019a8bbea284fcc529c1a88799f23ffd33a016c7"
+    },
+    "experiments/vllm_video_test.py": {
+      "bytes": 67128,
+      "dest": "src/experiments/vllm_video_test.py",
+      "sha256": "947b35496e635972a34810f738a54a966282171beda590dae3821f3fd570096f"
+    },
+    "laclaugpt_quality.py": {
+      "bytes": 12482,
+      "dest": "src/laclaugpt_quality.py",
+      "sha256": "8267bb3d062142628016ea7ef7657a95c7f0fc42c57ca20b2d971b10c39d2460"
+    },
+    "ocr_backend.py": {
+      "bytes": 8924,
+      "dest": "src/ocr_backend.py",
+      "sha256": "8040aa12f9730f4212488bff7b00b1ca704b24be2e998ff6ee9f06328c03d468"
+    },
+    "puhti_frame.py": {
+      "bytes": 9700,
+      "dest": "src/puhti_frame.py",
+      "sha256": "d654e5f1186068b6294b07d077341f722885cf2f034b2c8d7833eaec6de1da5d"
+    },
+    "puhti_populism.py": {
+      "bytes": 17188,
+      "dest": "src/puhti_populism.py",
+      "sha256": "7436f97b04d5e35d8ed247aca74bd4c08855d40951c1213e4394f588fba09d86"
+    },
+    "puhti_postprocess.py": {
+      "bytes": 7271,
+      "dest": "src/puhti_postprocess.py",
+      "sha256": "8c25969fc2e01535e539b0cabe14b83d523914010e447c929a6f8afc376f1c24"
+    },
+    "puhti_preprocess.py": {
+      "bytes": 9762,
+      "dest": "src/puhti_preprocess.py",
+      "sha256": "e1bd62d21ceb777791f1429dad817bf28b156cce9310b64de8659be11a9d803f"
+    },
+    "puhti_summary.py": {
+      "bytes": 13449,
+      "dest": "src/puhti_summary.py",
+      "sha256": "217ab9607c63a898319d9afbfc9ca913d8084551ffc2748c65914bbfeca3eac3"
+    },
+    "roihu_clean.py": {
+      "bytes": 39196,
+      "dest": "src/roihu_clean.py",
+      "sha256": "b95b6ff3ed4bdba5567dce86142ec48622356827bd34bcd9806cb55928bc97da"
+    },
+    "roihu_codebook_sources.py": {
+      "bytes": 16161,
+      "dest": "src/roihu_codebook_sources.py",
+      "sha256": "aae880de25bfc7ea903fb19459019dbaf84f172673c5e933bce864516575656c"
+    },
+    "roihu_codebooks.py": {
+      "bytes": 47540,
+      "dest": "src/roihu_codebooks.py",
+      "sha256": "f2ae83e6b10c7710c4ed01d9be3852f8b0771f77334ea45412c08b01bb3bee85"
+    },
+    "roihu_csv_rdf.py": {
+      "bytes": 22748,
+      "dest": "src/roihu_csv_rdf.py",
+      "sha256": "b43904492008788dd681af8365de3e6eb25c8a25a754ece65ef3a39e7d147cff"
+    },
+    "roihu_enrich.py": {
+      "bytes": 17777,
+      "dest": "src/roihu_enrich.py",
+      "sha256": "c99d97407ba81d98d5e3372edd2e57ec0e4785fb487c3d1fb833d522c7a74a62"
+    },
+    "roihu_frame.py": {
+      "bytes": 21139,
+      "dest": "src/roihu_frame.py",
+      "sha256": "d617b5bbcc984c4bc98e344bd311fe13e04e92d9a5ac3e7be82e03db5c5d9b50"
+    },
+    "roihu_identity.py": {
+      "bytes": 6593,
+      "dest": "src/roihu_identity.py",
+      "sha256": "5b24b929178db481a673b7a188bf47446bc2bd584abb64ff93fcbf77bb2fac26"
+    },
+    "roihu_memory.py": {
+      "bytes": 47400,
+      "dest": "src/roihu_memory.py",
+      "sha256": "5b4ad948040f204fa8c9a7cb58ab90c14fd0ae4a1febaf95d187c315b53ac857"
+    },
+    "roihu_populism.py": {
+      "bytes": 26459,
+      "dest": "src/roihu_populism.py",
+      "sha256": "e12df6a0765a782c13352ed581ef5e06bf522ea9f8ea4ff8b0f189cdc3896181"
+    },
+    "roihu_postprocess.py": {
+      "bytes": 23097,
+      "dest": "src/roihu_postprocess.py",
+      "sha256": "c4a23fe97f989022e8a6da4c3e30fd63fcbffb5752436414eb099740373cc9d8"
+    },
+    "roihu_preprocess.py": {
+      "bytes": 31790,
+      "dest": "src/roihu_preprocess.py",
+      "sha256": "629ba31f14afb4cf6e99cded9304669228919694c12bb704c693084e2eb2312a"
+    },
+    "roihu_rdf.py": {
+      "bytes": 42290,
+      "dest": "src/roihu_rdf.py",
+      "sha256": "17589268040adb4a82ed2ffb772fb88d33e3f4ec533945bcffdf5995fca732f3"
+    },
+    "roihu_storage.py": {
+      "bytes": 15880,
+      "dest": "src/roihu_storage.py",
+      "sha256": "721868f22750b39c496df7806fc7ccc6ff9978eb193adeb94cf6e7dd3fc33bb4"
+    },
+    "roihu_storage_sync.py": {
+      "bytes": 2170,
+      "dest": "src/roihu_storage_sync.py",
+      "sha256": "eae29185b1a08da5c60de694918b254b744e12b6613736e2147b3d0cd1f3d76c"
+    },
+    "roihu_summary.py": {
+      "bytes": 33541,
+      "dest": "src/roihu_summary.py",
+      "sha256": "79480df4188b42fc50d0ee3ac431fdcd8b7db28b71d202539e305848d93d34ba"
+    },
+    "scripts/asr_bench/bench_faster.py": {
+      "bytes": 2428,
+      "dest": "src/scripts/asr_bench/bench_faster.py",
+      "sha256": "91cf539613884bf4b9eb8e917f838703f023a04cfd31603ccbdf18f106a61858"
+    },
+    "scripts/asr_bench/fetch_fleurs_samples.py": {
+      "bytes": 2113,
+      "dest": "src/scripts/asr_bench/fetch_fleurs_samples.py",
+      "sha256": "83ca0f4ab7a5470ddda1d2ff0bff18b61c3ced7daf39c4e9e584b2c78418bba5"
+    },
+    "scripts/ep24/apostrophe_hygiene.py": {
+      "bytes": 14661,
+      "dest": "src/scripts/ep24/apostrophe_hygiene.py",
+      "sha256": "865812097d26ceed456cfdebe791e6d63feb6e62e8de4f923616dc5942629010"
+    },
+    "scripts/ep24/audit_country_stages.py": {
+      "bytes": 8888,
+      "dest": "src/scripts/ep24/audit_country_stages.py",
+      "sha256": "537759cbf59040ede2df4d2b5ff3580dfce6ef28c396094a59647e266f7d8b2c"
+    },
+    "scripts/ep24/audit_stage_coverage.py": {
+      "bytes": 8165,
+      "dest": "src/scripts/ep24/audit_stage_coverage.py",
+      "sha256": "5fa09236642e0be2338a9b77c05f386870a4528b11c923a505432952074395dc"
+    },
+    "scripts/ep24/bootstrap_ep24_mongodb.py": {
+      "bytes": 373,
+      "dest": "src/scripts/ep24/bootstrap_ep24_mongodb.py",
+      "sha256": "0c5e31c8e400e2d739c427d3460e13aea23bb6c6bcaa23c95c13cd864c390ba3"
+    },
+    "scripts/ep24/check_bilingual_coverage.py": {
+      "bytes": 4109,
+      "dest": "src/scripts/ep24/check_bilingual_coverage.py",
+      "sha256": "d6731b28c202d58d07684a34f0fdc451840efd0e5e81f086eb6ed46431fda457"
+    },
+    "scripts/ep24/check_coverage_table.py": {
+      "bytes": 5991,
+      "dest": "src/scripts/ep24/check_coverage_table.py",
+      "sha256": "f565df2df821301842a800731638d12f85561b70214c1914dbd847611f99bb29"
+    },
+    "scripts/ep24/check_party_gloss_consistency.py": {
+      "bytes": 6890,
+      "dest": "src/scripts/ep24/check_party_gloss_consistency.py",
+      "sha256": "669d53dc937589aee8862932e25cd9c74c5d1e9b5d00bf933292b31135c1b677"
+    },
+    "scripts/ep24/codebook_coverage.py": {
+      "bytes": 14224,
+      "dest": "src/scripts/ep24/codebook_coverage.py",
+      "sha256": "30b3800e6644a157da4f575c96d62507adfa55772758a9ad92f1f028d8623e0e"
+    },
+    "scripts/ep24/cyrillic_hygiene.py": {
+      "bytes": 9758,
+      "dest": "src/scripts/ep24/cyrillic_hygiene.py",
+      "sha256": "72e877b2782fd2d572756321f5ae60ff015614eb6dc92734c88751d3e4abc96f"
+    },
+    "scripts/ep24/english_label_coverage.py": {
+      "bytes": 3701,
+      "dest": "src/scripts/ep24/english_label_coverage.py",
+      "sha256": "dd0023ec39be00ecdc124de26c6b5bde0b597408825e5b6b449f2ba9cc9fd769"
+    },
+    "scripts/ep24/ep24_status.py": {
+      "bytes": 1618,
+      "dest": "src/scripts/ep24/ep24_status.py",
+      "sha256": "6d0a4853efcb96cf54b47dc6bd1d559c3e12bc2d22234ef0c7c0284f05c764d9"
+    },
+    "scripts/ep24/export_mongo_results.py": {
+      "bytes": 10046,
+      "dest": "src/scripts/ep24/export_mongo_results.py",
+      "sha256": "ff48402e7d9a0b11d45658b3f0d393e30bdd5c45e286bb39d09321b2e7c7536c"
+    },
+    "scripts/ep24/fold_fix.py": {
+      "bytes": 5376,
+      "dest": "src/scripts/ep24/fold_fix.py",
+      "sha256": "123dfca0e189b7086411e6dd11a108fc1866f8394bb444d848461698fa6e1383"
+    },
+    "scripts/ep24/privacy_gate.py": {
+      "bytes": 9106,
+      "dest": "src/scripts/ep24/privacy_gate.py",
+      "sha256": "1f37cce67e0c747531cb89c12a8515e892eb80ddd51cebd11575112331404f70"
+    },
+    "scripts/ep24/report_stage_coverage.py": {
+      "bytes": 7687,
+      "dest": "src/scripts/ep24/report_stage_coverage.py",
+      "sha256": "62ceaf40c1f78935974341bd57888834960d0afd5ef4104f77f8c26f24f586a7"
+    },
+    "scripts/ep24/step4_evidence_coverage.py": {
+      "bytes": 6868,
+      "dest": "src/scripts/ep24/step4_evidence_coverage.py",
+      "sha256": "7d305484164a28770c81bda535a8969b1ac81460d95a87776a0c39eea745b51a"
+    },
+    "scripts/roihu/aggregate_step8_events.py": {
+      "bytes": 3136,
+      "dest": "src/scripts/roihu/aggregate_step8_events.py",
+      "sha256": "8db13df52a5485b26d8b9181907f1e8f4d1a93bfac4fa7a3d014316b0f14a39e"
+    },
+    "scripts/roihu/benchmark_issue128_backends.py": {
+      "bytes": 12603,
+      "dest": "src/scripts/roihu/benchmark_issue128_backends.py",
+      "sha256": "232c04dfc36594078a69e26dbc833179507679ac2773a9ca653e132c3e405904"
+    },
+    "scripts/roihu/check_ep24_preprocess_runtime.py": {
+      "bytes": 2080,
+      "dest": "src/scripts/roihu/check_ep24_preprocess_runtime.py",
+      "sha256": "5fecaa3d089a62fc739bd67f7d27218dfd295755528d23328f1cc87d3e984e85"
+    },
+    "scripts/roihu/check_ep24_runtime.py": {
+      "bytes": 570,
+      "dest": "src/scripts/roihu/check_ep24_runtime.py",
+      "sha256": "c0bdea245e1a4a887a4aaaa3540f12ccb92eb742aba7759f10bf65042b2a1d06"
+    },
+    "scripts/roihu/preflight_steps_1_6.py": {
+      "bytes": 3865,
+      "dest": "src/scripts/roihu/preflight_steps_1_6.py",
+      "sha256": "f0994b9db9b451eff9f234ad42dc1686a9451a3765422aabb58a34ab0179ec6d"
+    },
+    "scripts/roihu/prepare_pipeline_run.py": {
+      "bytes": 4053,
+      "dest": "src/scripts/roihu/prepare_pipeline_run.py",
+      "sha256": "3550719b99f7ff7b08c28b7acb072e9d5df15427abc39b5c99b4f6b294dd7aa0"
+    },
+    "scripts/roihu/reset_ep24_and_restart.py": {
+      "bytes": 9114,
+      "dest": "src/scripts/roihu/reset_ep24_and_restart.py",
+      "sha256": "c2ea677a274a25e600eeae876f61e0c476017866eb1bd5e63f9aa03035f3b9cf"
+    },
+    "scripts/roihu/summarize_pipeline_run.py": {
+      "bytes": 5402,
+      "dest": "src/scripts/roihu/summarize_pipeline_run.py",
+      "sha256": "5afaa0ad20667d8b4316b49219cf48650361c56ee683d059ec17204082769578"
+    },
+    "scripts/roihu/validate_step_environment.py": {
+      "bytes": 5592,
+      "dest": "src/scripts/roihu/validate_step_environment.py",
+      "sha256": "99d3bcc2604b252647927f95b1482c493ccf4ec9bd3268e106fe802af2d92d63"
+    },
+    "step_0_roihu_import.py": {
+      "bytes": 6117,
+      "dest": "src/step_0_roihu_import.py",
+      "sha256": "446920565b063c7c48ebe81e76bb79d0e871cae11b9002e2372428478faf0e0b"
+    },
+    "step_1_roihu_preprocess.py": {
+      "bytes": 679,
+      "dest": "src/step_1_roihu_preprocess.py",
+      "sha256": "dbbf4888e33fcf845d22138f0872df0d8c4006fd6df64bb56a99d9be1c627dc7"
+    },
+    "step_2_roihu_frame.py": {
+      "bytes": 533,
+      "dest": "src/step_2_roihu_frame.py",
+      "sha256": "de716e63fbe3168fff6a6e53652624be3ab25933cb021f0a6df638ee8ee3d95b"
+    },
+    "step_3_roihu_video.py": {
+      "bytes": 1464,
+      "dest": "src/step_3_roihu_video.py",
+      "sha256": "b8f362424c4add0a50074c8abaaaffc69b473d0d5e2493fe649f1ee0c3f198e2"
+    },
+    "step_4_roihu_summary.py": {
+      "bytes": 370,
+      "dest": "src/step_4_roihu_summary.py",
+      "sha256": "2f5d6623f17e3f8175d6e7021ea1922f0015271a0d2038f096a4e4a34ef791bc"
+    },
+    "step_5_roihu_postprocess.py": {
+      "bytes": 381,
+      "dest": "src/step_5_roihu_postprocess.py",
+      "sha256": "2b136d6b176c737e3b9d708f49f6937f3be9cfaf4c63931a8ba6e1ec50bee262"
+    },
+    "step_6_roihu_discourse_analysis.py": {
+      "bytes": 432,
+      "dest": "src/step_6_roihu_discourse_analysis.py",
+      "sha256": "d1deb1db6a6c5ce52b36c37c7154d4c98cc7517069f7af918d101e3db9259025"
+    },
+    "step_7_roihu_discourse_network_analysis.py": {
+      "bytes": 35022,
+      "dest": "src/step_7_roihu_discourse_network_analysis.py",
+      "sha256": "a1896af68bb5a511388306b051dbde610eaa4944f22a37d35181e08c0d731526"
+    },
+    "step_8_roihu_social_network_analysis.py": {
+      "bytes": 22798,
+      "dest": "src/step_8_roihu_social_network_analysis.py",
+      "sha256": "9641fb2b90b1f5aebabbe62c70a0d87709137ce9faab94e33d84faf580ee7bca"
+    },
+    "step_9_roihu_rdf.py": {
+      "bytes": 585,
+      "dest": "src/step_9_roihu_rdf.py",
+      "sha256": "c61a8641d8836412e58db5d11bc31788610d5224ad0cd52e187b4549b269bc39"
+    }
+  },
+  "imported_at": "2026-10-28T17:31:45+00:00",
+  "imported_by": "tools/vendor_pipeline.py",
+  "license": "See upstream repository",
+  "pipeline_id": "ep24",
+  "source_ref": "db123759fe21b194275d87d6ccc3b7c4f98a2055",
+  "source_repository": "TomiToivio/LaclauGPT-Multimodal-Analysis",
+  "sync_policy": "Frozen snapshot. Upstream is not a runtime dependency. Re-import only by pinning a new SHA and recording the diff; never by pulling a branch."
+}
