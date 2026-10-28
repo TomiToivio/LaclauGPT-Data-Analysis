@@ -1,0 +1,424 @@
+"""Project EP24 CSV into RDF without changing historical analytical values.
+
+Uses only the Python standard library. Read docs/EP24_RDF.md for the contract.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import hashlib
+import json
+import logging
+import os
+import shutil
+import sqlite3
+import sys
+import time
+import uuid
+from datetime import UTC, datetime
+from pathlib import Path
+from urllib.parse import quote, urlsplit
+
+VERSION = "ep24-rdf-2"
+NS = "https://w3id.org/laclaugpt/ep24/"
+PROV = "http://www.w3.org/ns/prov#"
+RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+LOG = logging.getLogger("roihu_csv_rdf")
+EXTRA_COLUMNS = ["rdf_document_uri", "rdf_row_uri", "rdf_schema_version", "rdf_status"]
+
+
+def digest(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def uri(base: str, project: str, kind: str, key: str) -> str:
+    """Project-scoped, opaque stable identity; no names embedded in URIs."""
+    return f"{base.rstrip('/')}/{quote(project, safe='')}/{kind}/{digest(key)}"
+
+
+def literal(value: str) -> str:
+    # N-Triples accepts \uXXXX escapes for all control characters.
+    result = []
+    for char in value:
+        if char in ('"', "\\"):
+            result.append("\\" + char)
+        elif ord(char) < 32 or ord(char) == 127:
+            result.append(f"\\u{ord(char):04X}")
+        else:
+            result.append(char)
+    return '"' + "".join(result) + '"'
+
+
+def triple(subject: str, predicate: str, value: str, *, resource: bool = False) -> str:
+    obj = f"<{value}>" if resource else literal(value)
+    return f"<{subject}> <{predicate}> {obj} .\n"
+
+
+def json_records(value: str) -> list[dict]:
+    """Parse an additive JSON-array column without making RDF export fragile."""
+    if not value or not str(value).strip():
+        return []
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return [item for item in parsed if isinstance(item, dict)] if isinstance(parsed, list) else []
+
+
+def string_list(value: str) -> list[str]:
+    """Parse canonical JSON lists with a conservative legacy text fallback."""
+    if not value or not str(value).strip():
+        return []
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        parsed = None
+    if isinstance(parsed, list):
+        values = [str(item).strip() for item in parsed]
+    else:
+        values = [part.strip() for part in str(value).replace("\n", ";").split(";")]
+    return [item for item in values if item]
+
+
+def document_key(row: dict[str, str], dataset: str, row_number: int) -> tuple[str, str]:
+    # Never parse identifiers as numbers: leading zeroes and large video IDs matter.
+    for column in ("_storage_id", "video_id", "document_id", "videoId", "video_filename", "source_url", "url"):
+        if row.get(column, "").strip():
+            return json.dumps([dataset, column, row[column]], ensure_ascii=False), column
+    return json.dumps([dataset, "row", row_number]), "row-number-fallback"
+
+
+def project_row(row: dict[str, str], *, base: str, project: str, dataset: str,
+                row_number: int) -> tuple[str, str, str, list[str]]:
+    """Lossless cells plus conservative, explicitly labelled analytical projections."""
+    key, strategy = document_key(row, dataset, row_number)
+    document = uri(base, project, "document", key)
+    record = uri(base, project, "row", json.dumps([dataset, row_number]))
+    lines = [triple(document, RDF_TYPE, NS + "Document", resource=True),
+             triple(record, RDF_TYPE, NS + "CSVRow", resource=True),
+             triple(record, NS + "document", document, resource=True),
+             triple(record, NS + "identityStrategy", strategy),
+             triple(record, NS + "rowNumber", str(row_number))]
+    warnings = []
+    if strategy == "row-number-fallback":
+        warnings.append("No stable source ID; row identity changes if input is reordered")
+    for column, value in row.items():
+        if column in EXTRA_COLUMNS:
+            continue  # Do not embed stale RDF export metadata back into the graph.
+        cell = uri(base, project, "cell", json.dumps([dataset, row_number, column]))
+        lines.extend([triple(record, NS + "cell", cell, resource=True),
+                      triple(cell, RDF_TYPE, NS + "CSVCell", resource=True),
+                      triple(cell, NS + "column", column),
+                      triple(cell, NS + "value", value),
+                      triple(cell, PROV + "wasDerivedFrom", record, resource=True)])
+
+    # The legacy contract is one element^affect pair per line. This is a coding
+    # assertion, not a claim that an actor really feels or supports something.
+    for column, category in (("formula_of_populism_us", "us"),
+                             ("formula_of_populism_frontier", "frontier")):
+        for index, entry in enumerate(row.get(column, "").splitlines()):
+            if not entry.strip():
+                continue
+            if entry.count("^") > 1:
+                warnings.append(f"{column} line {index + 1}: malformed pair retained as raw cell")
+                continue
+            if "^" in entry:
+                element, affect = (part.strip() for part in entry.split("^", 1))
+                if not element or not affect:
+                    warnings.append(f"{column} line {index + 1}: malformed pair retained as raw cell")
+                    continue
+            else:
+                element, affect = entry.strip(), ""
+            assertion = uri(base, project, "coding", json.dumps([dataset, row_number, column, index]))
+            lines.extend([triple(assertion, RDF_TYPE, NS + "LaclauCoding", resource=True),
+                          triple(record, NS + "coding", assertion, resource=True),
+                          triple(assertion, NS + "category", category),
+                          triple(assertion, NS + "element", element)])
+            if affect:
+                lines.append(triple(assertion, NS + "affect", affect))
+            lines.extend([triple(assertion, NS + "assertionKind", "coded-origin-unspecified"),
+                          triple(assertion, PROV + "wasDerivedFrom", record, resource=True)])
+    # Explicit semantic projection of the cumulative EP24 record. Raw cells above
+    # remain lossless; these triples make the final knowledge graph queryable.
+    for column, predicate in (
+        ("country", "country"),
+        ("source_type", "platform"),
+        ("source_url", "sourceUrl"),
+        ("url", "sourceUrl"),
+        ("videoCreated", "createdAt"),
+    ):
+        value = row.get(column, "").strip()
+        if value:
+            lines.append(triple(document, NS + predicate, value))
+
+    author = (row.get("author_username", "") or row.get("authorUniqueId", "")).strip()
+    if author:
+        account = uri(base, project, "account", author)
+        lines.extend([
+            triple(account, RDF_TYPE, NS + "Account", resource=True),
+            triple(account, NS + "label", author),
+            triple(document, NS + "authoredBy", account, resource=True),
+            triple(account, PROV + "wasDerivedFrom", record, resource=True),
+        ])
+
+    for column, kind, predicate in (
+        ("entities", "Entity", "mentionsEntity"),
+        ("themes", "Theme", "hasTheme"),
+    ):
+        for label in string_list(row.get(column, "")):
+            node = uri(base, project, kind.lower(), label)
+            lines.extend([
+                triple(node, RDF_TYPE, NS + kind, resource=True),
+                triple(node, NS + "label", label),
+                triple(document, NS + predicate, node, resource=True),
+                triple(node, PROV + "wasDerivedFrom", record, resource=True),
+            ])
+
+    # Step 7: retain the actor-concept qualifier as a reified discourse
+    # statement, NEVER as a social actor-actor relationship.
+    if row.get("dna_status", "").strip().lower() == "ok":
+        for index, statement in enumerate(json_records(row.get("dna_statements_json", ""))):
+            actor = str(statement.get("organization") or statement.get("actor_name_raw") or "").strip()
+            concept = str(statement.get("concept") or statement.get("concept_label_raw") or "").strip()
+            if not actor or not concept:
+                warnings.append("DNA statement lacks actor/concept; retained in raw cell")
+                continue
+            sid = str(statement.get("statement_id") or "").strip() or digest(
+                json.dumps([key, index, actor, concept], ensure_ascii=False))
+            statement_uri = uri(base, project, "dna-statement", sid)
+            actor_uri = uri(base, project, "dna-actor", str(statement.get("actor_id") or actor))
+            concept_uri = uri(base, project, "dna-concept", str(statement.get("concept_id") or concept))
+            lines.extend([
+                triple(statement_uri, RDF_TYPE, NS + "DNAStatement", resource=True),
+                triple(document, NS + "dnaStatement", statement_uri, resource=True),
+                triple(statement_uri, NS + "dnaActor", actor_uri, resource=True),
+                triple(statement_uri, NS + "dnaConcept", concept_uri, resource=True),
+                triple(actor_uri, RDF_TYPE, NS + "Actor", resource=True),
+                triple(actor_uri, NS + "label", actor),
+                triple(concept_uri, RDF_TYPE, NS + "DiscourseConcept", resource=True),
+                triple(concept_uri, NS + "label", concept),
+                triple(statement_uri, PROV + "wasDerivedFrom", record, resource=True),
+            ])
+            agreement = statement.get("agreement")
+            if agreement is not None and str(agreement).strip() != "":
+                # 0 is a legitimate opposition qualifier; never interpret as false.
+                qualifier = {"1": "support", "0": "oppose"}.get(str(agreement).strip(), "uncertain")
+                lines.append(triple(statement_uri, NS + "agreement", qualifier))
+            for field, pred in (("evidence_quote", "evidenceQuote"),
+                                ("date_time", "statementTime"),
+                                ("proposition", "proposition"),
+                                ("network_layer", "networkLayer")):
+                val = str(statement.get(field) or "").strip()
+                if val:
+                    lines.append(triple(statement_uri, NS + pred, val))
+
+    sna_nodes: dict[str, str] = {}
+    for node_data in (json_records(row.get("sna_nodes_json", "")) if row.get("sna_status", "").strip().lower() == "ok" else []):
+        node_id = str(node_data.get("node_id", "")).strip()
+        label = str(node_data.get("label", "")).strip()
+        if not node_id:
+            continue
+        node = uri(base, project, "sna-node", node_id)
+        sna_nodes[node_id] = node
+        lines.extend([
+            triple(node, RDF_TYPE, NS + "SNANode", resource=True),
+            triple(node, NS + "nodeId", node_id),
+            triple(node, NS + "nodeType", str(node_data.get("node_type", "actor"))),
+            triple(node, PROV + "wasDerivedFrom", record, resource=True),
+            triple(document, NS + "snaNode", node, resource=True),
+        ])
+        if label:
+            lines.append(triple(node, NS + "label", label))
+
+    for edge_data in (json_records(row.get("sna_edges_json", "")) if row.get("sna_status", "").strip().lower() == "ok" else []):
+        edge_id = str(edge_data.get("edge_id", "")).strip()
+        source_id = str(edge_data.get("source", "")).strip()
+        target_id = str(edge_data.get("target", "")).strip()
+        relation = str(
+            edge_data.get("edge_type") or edge_data.get("relation_type") or ""
+        ).strip()
+        evidence = str(edge_data.get("evidence_quote", "")).strip()
+        if not edge_id or not source_id or not target_id or not relation:
+            warnings.append("SNA edge missing edge_id/source/target/relation; retained as raw cell")
+            continue
+        source_node = sna_nodes.get(source_id) or uri(base, project, "sna-node", source_id)
+        target_node = sna_nodes.get(target_id) or uri(base, project, "sna-node", target_id)
+        edge = uri(base, project, "sna-edge", edge_id)
+        lines.extend([
+            triple(edge, RDF_TYPE, NS + "SNAEdge", resource=True),
+            triple(edge, NS + "edgeId", edge_id),
+            triple(edge, NS + "source", source_node, resource=True),
+            triple(edge, NS + "target", target_node, resource=True),
+            triple(edge, NS + "relationType", relation),
+            triple(edge, NS + "directed", str(bool(edge_data.get("directed", True))).lower()),
+            triple(edge, PROV + "wasDerivedFrom", record, resource=True),
+            triple(document, NS + "snaEdge", edge, resource=True),
+        ])
+        if evidence:
+            lines.append(triple(edge, NS + "evidenceQuote", evidence))
+        layer = str(edge_data.get("network_layer") or "social").strip()
+        lines.append(triple(edge, NS + "networkLayer", layer))
+        item_id = str(edge_data.get("canonical_item_id", "")).strip()
+        if item_id:
+            lines.append(triple(edge, NS + "canonicalItemId", item_id))
+
+    if row.get("sna_metrics_json", "").strip():
+        metrics = uri(base, project, "sna-metrics", key)
+        lines.extend([
+            triple(metrics, RDF_TYPE, NS + "SNAMetrics", resource=True),
+            triple(document, NS + "snaMetrics", metrics, resource=True),
+            triple(metrics, NS + "json", row["sna_metrics_json"]),
+            triple(metrics, PROV + "wasDerivedFrom", record, resource=True),
+        ])
+
+    return document, record, "".join(lines), warnings
+
+
+def validate_header(header: list[str] | None) -> list[str]:
+    if not header or any(not name for name in header) or len(set(header)) != len(header):
+        raise ValueError("CSV must have nonempty, unique column names")
+    # A Mongo-based Step 9 rerun may contain the previous RDF output columns.
+    # Recompute and replace them rather than rejecting otherwise valid inputs.
+    return header
+
+
+def export(args: argparse.Namespace) -> dict:
+    started = time.monotonic()
+    source = args.input.resolve()
+    output = args.output_dir.resolve()
+    if output.exists():
+        raise ValueError("Output directory already exists; choose a new directory to preserve edits")
+    if not source.is_file():
+        raise ValueError(f"Input CSV does not exist: {source}")
+    if args.limit is not None and args.limit < 1:
+        raise ValueError("--limit must be positive")
+    parsed = urlsplit(args.base_uri)
+    if (parsed.scheme not in {"https", "http"} or not parsed.netloc or parsed.query
+            or parsed.fragment or any(c.isspace() or c in '<>"{}|^`\\' for c in args.base_uri)):
+        raise ValueError("--base-uri must be a plain absolute HTTP(S) URI without query/fragment")
+    if not args.project.strip() or not args.dataset_id.strip():
+        raise ValueError("Project and dataset IDs must not be empty")
+    csv.field_size_limit(sys.maxsize)
+    # Snapshot to disk, not RAM: later edits to the source cannot create a mixed export.
+    # The output directory is deliberately exclusive to this run.
+    LOG.info("stage=%s input=%s output=%s checkpoint=%s model=none",
+             VERSION, source, output, args.checkpoint)
+    if args.dry_run:
+        with source.open(encoding="utf-8-sig", newline="") as stream:
+            header = validate_header(csv.DictReader(stream).fieldnames)
+        LOG.info("dry-run validated %s columns; no outputs created", len(header))
+        return {"status": "dry-run", "columns": header}
+    output.mkdir(parents=True, exist_ok=False)
+    snapshot = output / "source.csv"
+    file_hash = hashlib.sha256()
+    with source.open("rb") as incoming, snapshot.open("xb") as outgoing:
+        for chunk in iter(lambda: incoming.read(1024 * 1024), b""):
+            file_hash.update(chunk)
+            outgoing.write(chunk)
+    code_hash = hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
+    config = json.dumps([VERSION, code_hash, args.base_uri, args.project, args.dataset_id])
+    run_id = str(uuid.uuid4())
+    run = uri(args.base_uri, args.project, "run", run_id)
+    source_uri = uri(args.base_uri, args.project, "source-file", file_hash.hexdigest())
+    args.checkpoint.parent.mkdir(parents=True, exist_ok=True)
+    count = warnings_count = hits = 0
+    try:
+        with sqlite3.connect(args.checkpoint, timeout=60) as db:
+            db.execute("CREATE TABLE IF NOT EXISTS rdf_rows_v1 "
+                       "(fingerprint TEXT PRIMARY KEY, payload TEXT NOT NULL)")
+            with (snapshot.open(encoding="utf-8-sig", newline="") as incoming,
+                  (output / "graph.nt.partial").open("w", encoding="utf-8") as graph,
+                  (output / "final.csv.partial").open("w", encoding="utf-8", newline="") as final,
+                  (output / "warnings.jsonl").open("w", encoding="utf-8") as diagnostics):
+                reader = csv.DictReader(incoming)
+                columns = validate_header(reader.fieldnames)
+                writer = csv.DictWriter(final, fieldnames=list(dict.fromkeys(columns + EXTRA_COLUMNS)))
+                writer.writeheader()
+                graph.write(triple(run, RDF_TYPE, PROV + "Activity", resource=True))
+                graph.write(triple(run, NS + "stageVersion", VERSION))
+                graph.write(triple(run, NS + "codeSHA256", code_hash))
+                graph.write(triple(run, PROV + "used", source_uri, resource=True))
+                graph.write(triple(source_uri, NS + "sha256", file_hash.hexdigest()))
+                for number, row in enumerate(reader, start=1):
+                    if args.limit is not None and number > args.limit:
+                        break
+                    if None in row or any(value is None for value in row.values()):
+                        raise ValueError(f"CSV row {number}: inconsistent number of fields")
+                    fingerprint = digest(config + json.dumps([number, row], ensure_ascii=False))
+                    cached = db.execute("SELECT payload FROM rdf_rows_v1 WHERE fingerprint=?",
+                                        (fingerprint,)).fetchone()
+                    if cached:
+                        document, record, triples, warnings = json.loads(cached[0])
+                        hits += 1
+                    else:
+                        document, record, triples, warnings = project_row(
+                            row, base=args.base_uri, project=args.project,
+                            dataset=args.dataset_id, row_number=number)
+                        db.execute("INSERT OR REPLACE INTO rdf_rows_v1 VALUES (?, ?)",
+                                   (fingerprint, json.dumps([document, record, triples, warnings])))
+                        db.commit()
+                    graph.write(triples)
+                    graph.write(triple(record, PROV + "wasDerivedFrom", source_uri, resource=True))
+                    graph.write(triple(record, PROV + "wasGeneratedBy", run, resource=True))
+                    writer.writerow({**row, "rdf_document_uri": document, "rdf_row_uri": record,
+                                     "rdf_schema_version": VERSION,
+                                     "rdf_status": "warning" if warnings else "ok"})
+                    for warning in warnings:
+                        diagnostics.write(json.dumps({"row": number, "warning": warning}) + "\n")
+                        LOG.warning("row=%s %s", number, warning)
+                    warnings_count += len(warnings)
+                    count += 1
+                    LOG.info("row=%s id=%s cache=%s status=%s", number, document,
+                             "hit" if cached else "miss", "warning" if warnings else "ok")
+            for name in ("graph.nt", "final.csv"):
+                (output / (name + ".partial")).rename(output / name)
+            # N-Triples is a Turtle subset. Keep the historical .nt artifact and
+            # expose the same deterministic graph as .ttl for RDF tooling.
+            shutil.copyfile(output / "graph.nt", output / "graph.ttl")
+        manifest = {"status": "complete-with-warnings" if warnings_count else "complete",
+                    "stage": VERSION, "run_id": run_id, "completed_at": datetime.now(UTC).isoformat(),
+                    "source": str(source), "source_sha256": file_hash.hexdigest(),
+                    "code_sha256": code_hash, "project": args.project, "dataset_id": args.dataset_id,
+                    "base_uri": args.base_uri, "rows": count, "warnings": warnings_count,
+                    "cache_hits": hits, "limit": args.limit, "elapsed_seconds": time.monotonic() - started}
+        (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+        LOG.info("complete rows=%s warnings=%s cache_hits=%s elapsed=%.2fs outputs=%s",
+                 count, warnings_count, hits, manifest["elapsed_seconds"], output)
+        return manifest
+    except Exception:
+        LOG.exception("Export incomplete at %s; checkpoint retained. Retry with a NEW output directory", output)
+        raise
+
+
+def main(argv: list[str] | None = None) -> int:
+    root = Path(os.environ.get("LACLAUGPT_MULTIMODAL_PRIVATE_ROOT", "."))
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--input", type=Path, default=root / "ep24_fi.csv")
+    parser.add_argument("--output-dir", type=Path, default=root / "rdf" / datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ"))
+    parser.add_argument("--checkpoint", type=Path, default=root / "database" / "rdf.sqlite3")
+    parser.add_argument("--project", default="ep24")
+    parser.add_argument("--dataset-id", default=None, help="Stable corpus name; defaults to input file stem")
+    parser.add_argument("--base-uri", default="https://data.example/laclaugpt")
+    parser.add_argument("--limit", type=int)
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--debug", action="store_true")
+    args = parser.parse_args(argv)
+    args.dataset_id = args.dataset_id or args.input.stem
+    logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO,
+                        format="%(asctime)s %(levelname)s %(message)s")
+    try:
+        export(args)
+        orchestrated_output = os.getenv("LACLAUGPT_OUTPUT_CSV")
+        if orchestrated_output and not args.dry_run:
+            target = Path(orchestrated_output)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(args.output_dir / "final.csv", target)
+    except (OSError, ValueError, csv.Error, sqlite3.Error) as exc:
+        LOG.error("%s", exc)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
