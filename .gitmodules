@@ -1,0 +1,8 @@
+[submodule "external/ep24-current"]
+	path = external/ep24-current
+	url = https://github.com/TomiToivio/LaclauGPT-Multimodal-Analysis.git
+	branch = main
+[submodule "external/ep24-legacy"]
+	path = external/ep24-legacy
+	url = https://github.com/TomiToivio/LaclauGPT-Multimodal-Analysis.git
+	branch = legacy
