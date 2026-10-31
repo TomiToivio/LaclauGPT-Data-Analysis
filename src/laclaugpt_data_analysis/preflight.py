@@ -51,6 +51,33 @@ def _check_redis(settings: Any) -> dict[str, Any]:
         return {"configured": True, "reachable": False, "error": type(exc).__name__}
 
 
+def _s3_failure_detail(exc: Exception) -> dict[str, Any]:
+    """Name the provider's own failure code, not just the exception class.
+
+    Every S3 refusal arrives as ``botocore.exceptions.ClientError``, so reporting
+    ``type(exc).__name__`` alone made a fully exhausted Allas quota indistinguishable
+    from a permissions or endpoint fault. That cost 59 consecutive analysis cycles:
+    each one printed ``"error": "ClientError"`` and nothing else.
+
+    The provider code and HTTP status are safe to report -- they carry no URL, key
+    or credential -- and they are the difference between "raise the quota" and
+    "fix the credentials". Duck-typed on ``.response`` so a botocore that is not
+    installed still reports the class.
+    """
+    detail: dict[str, Any] = {"error": type(exc).__name__}
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return detail
+    error = response.get("Error")
+    code = error.get("Code") if isinstance(error, dict) else None
+    if code:
+        detail["error_code"] = str(code)
+    metadata = response.get("ResponseMetadata")
+    if isinstance(metadata, dict) and isinstance(metadata.get("HTTPStatusCode"), int):
+        detail["http_status"] = metadata["HTTPStatusCode"]
+    return detail
+
+
 def _check_object_store(settings: Any) -> dict[str, Any]:
     if settings.object_backend != "s3":
         return {"backend": settings.object_backend, "configured": False}
@@ -93,11 +120,11 @@ def _check_object_store(settings: Any) -> dict[str, Any]:
             return report
         report["reachable"] = False
         report["writeable"] = False
-        report["error"] = type(exc).__name__
+        report.update(_s3_failure_detail(exc))
     except Exception as exc:  # noqa: BLE001
         report["reachable"] = False
         report["writeable"] = False
-        report["error"] = type(exc).__name__
+        report.update(_s3_failure_detail(exc))
     return report
 
 
@@ -211,10 +238,22 @@ def preflight_report() -> dict[str, Any]:
     problems.extend(deployment_errors)
     checks = report["checks"]
     problems.extend(_configured_backend_problems(checks))
-    if checks["object_store"].get("reachable") is False:
+    store_check = checks["object_store"]
+    provider_code = store_check.get("error_code")
+    if store_check.get("reachable") is False and not provider_code:
+        # No provider code: the request never got an answer (DNS, TLS, timeout).
         problems.append("object store unreachable")
-    if checks["object_store"].get("writeable") is False:
-        problems.append("object store is not writeable")
+    if store_check.get("writeable") is False:
+        if "quota" in str(provider_code or "").lower():
+            # A quota refusal means the store answered and is full; naming it as a
+            # generic write failure sends the operator to the wrong remedy (#396).
+            problems.append(
+                f"object store quota exhausted: every write is refused ({provider_code})"
+            )
+        elif provider_code:
+            problems.append(f"object store is not writeable: {provider_code}")
+        else:
+            problems.append("object store is not writeable")
     if checks["ollama"].get("reachable") is False:
         problems.append("ollama endpoint unreachable")
     if checks["ollama"].get("model_present") is False:
