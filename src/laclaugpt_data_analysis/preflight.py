@@ -240,10 +240,17 @@ def preflight_report() -> dict[str, Any]:
     problems.extend(_configured_backend_problems(checks))
     store_check = checks["object_store"]
     provider_code = store_check.get("error_code")
-    if store_check.get("reachable") is False and not provider_code:
+    store_required = bool(getattr(settings, "object_store_required", True))
+    report["object_store_required"] = store_required
+    if not store_required:
+        # The flag is not a silencer: the check still runs and its result stays in `checks`, so an operator
+        # sees "quota exhausted" and sees that this run chose to continue anyway. What it stops is a full
+        # bucket for a media pipeline blocking a text-only analysis run (#407 / #396).
+        report["checks"]["object_store"]["blocking"] = False
+    if store_required and store_check.get("reachable") is False and not provider_code:
         # No provider code: the request never got an answer (DNS, TLS, timeout).
         problems.append("object store unreachable")
-    if store_check.get("writeable") is False:
+    if store_required and store_check.get("writeable") is False:
         if "quota" in str(provider_code or "").lower():
             # A quota refusal means the store answered and is full; naming it as a
             # generic write failure sends the operator to the wrong remedy (#396).
