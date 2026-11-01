@@ -156,17 +156,30 @@ def test_collection_mongo_contract_uses_records_collection() -> None:
     assert collection_records_name(settings) == "ai26__records"
 
 
-def test_wrong_collection_handoff_run_is_rejected(tmp_path: Path) -> None:
+def test_capture_run_is_not_required_to_equal_frozen_analysis_run(tmp_path: Path) -> None:
     binding = make_binding(tmp_path)
-    with pytest.raises(ValueError, match="handoff run"):
-        binding.task_from_handoff(
+    for capture_run in ("20261022T143705Z", "20260916T193510Z", "run-001", ""):
+        task = binding.task_from_handoff(
             {
                 "status": "ready",
                 "handoff_key": "handoff-123",
-                "run_id": "other-run",
+                "run_id": capture_run,
                 "source_url": "https://example.invalid/source/1",
             }
         )
+        assert task.run_id == "run-001"
+        assert task.idempotency_key == "handoff-123"
+        binding.validate_task(task)
+
+
+@pytest.mark.parametrize("missing", ["source_url", "handoff_key"])
+def test_malformed_ready_handoff_still_rejected(tmp_path: Path, missing: str) -> None:
+    binding = make_binding(tmp_path)
+    handoff = {"status": "ready", "run_id": "capture",
+               "handoff_key": "handoff-123", "source_url": "https://example.invalid/1"}
+    handoff[missing] = ""
+    with pytest.raises(ValueError, match=missing):
+        binding.task_from_handoff(handoff)
 
 
 def test_provenance_contains_worker_run_model_and_hashes(tmp_path: Path) -> None:
