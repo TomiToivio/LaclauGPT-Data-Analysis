@@ -371,11 +371,17 @@ def build_media_stager(settings: Settings) -> MediaStager | None:
     )
 
 
-def ready_handoff_query(*, project_id: str, run_id: str, not_before: str | None) -> dict[str, Any]:
+def ready_handoff_query(*, project_id: str, run_id: str | None = None,
+                        not_before: str | None = None,
+                        platform: str | None = None) -> dict[str, Any]:
     """Build the canonical Collection -> Analysis handoff query.
 
     Study date boundaries come from the Phase 1 protocol profile. Keeping this
     helper pure makes the boundary contract testable without a live MongoDB.
+
+    ``run_id`` is accepted and deliberately not used as a filter: it is the producer's capture run, not the
+    analysis run (#407). ``platform`` is an opt-in scoped backfill, because source_priority places an entire
+    stratum last — the 1,172 ready X records sit behind 2,652 higher-priority ones.
     """
     query: dict[str, Any] = {
         "project_id": project_id,
@@ -385,6 +391,10 @@ def ready_handoff_query(*, project_id: str, run_id: str, not_before: str | None)
     }
     if not_before:
         query["handoff.published_at"] = {"$gt": not_before}
+    if platform:
+        # Scoped backfill: source_priority puts an entire stratum last, so without this a bounded cycle
+        # cannot reach the platform it is meant to repair.
+        query["source.platform"] = platform
     return query
 
 
@@ -397,6 +407,8 @@ class MongoCollectionHandoff:
         ]
         self.project_id = settings.project_id
         self.not_before = not_before
+        #: Optional scoped backfill (LACLAUGPT_HANDOFF_PLATFORM). See ready_handoff_query.
+        self.platform = getattr(settings, "handoff_platform", None)
 
     def resolve(self, source_url: str) -> CanonicalRecord:
         row = self.collection.find_one({"project_id": self.project_id, "source_url": source_url})
@@ -405,14 +417,17 @@ class MongoCollectionHandoff:
         clean = {key: value for key, value in row.items() if key in CanonicalRecord.model_fields}
         return CanonicalRecord.model_validate(clean)
 
-    def ready_handoffs(self, run_id: str, *, limit: int, offset: int = 0) -> list[dict[str, Any]]:
+    def ready_handoffs(self, run_id: str, *, limit: int, offset: int = 0,
+                       platform: str | None = None) -> list[dict[str, Any]]:
         if limit < 1:
             return []
+        platform = self.platform if platform is None else platform
         cursor = self.collection.find(
             ready_handoff_query(
                 project_id=self.project_id,
                 run_id=run_id,
                 not_before=self.not_before,
+                platform=platform,
             ),
             {"handoff": 1, "_id": 0},
         ).sort(
