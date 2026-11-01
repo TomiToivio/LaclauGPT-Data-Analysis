@@ -266,9 +266,11 @@ class WorkerBinding:
             raise ValueError("only ready Collection handoffs may be queued")
         source_url = str(handoff.get("source_url") or "")
         handoff_key = str(handoff.get("handoff_key") or "")
-        run_id = str(handoff.get("run_id") or "")
-        if run_id != self.manifest.run_id:
-            raise ValueError("Collection handoff run does not match frozen run manifest")
+        # Collection run_id identifies the ingestion/capture run, not the frozen
+        # analysis run. Task identity is always assigned from the analysis manifest.
+        # Existing browser captures must not be mutated to make them seedable.
+        if not source_url or not handoff_key:
+            raise ValueError("ready handoff needs source_url and handoff_key")
         task = TaskEnvelope(
             task_id=f"analysis:{handoff_key}",
             idempotency_key=handoff_key,
@@ -378,7 +380,8 @@ def ready_handoff_query(*, project_id: str, run_id: str, not_before: str | None)
     query: dict[str, Any] = {
         "project_id": project_id,
         "handoff.status": "ready",
-        "handoff.run_id": run_id,
+        # Do not filter handoff.run_id: it is a producer/capture provenance id.
+        # Project, readiness and publication floor define the eligible corpus.
     }
     if not_before:
         query["handoff.published_at"] = {"$gt": not_before}
@@ -720,8 +723,7 @@ def seed_ready_tasks(
 ) -> int:
     """Queue ready handoffs, quarantining any that cannot become a task (issue #382).
 
-    A ready handoff that is missing its identity -- no ``source_url``, no ``handoff_key``, or a
-    ``run_id`` that does not match the frozen manifest -- raises inside
+    A ready handoff that is missing its identity -- no ``source_url`` or no ``handoff_key`` -- raises inside
     :meth:`WorkerBinding.task_from_handoff`. Before this change that exception propagated out of
     the whole seeding pass, so **one malformed row stopped every remaining record in the batch and
     every later tick re-read the same row and failed again**: the pipeline stalled until a human
