@@ -64,6 +64,10 @@ class Settings:
     mongo_url: str | None = None
     mongo_database: str = "laclaugpt"
     mongo_vector_index: str = "laclaugpt_record_embedding"
+    #: Whether the object store is a hard precondition for this run. Media pipelines write there and must
+    #: fail when it is full; text-only analysis (#407) does not touch it, and refusing to start the worker
+    #: because an unrelated bucket is full is how a corpus gap survives for a week (#396).
+    object_store_required: bool = True
     object_backend: str = "local"
     s3_endpoint_url: str | None = None
     s3_bucket: str | None = None
@@ -149,6 +153,7 @@ def load_settings() -> Settings:
         mongo_url=_env("MONGODB_URI") or _env("MONGO_URL"),
         mongo_database=_env("MONGODB_DATABASE") or _env("MONGO_DATABASE", "laclaugpt") or "laclaugpt",
         mongo_vector_index=_env("MONGODB_VECTOR_INDEX") or _env("MONGO_VECTOR_INDEX", "laclaugpt_record_embedding") or "laclaugpt_record_embedding",
+        object_store_required=_bool_env("OBJECT_STORE_REQUIRED", True),
         object_backend=_env("OBJECT_BACKEND", "local") or "local",
         s3_endpoint_url=_env("S3_ENDPOINT") or _env("S3_ENDPOINT_URL"),
         s3_bucket=_env("S3_BUCKET"),
