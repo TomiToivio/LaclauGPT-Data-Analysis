@@ -33,7 +33,12 @@ def test_ready_handoff_query_uses_configured_strict_date_boundary():
         not_before=datetime(2026, 9, 1, tzinfo=UTC).isoformat(),
     )
     assert query["project_id"] == "ai26"
-    assert query["handoff.run_id"] == "run-1"
+    assert "handoff.run_id" not in query
+    assert query == {
+        "project_id": "ai26",
+        "handoff.status": "ready",
+        "handoff.published_at": {"$gt": "2026-09-01T00:00:00+00:00"},
+    }
     assert query["handoff.status"] == "ready"
     assert query["handoff.published_at"] == {"$gt": "2026-09-01T00:00:00+00:00"}
 
