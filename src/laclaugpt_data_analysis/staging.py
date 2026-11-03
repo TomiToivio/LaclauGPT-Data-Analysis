@@ -7,7 +7,8 @@ must exist locally. This module owns that step:
 - reuse a verified local cache hit instead of re-downloading;
 - download missing objects into a bounded, private cache area;
 - verify size and, where the record supplies one, the SHA-256 checksum;
-- report a retriable failure separately from a permanently missing object;
+- report a retriable failure separately from a permanently missing object, and a
+  permanently unusable reference separately from a retriable transport failure;
 - keep object identity and staging outcome in provenance without credentials;
 - prune the cache by age/size so a server disk cannot grow forever;
 - never mutate or delete the canonical remote object.
@@ -117,7 +118,7 @@ class StagedObject:
 
     ref: str
     path: Path | None
-    status: str  # cached | downloaded | missing | corrupt | failed
+    status: str  # cached | downloaded | missing | rejected | corrupt | failed
     byte_size: int | None = None
     checksum: str | None = None
     cache_key: str = ""
@@ -353,6 +354,27 @@ class MediaStager:
             temp.unlink(missing_ok=True)
             return StagedObject(ref=ref, path=None, status="missing", cache_key=key,
                                 reason="object_not_found")
+        except ValueError as exc:
+            # The store refused the reference by construction: ``S3ArtifactStore``
+            # raises ValueError for a reference outside its configured bucket. An
+            # immutable task cannot become referable by being replayed, so this is
+            # permanent, not transient (#413). Classifying it as ``failed`` made
+            # every AI26 X record abort in staging, because an X capture carries a
+            # capture-side relative path in ``source.raw_ref`` beside the real
+            # ``s3://`` object, and the abort path only checks ``retriable``.
+            temp.unlink(missing_ok=True)
+            logger.warning(
+                "staged reference rejected by the object store (permanent): ref=%s reason=%s",
+                ref,
+                exc,
+            )
+            return StagedObject(
+                ref=ref,
+                path=None,
+                status="rejected",
+                cache_key=key,
+                reason=f"ref_rejected:{type(exc).__name__}",
+            )
         except Exception as exc:  # noqa: BLE001
             temp.unlink(missing_ok=True)
             return StagedObject(
