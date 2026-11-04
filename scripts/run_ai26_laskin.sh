@@ -295,10 +295,15 @@ if [[ "$WORKER_STATUS" -eq 0 && "${LACLAUGPT_PERIODIC_REPORTS:-1}" != "0" ]]; th
     elif [[ "$REPORT_STATUS" -eq 137 ]]; then
       log "AI26 Phase 1 periodic report was SIGKILLed after the ${REPORT_MAX_SECONDS}s ceiling (watchdog escalation); see issue #360."
     fi
-    if [[ "$REPORT_STATUS" -ne 0 ]]; then
+    REPORT_DEGRADED=0
+    if [[ "$REPORT_STATUS" -eq 124 || "$REPORT_STATUS" -eq 137 ]]; then
+      REPORT_DEGRADED=1
+      log "AI26 Phase 1 periodic report degraded status=$REPORT_STATUS; worker cycle is graded healthy (#416)"
+    fi
+    if [[ "$REPORT_STATUS" -ne 0 && "$REPORT_DEGRADED" -eq 0 ]]; then
       log "AI26 Phase 1 periodic report failed status=$REPORT_STATUS"
       FINAL_STATUS=4
-    else
+    elif [[ "$REPORT_DEGRADED" -eq 0 ]]; then
       log "AI26 Phase 1 periodic report end status=0"
     fi
   else

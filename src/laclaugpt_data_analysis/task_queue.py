@@ -26,8 +26,12 @@ def bounded_failure_diagnostics(
     raw = str(diagnostics.get("response_raw") or "")
     finish_reason = str(diagnostics.get("finish_reason") or "")
     outcome = str(diagnostics.get("terminal_reason") or "")
+    # An infrastructure failure is a fact about the provider, not about the model's output, and it is a
+    # single boolean: it survives bounding so an operator can tell "the endpoint was down" from "the
+    # document was unanalysable" without reading the error string (#414).
+    infrastructure = diagnostics.get("infrastructure") is True
     if not raw and not finish_reason and not outcome:
-        return {}
+        return {"infrastructure": True} if infrastructure else {}
     result = {
         "response_raw": raw[:FAILURE_RESPONSE_RAW_MAX_CHARS],
         "response_raw_chars": len(raw),
@@ -35,6 +39,8 @@ def bounded_failure_diagnostics(
         "finish_reason": finish_reason,
         "diagnostic_only": True,
     }
+    if infrastructure:
+        result["infrastructure"] = True
     if outcome == "unanalysable_within_budget":
         result["terminal_reason"] = outcome
         for key in (
