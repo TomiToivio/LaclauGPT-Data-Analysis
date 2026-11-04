@@ -55,7 +55,7 @@ CYCLE_KILL_GRACE_SECONDS=${LACLAUGPT_CYCLE_KILL_GRACE_SECONDS:-30}
 # (10:33->10:37, 11:53->11:57, 13:09->13:13, 15:46->15:50), so 15 min clears it
 # by ~3.5x and still breaks a pathological hang. The worker has had exactly this
 # watchdog since #332; the report did not (issue #360).
-REPORT_MAX_SECONDS=${LACLAUGPT_REPORT_MAX_SECONDS:-900}
+REPORT_MAX_SECONDS=${LACLAUGPT_REPORT_MAX_SECONDS:-1800}
 if [[ ! "$REPORT_MAX_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
   printf 'ERROR: LACLAUGPT_REPORT_MAX_SECONDS must be a positive integer (seconds)\n' >&2
   exit 2
@@ -290,12 +290,14 @@ if [[ "$WORKER_STATUS" -eq 0 && "${LACLAUGPT_PERIODIC_REPORTS:-1}" != "0" ]]; th
       "$REPORT_BIN" --run-id "$LACLAUGPT_RUN_ID"
     REPORT_STATUS=$?
     set -e
-    if [[ "$REPORT_STATUS" -eq 124 ]]; then
-      log "AI26 Phase 1 periodic report CEILING exceeded after ${REPORT_MAX_SECONDS}s; terminated by TERM (then KILL after ${CYCLE_KILL_GRACE_SECONDS}s). The next tick recomputes the same window; see issue #360."
-    elif [[ "$REPORT_STATUS" -eq 137 ]]; then
-      log "AI26 Phase 1 periodic report was SIGKILLed after the ${REPORT_MAX_SECONDS}s ceiling (watchdog escalation); see issue #360."
-    fi
-    if [[ "$REPORT_STATUS" -ne 0 ]]; then
+    if [[ "$REPORT_STATUS" -eq 124 || "$REPORT_STATUS" -eq 137 ]]; then
+      # A ceiling breach means "the report did not finish", not "the pipeline failed"
+      # (issue #416). The worker in this cycle already succeeded, so grading the cycle
+      # as failed turned five healthy cycles a day into five apparent failures. The
+      # distinction stays visible: report_status=timeout, and the line says so.
+      REPORT_STATUS="timeout"
+      log "AI26 Phase 1 periodic report CEILING exceeded after ${REPORT_MAX_SECONDS}s; report_status=timeout worker_status=${WORKER_STATUS} status=${WORKER_STATUS} (worker healthy; next tick recomputes the same window; see issues #360 and #416)"
+    elif [[ "$REPORT_STATUS" -ne 0 ]]; then
       log "AI26 Phase 1 periodic report failed status=$REPORT_STATUS"
       FINAL_STATUS=4
     else
