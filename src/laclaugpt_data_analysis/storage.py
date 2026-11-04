@@ -179,6 +179,10 @@ class LocalArtifactStore:
         destination.write_bytes((self.root / key).read_bytes())
         return destination
 
+    def addressable(self, ref: str) -> bool:
+        """A local store addresses every non-empty string it is handed (#413)."""
+        return bool(str(ref).strip())
+
     def exists(self, key: str) -> bool:
         return (self.root / key).exists()
 
@@ -317,6 +321,15 @@ class S3ArtifactStore:
         destination.parent.mkdir(parents=True, exist_ok=True)
         self.client.download_file(self.bucket, self._key(key), str(destination))
         return destination
+
+    def addressable(self, ref: str) -> bool:
+        """True only for an ``s3://<bucket>/`` reference this store can actually fetch (#413).
+
+        A record may carry a producer-side relative path in ``source.raw_ref`` beside the real object
+        key. Attempting it raises ``ValueError`` by construction, so the stager asks first.
+        """
+        prefix = f"s3://{self.bucket}/"
+        return str(ref).startswith(prefix)
 
     def download_ref(self, ref: str, target: str | Path) -> Path:
         prefix = f"s3://{self.bucket}/"
