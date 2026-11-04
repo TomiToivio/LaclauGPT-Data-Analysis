@@ -23,7 +23,7 @@ from .canonical_pipeline import PipelineContext, run_canonical_pipeline
 from .codebooks import load_codebook
 from .config import Settings, load_settings
 from .debug_mode import configure_logging
-from .llm.base import LLMTruncationError, generation_fingerprint
+from .llm.base import LLMTruncationError, TransientProviderError, generation_fingerprint
 from .llm.ollama import (
     LLM_ENDPOINT_ENV_ALIAS,
     LLM_HOST_ENV,
@@ -660,6 +660,18 @@ class AI26TaskWorker(TaskWorker):
         except Exception as exc:
             self.last_failure_class = type(exc).__name__
             error = f"{self.last_failure_class}: {exc}"
+            if isinstance(exc, TransientProviderError):
+                # Leave the original delivery pending for idle-time reclaim.
+                # No ACK, republish or attempt increment during an outage.
+                self.durable_store.write_failure(
+                    task, error, self.provenance,
+                    diagnostics=_failure_diagnostics(exc), terminal=False,
+                )
+                logger.warning(
+                    "Transient provider outage; task pending for reclaim without "
+                    "consuming attempt %s: %s", task.attempt, error
+                )
+                return "retry"
             # A second length stop has already exhausted the structured call's
             # escalation. Replaying the same immutable task cannot help; require
             # explicit re-arm after changing the prompt/model/configuration.
