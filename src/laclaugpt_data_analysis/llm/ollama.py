@@ -32,6 +32,7 @@ from laclaugpt_data_analysis.llm.base import (
     LLMEmptyResponseError,
     LLMResponse,
     ProviderError,
+    ProviderUnavailable,
     empty_response_retries,
     merge_options,
 )
@@ -423,7 +424,13 @@ class OllamaProvider:
                     and _retryable_local_error(exc)
                 )
                 if not can_fallback:
-                    raise ProviderError(f"Ollama call failed: {exc}") from exc
+                    # A 5xx, a refused connection or a timeout is the server's state, not
+                    # this document's problem: it is typed so the worker can refund the
+                    # attempt instead of burning the document's budget (issue #414).
+                    error_class = (
+                        ProviderUnavailable if _retryable_local_error(exc) else ProviderError
+                    )
+                    raise error_class(f"Ollama call failed: {exc}") from exc
                 cloud_model = os.environ.get(LLM_CLOUD_ENV) or LLM_DEFAULT_CLOUD
                 logger.warning(
                     "local Ollama failed with retryable error (%s); authorised fallback to %s",

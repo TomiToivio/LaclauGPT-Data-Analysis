@@ -11,6 +11,7 @@ from typing import Any, Callable, Mapping, Protocol
 
 from .config import Settings
 from .storage import mongo_client, redis_client
+from .llm.base import ProviderUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +27,8 @@ def bounded_failure_diagnostics(
     raw = str(diagnostics.get("response_raw") or "")
     finish_reason = str(diagnostics.get("finish_reason") or "")
     outcome = str(diagnostics.get("terminal_reason") or "")
-    if not raw and not finish_reason and not outcome:
+    infrastructure = bool(diagnostics.get("infrastructure"))
+    if not raw and not finish_reason and not outcome and not infrastructure:
         return {}
     result = {
         "response_raw": raw[:FAILURE_RESPONSE_RAW_MAX_CHARS],
@@ -35,7 +37,10 @@ def bounded_failure_diagnostics(
         "finish_reason": finish_reason,
         "diagnostic_only": True,
     }
-    if outcome == "unanalysable_within_budget":
+    if infrastructure:
+        # A closed boolean, never free text: the failure was the provider's state (#414).
+        result["infrastructure"] = True
+    if outcome in {"unanalysable_within_budget", "provider_unavailable"}:
         result["terminal_reason"] = outcome
         for key in (
             "output_budget_tokens",
@@ -181,6 +186,8 @@ class DurableTaskStore(Protocol):
 
     def failure_summary(self) -> dict[str, int]: ...
 
+    def count_failures(self, idempotency_key: str) -> int: ...
+
     def write_result(
         self,
         task: TaskEnvelope,
@@ -296,6 +303,15 @@ class InMemoryTaskStore:
         ):
             self.terminal_failures.discard(idempotency_key)
         return rearmed
+
+    def count_failures(self, idempotency_key: str) -> int:
+        """How many failure events this task has recorded, rearmed or not.
+
+        The worker uses this to bound infrastructure refunds: an upstream outage may
+        return a document to the queue without consuming an attempt, but not forever
+        (issue #414).
+        """
+        return sum(1 for row in self.failures if row["task"]["idempotency_key"] == idempotency_key)
 
     def failure_summary(self) -> dict[str, int]:
         return {
@@ -448,6 +464,15 @@ class SqliteTaskStore:
                 ),
             )
             return int(cursor.rowcount)
+
+    def count_failures(self, idempotency_key: str) -> int:
+        with sqlite3.connect(self.path) as connection:
+            return int(
+                connection.execute(
+                    "SELECT COUNT(*) FROM task_failures WHERE idempotency_key = ?",
+                    (idempotency_key,),
+                ).fetchone()[0]
+            )
 
     def failure_summary(self) -> dict[str, int]:
         with sqlite3.connect(self.path) as connection:
@@ -642,6 +667,17 @@ class MongoTaskStore:
             {"$set": {"rearmed_at": time.time()}},
         )
         return int(result.modified_count)
+
+    def count_failures(self, idempotency_key: str) -> int:
+        return int(
+            self.failures.count_documents(
+                {
+                    "project_id": self.project_id,
+                    "run_id": self.run_id,
+                    "idempotency_key": idempotency_key,
+                }
+            )
+        )
 
     def failure_summary(self) -> dict[str, int]:
         base = {"project_id": self.project_id, "run_id": self.run_id}
@@ -971,6 +1007,16 @@ class RedisStreamQueue:
         self.redis.hset(self.heartbeat_key, mapping=payload)
 
 
+def infrastructure_failure(exc: BaseException) -> bool:
+    """True when the failure describes the provider, not the document (issue #414).
+
+    A truncation or a validation error is evidence about this document under this
+    budget; a 5xx, a refused connection or a timeout is evidence about the server.
+    Only the second kind may be refused the document's retry budget.
+    """
+    return isinstance(exc, ProviderUnavailable)
+
+
 class TaskWorker:
     def __init__(
         self,
@@ -983,6 +1029,7 @@ class TaskWorker:
         validator: Callable[[TaskEnvelope], None] | None = None,
         max_attempts: int = 3,
         generation_fingerprint: str = "",
+        max_infrastructure_refunds: int = 24,
     ) -> None:
         self.queue = queue
         self.durable_store = durable_store
@@ -991,6 +1038,11 @@ class TaskWorker:
         self.provenance = dict(provenance)
         self.validator = validator
         self.max_attempts = max_attempts
+        #: How many upstream-outage failures (#414) may be *refunded* -- returned to the
+        #: queue without consuming an attempt -- before the document is parked anyway.
+        #: Without this the worker would spin forever on a provider that is down for a
+        #: week; with it, a 500 costs the document nothing but the queue keeps moving.
+        self.max_infrastructure_refunds = max(0, int(max_infrastructure_refunds))
         #: Resume identity of the *effective* generation settings (issue #372). Empty
         #: keeps the historical presence-only duplicate check.
         self.generation_fingerprint = generation_fingerprint
@@ -1049,6 +1101,31 @@ class TaskWorker:
         except Exception as exc:
             self.last_failure_class = type(exc).__name__
             error = f"{self.last_failure_class}: {exc}"
+            if infrastructure_failure(exc):
+                if self._refund_budget_exhausted(task):
+                    parked = f"{error} (infrastructure refund budget exhausted)"
+                    self.durable_store.write_failure(
+                        task,
+                        parked,
+                        self.provenance,
+                        diagnostics={
+                            "infrastructure": True,
+                            "terminal_reason": "provider_unavailable",
+                        },
+                        terminal=True,
+                    )
+                    self.queue.dead_letter(task, parked)
+                    self.queue.ack(claimed.message_id)
+                    return "dead-letter"
+                self.durable_store.write_failure(
+                    task,
+                    error,
+                    self.provenance,
+                    diagnostics={"infrastructure": True},
+                )
+                self.queue.publish(task)
+                self.queue.ack(claimed.message_id)
+                return "retry"
             self.durable_store.write_failure(task, error, self.provenance)
             if task.attempt >= self.max_attempts:
                 self.queue.dead_letter(task, error)
@@ -1059,6 +1136,11 @@ class TaskWorker:
             self.queue.publish(retry_task)
             self.queue.ack(claimed.message_id)
             return "retry"
+
+    def _refund_budget_exhausted(self, task: TaskEnvelope) -> bool:
+        """Whether this task has already been refunded as often as the budget allows."""
+        ceiling = self.max_attempts + self.max_infrastructure_refunds
+        return self.durable_store.count_failures(task.idempotency_key) >= ceiling
 
     def heartbeat(self, **fields: str) -> None:
         self.queue.heartbeat(worker_id=self.worker_id, **fields)

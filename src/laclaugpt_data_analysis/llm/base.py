@@ -92,6 +92,15 @@ class LLMTruncationError(ProviderError):
     """Raised when a provider stops because the generation budget was exhausted."""
 
 
+class ProviderUnavailable(ProviderError):
+    """The provider itself is unavailable: HTTP 5xx, a refused connection, a timeout.
+
+    This is the one provider error that carries no information about the document being
+    analysed, so it must not consume the document's retry budget (issue #414). A truncation
+    is a property of this document under this budget; a 500 is a property of the server.
+    """
+
+
 class LLMEmptyResponseError(ProviderError):
     """Raised when a provider kept answering HTTP 200 with no usable content.
 

@@ -57,6 +57,25 @@ No endpoint or credential should be committed. The AI26 distributed worker in is
 
 `TaskWorker.heartbeat()` writes Redis liveness/status information only. It must not be treated as durable research provenance.
 
+## Retry budget and upstream outages (issue #414)
+
+A document gets `max_attempts` attempts for failures that are *about the document* — a validation
+error, a parse error, a truncation. Those attempts are spent, and when they run out the task is
+dead-lettered and the failure is written as `terminal`.
+
+A provider outage is not about the document. `ProviderUnavailable` (HTTP 5xx, a refused
+connection, a timeout) is refunded: the same task returns to the queue **at the same attempt
+number**, and the failure is recorded with `infrastructure: true` and `terminal: false`. The
+budget for refunds is `max_attempts + max_infrastructure_refunds` failure events
+(`max_infrastructure_refunds` defaults to 24); when it is spent the document is parked with
+`terminal_reason=provider_unavailable`, which names the cause instead of blaming the text.
+
+Re-arming a parked document stays a human decision:
+
+```bash
+laclaugpt-analysis-worker --rearm-failed <idempotency-key>
+```
+
 ## Design constraints
 
 - Redis loss must not destroy durable results or failure history.

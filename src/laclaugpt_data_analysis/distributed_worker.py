@@ -45,6 +45,7 @@ from .task_queue import (
     TaskQueue,
     TaskWorker,
     durable_store_from_settings,
+    infrastructure_failure,
     redis_queue_from_settings,
 )
 
@@ -660,6 +661,37 @@ class AI26TaskWorker(TaskWorker):
         except Exception as exc:
             self.last_failure_class = type(exc).__name__
             error = f"{self.last_failure_class}: {exc}"
+            if infrastructure_failure(exc):
+                if self._refund_budget_exhausted(task):
+                    # The provider has been down long enough that the refund budget is
+                    # spent. Park the document with an explicit reason instead of letting
+                    # it circulate forever; a re-arm is a human decision (issue #414).
+                    parked = f"{error} (infrastructure refund budget exhausted)"
+                    self.durable_store.write_failure(
+                        task,
+                        parked,
+                        self.provenance,
+                        diagnostics={
+                            "infrastructure": True,
+                            "terminal_reason": "provider_unavailable",
+                        },
+                        terminal=True,
+                    )
+                    self.queue.dead_letter(task, parked)
+                    self.queue.ack(claimed.message_id)
+                    return "dead-letter"
+                # A provider outage is not a property of this document (issue #414).
+                # Refund the attempt: the same task returns to the queue, and the outage
+                # is recorded as a non-terminal failure so a later cycle can still see it.
+                self.durable_store.write_failure(
+                    task,
+                    error,
+                    self.provenance,
+                    diagnostics={**_failure_diagnostics(exc), "infrastructure": True},
+                )
+                self.queue.publish(task)
+                self.queue.ack(claimed.message_id)
+                return "retry"
             # A second length stop has already exhausted the structured call's
             # escalation. Replaying the same immutable task cannot help; require
             # explicit re-arm after changing the prompt/model/configuration.
