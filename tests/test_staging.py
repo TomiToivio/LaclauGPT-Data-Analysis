@@ -194,6 +194,28 @@ def test_download_failure_is_retriable_and_leaves_no_partial_file(tmp_path: Path
     assert not list(stager.cache_root.rglob("*.part"))
 
 
+def test_store_rejected_reference_is_permanent_not_retriable(tmp_path: Path) -> None:
+    """#413: a reference the store cannot own is permanent, never retriable.
+
+    ``S3ArtifactStore.download_ref`` raises ValueError for a reference outside its
+    bucket. The worker aborts a task only when a staged object is retriable, so
+    classifying that ValueError as ``failed`` made every AI26 X record abort in
+    staging: an X capture declares a capture-side relative path in
+    ``source.raw_ref`` beside the real ``s3://`` object.
+    """
+    store = FakeObjectStore({REF: PAYLOAD})
+    store.download_error = ValueError("S3 reference does not belong to configured bucket")
+    stager = _stager(tmp_path, store)
+
+    item = stager.stage(REF)
+
+    assert item.status == "rejected"
+    assert not item.local_available
+    assert not item.retriable
+    assert item.provenance()["object_reason"] == "ref_rejected:ValueError"
+    assert not list(stager.cache_root.rglob("*.part"))
+
+
 def test_size_mismatch_is_corrupt_not_silently_accepted(tmp_path: Path) -> None:
     store = FakeObjectStore({REF: PAYLOAD})
     store.reported_size = len(PAYLOAD) + 999
