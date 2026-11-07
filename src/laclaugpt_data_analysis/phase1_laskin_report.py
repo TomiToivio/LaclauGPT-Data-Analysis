@@ -124,6 +124,56 @@ def _previous_by_scope(
     return previous
 
 
+#: How many stored summaries per scope the previous-window lookup may read with its
+#: payload. One is enough in practice; the second keeps the lookup correct when the
+#: newest stored payload for a scope can no longer be parsed back into a summary.
+PREVIOUS_SUMMARIES_PER_SCOPE = 2
+
+
+def load_previous_summary_documents(
+    collection: Any,
+    *,
+    project_id: str,
+    run_id: str,
+    before: datetime,
+    per_scope: int = PREVIOUS_SUMMARIES_PER_SCOPE,
+) -> list[dict[str, Any]]:
+    """Load only the summaries that can be the previous window of some scope (#423).
+
+    The report used to read *every* summary the run had ever produced and let
+    ``_previous_by_scope`` keep the newest one per scope. On Laskin that was 136,218
+    documents and 1.3 GB on 2026-11-06 — a read projected at ~5,100 s, so the report
+    could no longer finish inside its 900 s ceiling and every cycle lost its report.
+
+    The two fields the choice actually needs (``scope_key``, ``window_end``) are small,
+    so they are scanned first and only the retained candidates are read again with
+    their payload. The window-end comparison stays a parsed-datetime comparison here,
+    exactly as ``_previous_by_scope`` does it, so stored string formats cannot change
+    which window counts as previous.
+    """
+    scope = {"project_id": project_id, "run_id": run_id}
+    candidates: dict[str, list[tuple[datetime, Any]]] = {}
+    for document in collection.find(scope, {"scope_key": 1, "window_end": 1, "_id": 0}):
+        scope_key = document.get("scope_key")
+        raw_end = document.get("window_end")
+        end = _as_datetime(raw_end)
+        if not isinstance(scope_key, str) or end is None or end > before:
+            continue
+        bucket = candidates.setdefault(scope_key, [])
+        bucket.append((end, raw_end))
+        bucket.sort(key=lambda item: item[0], reverse=True)
+        del bucket[per_scope:]
+    if not candidates:
+        return []
+    ends = sorted({raw for bucket in candidates.values() for _, raw in bucket}, key=str)
+    return list(
+        collection.find(
+            {**scope, "scope_key": {"$in": sorted(candidates)}, "window_end": {"$in": ends}},
+            {"project_id": 1, "run_id": 1, "payload": 1, "_id": 0},
+        )
+    )
+
+
 def generate_latest_reports(
     settings: Settings,
     *,
@@ -148,11 +198,11 @@ def generate_latest_reports(
     collection = client[settings.mongo_database][
         settings.distributed_namespace.mongo_collection("periodic_summaries")
     ]
-    existing = list(
-        collection.find(
-            {"project_id": settings.project_id, "run_id": run_id},
-            {"payload": 1, "project_id": 1, "run_id": 1, "_id": 0},
-        )
+    existing = load_previous_summary_documents(
+        collection,
+        project_id=settings.project_id,
+        run_id=run_id,
+        before=window_start,
     )
     previous = _previous_by_scope(
         existing,
