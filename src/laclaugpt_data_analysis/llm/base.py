@@ -88,6 +88,10 @@ class ProviderError(RuntimeError):
     """Raised when a provider cannot complete a call."""
 
 
+class TransientProviderError(ProviderError):
+    """Temporary upstream infrastructure outage; must not spend document attempts."""
+
+
 class LLMTruncationError(ProviderError):
     """Raised when a provider stops because the generation budget was exhausted."""
 

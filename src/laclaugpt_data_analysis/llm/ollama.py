@@ -32,6 +32,7 @@ from laclaugpt_data_analysis.llm.base import (
     LLMEmptyResponseError,
     LLMResponse,
     ProviderError,
+    TransientProviderError,
     empty_response_retries,
     merge_options,
 )
@@ -423,6 +424,9 @@ class OllamaProvider:
                     and _retryable_local_error(exc)
                 )
                 if not can_fallback:
+                    status = getattr(exc, "status_code", None)
+                    if isinstance(status, int) and 500 <= status <= 599:
+                        raise TransientProviderError(f"Ollama call failed: {exc}") from exc
                     raise ProviderError(f"Ollama call failed: {exc}") from exc
                 cloud_model = os.environ.get(LLM_CLOUD_ENV) or LLM_DEFAULT_CLOUD
                 logger.warning(

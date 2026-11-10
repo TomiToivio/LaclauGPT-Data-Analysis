@@ -14,7 +14,7 @@
 # Environment: LACLAUGPT_DRIFT_THRESHOLD (default 0) is the number of commits a checkout may
 # lag origin/main before the drift check warns. It only ever warns; it never blocks a cycle.
 # LACLAUGPT_CYCLE_MAX_SECONDS (default 9000) bounds the worker; LACLAUGPT_REPORT_MAX_SECONDS
-# (default 900) bounds the periodic report, which runs after it inside the same flock (#360).
+# (default 1800) bounds the periodic report, which runs after it inside the same flock (#360).
 #   scripts/run_ai26_laskin.sh                   same as --once (cron-safe)
 #
 # Exit codes: 0 success, 2 configuration/preflight failure, 3 already running,
@@ -53,9 +53,10 @@ CYCLE_KILL_GRACE_SECONDS=${LACLAUGPT_CYCLE_KILL_GRACE_SECONDS:-30}
 # have already exited with "already running; exiting cleanly" (13:05, 14:05 and
 # 16:05 on 2026-10-15 alone). Its own observed healthy duration is ~4 min
 # (10:33->10:37, 11:53->11:57, 13:09->13:13, 15:46->15:50), so 15 min clears it
-# by ~3.5x and still breaks a pathological hang. The worker has had exactly this
+# by ~3.5x at the original 15-minute ceiling; the current 30-minute default
+# allows additional headroom as the report corpus grows. The worker has had exactly this
 # watchdog since #332; the report did not (issue #360).
-REPORT_MAX_SECONDS=${LACLAUGPT_REPORT_MAX_SECONDS:-900}
+REPORT_MAX_SECONDS=${LACLAUGPT_REPORT_MAX_SECONDS:-1800}
 if [[ ! "$REPORT_MAX_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
   printf 'ERROR: LACLAUGPT_REPORT_MAX_SECONDS must be a positive integer (seconds)\n' >&2
   exit 2
