@@ -7,10 +7,10 @@ from typing import Any
 from .canonical import (
     SCHEMA_VERSION,
     CanonicalRecord,
-    SourceSection,
     HumanReadableSection,
     IntermediateSection,
     RawCaptureSection,
+    SourceSection,
 )
 
 
