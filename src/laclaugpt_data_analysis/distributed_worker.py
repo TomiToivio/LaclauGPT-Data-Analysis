@@ -23,7 +23,12 @@ from .canonical_pipeline import PipelineContext, run_canonical_pipeline
 from .codebooks import load_codebook
 from .config import Settings, load_settings
 from .debug_mode import configure_logging
-from .llm.base import LLMTruncationError, TransientProviderError, generation_fingerprint
+from .llm.base import (
+    LLMEmptyResponseError,
+    LLMTruncationError,
+    ProviderError,
+    generation_fingerprint,
+)
 from .llm.ollama import (
     LLM_ENDPOINT_ENV_ALIAS,
     LLM_HOST_ENV,
@@ -33,6 +38,7 @@ from .llm.ollama import (
 )
 from .llm.structured_output import effective_structured_options, structured_output_ceiling
 from .phase1_laskin_runtime import load_ai26_runtime_policy
+from .schema_version import preserve_undeclared_source_keys
 from .staging import (
     MediaStager,
     ObjectUnavailableError,
@@ -415,7 +421,11 @@ class MongoCollectionHandoff:
         if row is None:
             raise KeyError(f"canonical source not found: {source_url}")
         clean = {key: value for key, value in row.items() if key in CanonicalRecord.model_fields}
-        return CanonicalRecord.model_validate(clean)
+        # A producer may stamp provenance on ``source`` that this model does not declare
+        # (Collection publishes source as an open object). Folding it into
+        # ``source.extensions`` keeps the declared fields strict and the record loadable
+        # instead of terminally rejecting it at seed (#426, the loader half of #352).
+        return CanonicalRecord.model_validate(preserve_undeclared_source_keys(clean))
 
     def ready_handoffs(self, run_id: str, *, limit: int, offset: int = 0,
                        platform: str | None = None) -> list[dict[str, Any]]:
@@ -596,6 +606,10 @@ class AI26TaskWorker(TaskWorker):
     """Task worker with explicit retry requeue so attempt counters actually advance."""
 
     def run_once(self, *, reclaim_idle_ms: int | None = None) -> str:
+        #: Per-run refund ledger for infrastructure failures (#414). Created lazily so the worker keeps
+        #: its existing construction contract; one worker process is one run.
+        if not hasattr(self, "_infrastructure_refunds"):
+            self._infrastructure_refunds = {}
         self.last_failure_class: str | None = None
         self.last_resume_invalidated = 0
         quarantine_before = int(getattr(self.queue, "quarantined_count", 0))
@@ -660,39 +674,68 @@ class AI26TaskWorker(TaskWorker):
         except Exception as exc:
             self.last_failure_class = type(exc).__name__
             error = f"{self.last_failure_class}: {exc}"
-            if isinstance(exc, TransientProviderError):
-                # Leave the original delivery pending for idle-time reclaim.
-                # No ACK, republish or attempt increment during an outage.
-                self.durable_store.write_failure(
-                    task, error, self.provenance,
-                    diagnostics=_failure_diagnostics(exc), terminal=False,
-                )
-                logger.warning(
-                    "Transient provider outage; task pending for reclaim without "
-                    "consuming attempt %s: %s", task.attempt, error
-                )
-                return "retry"
+            infrastructure = is_infrastructure_failure(exc)
             # A second length stop has already exhausted the structured call's
             # escalation. Replaying the same immutable task cannot help; require
             # explicit re-arm after changing the prompt/model/configuration.
-            terminal = isinstance(exc, LLMTruncationError) or task.attempt >= self.max_attempts
+            # An upstream 5xx is different: it is evidence about the provider, not
+            # about the document, so it never spends the document's attempts (#414).
+            terminal = isinstance(exc, LLMTruncationError) or (
+                not infrastructure and task.attempt >= self.max_attempts
+            )
+            diagnostics = _failure_diagnostics(exc)
+            if infrastructure:
+                diagnostics = {**diagnostics, "infrastructure": True}
             self.durable_store.write_failure(
                 task,
                 error,
                 self.provenance,
-                diagnostics=_failure_diagnostics(exc),
+                diagnostics=diagnostics,
                 terminal=terminal,
             )
             if terminal:
                 self.queue.dead_letter(task, error)
                 self.queue.ack(claimed.message_id)
                 return "dead-letter"
+            if infrastructure:
+                refunded = self._infrastructure_refunds.get(task.idempotency_key, 0)
+                if refunded >= INFRASTRUCTURE_REFUND_LIMIT:
+                    # The provider is not coming back inside this cycle. Drop the
+                    # message without spending an attempt: the handoff is still
+                    # ready, so the next seed cycle publishes the task again.
+                    logger.warning(
+                        "provider failure left %s for the next seed cycle after %s refunds",
+                        task.idempotency_key,
+                        refunded,
+                    )
+                    self.queue.ack(claimed.message_id)
+                    return "retry"
+                self._infrastructure_refunds[task.idempotency_key] = refunded + 1
+                retry_task = replace(task)
+                retry_task.validate()
+                self.queue.publish(retry_task)
+                self.queue.ack(claimed.message_id)
+                return "retry"
             retry_task = replace(task, attempt=task.attempt + 1)
             retry_task.validate()
             self.queue.publish(retry_task)
             self.queue.ack(claimed.message_id)
             return "retry"
 
+
+#: Failures that say something about the provider, not about the document (#414). An upstream 5xx is
+#: infrastructure: the same document may analyse perfectly once the endpoint is healthy, so it must not
+#: consume the document's retry budget or reach terminal quarantine on its own. Truncation and empty
+#: responses are excluded on purpose — those are properties of the generation, and replaying them
+#: unchanged cannot help.
+def is_infrastructure_failure(exc: BaseException) -> bool:
+    return isinstance(exc, ProviderError) and not isinstance(exc, (LLMTruncationError, LLMEmptyResponseError))
+
+
+#: How many times one worker run will refund and re-queue the same task before leaving it to the next
+#: seed cycle. Re-queueing immediately is right for a short outage and wrong for a long one, where it
+#: would spin on the same document for the whole cycle; the ready handoff is still ready next cycle.
+INFRASTRUCTURE_REFUND_LIMIT = 2
 
 #: How many rejected handoffs a single seeding pass names individually before summarising the rest.
 #: One bad row must be visible, but a corpus-wide identity regression must not fill the log.

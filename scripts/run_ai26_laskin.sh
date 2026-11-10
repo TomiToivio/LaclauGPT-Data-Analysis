@@ -18,7 +18,7 @@
 #   scripts/run_ai26_laskin.sh                   same as --once (cron-safe)
 #
 # Exit codes: 0 success, 2 configuration/preflight failure, 3 already running,
-#             4 non-timeout periodic-report failure, otherwise worker status is propagated.
+#             4 periodic-report failure, otherwise worker status is propagated.
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -53,7 +53,8 @@ CYCLE_KILL_GRACE_SECONDS=${LACLAUGPT_CYCLE_KILL_GRACE_SECONDS:-30}
 # have already exited with "already running; exiting cleanly" (13:05, 14:05 and
 # 16:05 on 2026-10-15 alone). Its own observed healthy duration is ~4 min
 # (10:33->10:37, 11:53->11:57, 13:09->13:13, 15:46->15:50), so 15 min clears it
-# by ~3.5x and still breaks a pathological hang. The worker has had exactly this
+# by ~3.5x at the original 15-minute ceiling; the current 30-minute default
+# allows additional headroom as the report corpus grows. The worker has had exactly this
 # watchdog since #332; the report did not (issue #360).
 REPORT_MAX_SECONDS=${LACLAUGPT_REPORT_MAX_SECONDS:-1800}
 if [[ ! "$REPORT_MAX_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
@@ -295,14 +296,15 @@ if [[ "$WORKER_STATUS" -eq 0 && "${LACLAUGPT_PERIODIC_REPORTS:-1}" != "0" ]]; th
     elif [[ "$REPORT_STATUS" -eq 137 ]]; then
       log "AI26 Phase 1 periodic report was SIGKILLed after the ${REPORT_MAX_SECONDS}s ceiling (watchdog escalation); see issue #360."
     fi
-    if [[ "$REPORT_STATUS" -ne 0 ]]; then
+    REPORT_DEGRADED=0
+    if [[ "$REPORT_STATUS" -eq 124 || "$REPORT_STATUS" -eq 137 ]]; then
+      REPORT_DEGRADED=1
+      log "AI26 Phase 1 periodic report degraded status=$REPORT_STATUS; worker cycle is graded healthy (#416)"
+    fi
+    if [[ "$REPORT_STATUS" -ne 0 && "$REPORT_DEGRADED" -eq 0 ]]; then
       log "AI26 Phase 1 periodic report failed status=$REPORT_STATUS"
-      if [[ "$REPORT_STATUS" -eq 124 || "$REPORT_STATUS" -eq 137 ]]; then
-        log "AI26 Phase 1 reporting degraded: timeout; worker_status=0 (issue #416)"
-      else
-        FINAL_STATUS=4
-      fi
-    else
+      FINAL_STATUS=4
+    elif [[ "$REPORT_DEGRADED" -eq 0 ]]; then
       log "AI26 Phase 1 periodic report end status=0"
     fi
   else

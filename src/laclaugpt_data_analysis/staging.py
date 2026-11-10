@@ -487,7 +487,22 @@ class MediaStager:
         report = StagingReport()
         self.invalidated_cache_hits = 0
         checksums = self._record_checksums(record)
+        addressable = getattr(self.store, "addressable", None)
         for ref in object_references(record, prefix=prefix):
+            if callable(addressable) and not addressable(ref):
+                # A producer-side relative path in `source.raw_ref` is not an object key (#413). Asking
+                # the store to fetch it can only raise; recording it as skipped keeps the record's real
+                # object stageable and keeps the provenance honest about what was ignored.
+                report.staged.append(
+                    StagedObject(
+                        ref=ref,
+                        path=None,
+                        status="not_an_object",
+                        cache_key="",
+                        reason="reference is not addressable by this object store",
+                    )
+                )
+                continue
             item = self.stage(ref, checksum=checksums.get(ref))
             report.staged.append(item)
             if item.status == "cached":

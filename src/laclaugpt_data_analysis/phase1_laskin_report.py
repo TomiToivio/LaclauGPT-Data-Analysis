@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 from datetime import UTC, datetime, timedelta
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from .canonical import CanonicalRecord
 from .config import Settings, load_settings
@@ -36,15 +36,65 @@ def _decode_result(document: dict[str, Any]) -> CanonicalRecord | None:
         return None
 
 
-def load_analysis_records(settings: Settings, *, run_id: str) -> list[CanonicalRecord]:
+def _as_datetime(value: Any) -> datetime | None:
+    """Parse a stored timestamp without pulling the whole record through pydantic."""
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=UTC)
+    if isinstance(value, str) and value.strip():
+        text = value.strip().replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(text)
+        except ValueError:
+            return None
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return None
+
+
+def _record_timestamp_from_document(document: Mapping[str, Any]) -> datetime | None:
+    result = document.get("result")
+    if not isinstance(result, Mapping):
+        return None
+    source = result.get("source")
+    if not isinstance(source, Mapping):
+        return None
+    return _as_datetime(source.get("created_at")) or _as_datetime(source.get("collected_at"))
+
+
+def load_analysis_records(
+    settings: Settings,
+    *,
+    run_id: str,
+    window: tuple[datetime, datetime] | None = None,
+) -> list[CanonicalRecord]:
+    """Load the run's analysis results, optionally only those inside a report window (#416).
+
+    Without a window this reads and validates every result in the run, which is what made the periodic
+    report grow past its 900 s ceiling: the cost is `CanonicalRecord.model_validate` per document, and
+    the window filter that discarded most of them ran *after* validation.
+
+    With a window it reads timestamps first — a projection of two fields, no validation — and validates
+    only the records the summary can actually use. The timestamp used is the one the summary itself uses
+    (`source.created_at`, falling back to `source.collected_at`), so the two cannot disagree.
+    """
     client = _mongo_client(settings)
     collection = client[settings.mongo_database][
         settings.distributed_namespace.mongo_collection("analysis_results")
     ]
-    cursor = collection.find(
-        {"project_id": settings.project_id, "run_id": run_id},
-        {"result": 1, "_id": 0},
-    )
+    scope = {"project_id": settings.project_id, "run_id": run_id}
+    if window is None:
+        cursor = collection.find(scope, {"result": 1, "_id": 0})
+        return [record for document in cursor if (record := _decode_result(document)) is not None]
+
+    start, end = window
+    selected: list[Any] = []
+    projection = {"result.source.created_at": 1, "result.source.collected_at": 1}
+    for document in collection.find(scope, projection):
+        timestamp = _record_timestamp_from_document(document)
+        if timestamp is not None and start <= timestamp < end:
+            selected.append(document["_id"])
+    if not selected:
+        return []
+    cursor = collection.find({"_id": {"$in": selected}}, {"result": 1, "_id": 0})
     return [record for document in cursor if (record := _decode_result(document)) is not None]
 
 
@@ -74,6 +124,56 @@ def _previous_by_scope(
     return previous
 
 
+#: How many stored summaries per scope the previous-window lookup may read with its
+#: payload. One is enough in practice; the second keeps the lookup correct when the
+#: newest stored payload for a scope can no longer be parsed back into a summary.
+PREVIOUS_SUMMARIES_PER_SCOPE = 2
+
+
+def load_previous_summary_documents(
+    collection: Any,
+    *,
+    project_id: str,
+    run_id: str,
+    before: datetime,
+    per_scope: int = PREVIOUS_SUMMARIES_PER_SCOPE,
+) -> list[dict[str, Any]]:
+    """Load only the summaries that can be the previous window of some scope (#423).
+
+    The report used to read *every* summary the run had ever produced and let
+    ``_previous_by_scope`` keep the newest one per scope. On Laskin that was 136,218
+    documents and 1.3 GB on 2026-11-06 — a read projected at ~5,100 s, so the report
+    could no longer finish inside its 900 s ceiling and every cycle lost its report.
+
+    The two fields the choice actually needs (``scope_key``, ``window_end``) are small,
+    so they are scanned first and only the retained candidates are read again with
+    their payload. The window-end comparison stays a parsed-datetime comparison here,
+    exactly as ``_previous_by_scope`` does it, so stored string formats cannot change
+    which window counts as previous.
+    """
+    scope = {"project_id": project_id, "run_id": run_id}
+    candidates: dict[str, list[tuple[datetime, Any]]] = {}
+    for document in collection.find(scope, {"scope_key": 1, "window_end": 1, "_id": 0}):
+        scope_key = document.get("scope_key")
+        raw_end = document.get("window_end")
+        end = _as_datetime(raw_end)
+        if not isinstance(scope_key, str) or end is None or end > before:
+            continue
+        bucket = candidates.setdefault(scope_key, [])
+        bucket.append((end, raw_end))
+        bucket.sort(key=lambda item: item[0], reverse=True)
+        del bucket[per_scope:]
+    if not candidates:
+        return []
+    ends = sorted({raw for bucket in candidates.values() for _, raw in bucket}, key=str)
+    return list(
+        collection.find(
+            {**scope, "scope_key": {"$in": sorted(candidates)}, "window_end": {"$in": ends}},
+            {"project_id": 1, "run_id": 1, "payload": 1, "_id": 0},
+        )
+    )
+
+
 def generate_latest_reports(
     settings: Settings,
     *,
@@ -90,17 +190,19 @@ def generate_latest_reports(
 
     interval = timedelta(hours=policy.report_interval_hours)
     window_start, window_end = latest_completed_window(now=now, interval=interval)
-    records = load_analysis_records(settings, run_id=run_id)
+    records = load_analysis_records(
+        settings, run_id=run_id, window=(window_start, window_end)
+    )
 
     client = _mongo_client(settings)
     collection = client[settings.mongo_database][
         settings.distributed_namespace.mongo_collection("periodic_summaries")
     ]
-    existing = list(
-        collection.find(
-            {"project_id": settings.project_id, "run_id": run_id},
-            {"payload": 1, "project_id": 1, "run_id": 1, "_id": 0},
-        )
+    existing = load_previous_summary_documents(
+        collection,
+        project_id=settings.project_id,
+        run_id=run_id,
+        before=window_start,
     )
     previous = _previous_by_scope(
         existing,
