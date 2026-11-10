@@ -211,6 +211,18 @@ def _preserve_undeclared_source_keys(data: dict[str, Any]) -> dict[str, Any]:
     data["source"] = preserved
     return data
 
+
+def preserve_undeclared_source_keys(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Fold producer source fields into ``source.extensions`` without remapping versions.
+
+    Loaders that already hold a current-version record (the distributed worker reading a
+    handoff row, for instance) must not discard or refuse a producer field the published
+    Collection contract permits. This is the public form of the #352 folding, so those
+    loaders can reuse it without going through historical version normalisation.
+    """
+    return _preserve_undeclared_source_keys(dict(payload))
+
+
 def normalize_schema_version(payload: Mapping[str, Any]) -> CanonicalRecord:
     """Normalize supported historical records to the current four-layer contract."""
     data = dict(payload)
