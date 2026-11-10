@@ -38,6 +38,7 @@ from .llm.ollama import (
 )
 from .llm.structured_output import effective_structured_options, structured_output_ceiling
 from .phase1_laskin_runtime import load_ai26_runtime_policy
+from .schema_version import preserve_undeclared_source_keys
 from .staging import (
     MediaStager,
     ObjectUnavailableError,
@@ -420,7 +421,11 @@ class MongoCollectionHandoff:
         if row is None:
             raise KeyError(f"canonical source not found: {source_url}")
         clean = {key: value for key, value in row.items() if key in CanonicalRecord.model_fields}
-        return CanonicalRecord.model_validate(clean)
+        # A producer may stamp provenance on ``source`` that this model does not declare
+        # (Collection publishes source as an open object). Folding it into
+        # ``source.extensions`` keeps the declared fields strict and the record loadable
+        # instead of terminally rejecting it at seed (#426, the loader half of #352).
+        return CanonicalRecord.model_validate(preserve_undeclared_source_keys(clean))
 
     def ready_handoffs(self, run_id: str, *, limit: int, offset: int = 0,
                        platform: str | None = None) -> list[dict[str, Any]]:
