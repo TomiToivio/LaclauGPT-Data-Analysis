@@ -450,6 +450,39 @@ class MongoCollectionHandoff:
         return [dict(row.get("handoff") or {}) for row in cursor]
 
 
+    def oldest_ready_handoffs(self, run_id: str, *, limit: int, offset: int = 0,
+                              platform: str | None = None) -> list[dict[str, Any]]:
+        """Ready handoffs in publication order, oldest first (#429).
+
+        The priority-ordered frame is right for keeping the live tiers fresh, and wrong as the *only*
+        order: `(source_priority, published_at DESC)` puts the never-analysed tail of a platform at
+        the far end of its tier, and the seeding walk stops once the cycle's budget is spent. On
+        2026-11-11 that left 416 non-X documents unanalysed for weeks — 307 of them Bluesky, 295
+        published in October — while 10 slots were consumed inside the P1 tier every cycle.
+
+        This reader walks the same boundary the other way, so the oldest waiting document is
+        reachable in a bounded number of cycles instead of never.
+        """
+        if limit < 1:
+            return []
+        platform = self.platform if platform is None else platform
+        cursor = self.collection.find(
+            ready_handoff_query(
+                project_id=self.project_id,
+                run_id=run_id,
+                not_before=self.not_before,
+                platform=platform,
+            ),
+            {"handoff": 1, "_id": 0},
+        ).sort(
+            [
+                ("handoff.published_at", 1),
+                ("source_url", 1),
+            ]
+        ).skip(max(offset, 0)).limit(limit)
+        return [dict(row.get("handoff") or {}) for row in cursor]
+
+
 def _flatten_provenance(payload: Any) -> dict[str, list[str]]:
     """Flatten a rich provenance mapping into ``dict[str, list[str]]``.
 
@@ -790,6 +823,7 @@ def seed_ready_tasks(
     fingerprint: str = "",
     rejected: list[dict[str, str]] | None = None,
     diagnostics: dict[str, int] | None = None,
+    backfill_limit: int = 0,
 ) -> int:
     """Queue ready handoffs, quarantining any that cannot become a task (issue #382).
 
@@ -831,65 +865,112 @@ def seed_ready_tasks(
         "terminal_failure": 0,
         "rearmed": 0,
         "rejected": 0,
+        # #429: the drain the priority order cannot reach. Reported every cycle so the pool is
+        # measurable from the log instead of needing a separate daily query.
+        "backfill_limit": max(min(backfill_limit, limit), 0),
+        "backfill_examined": 0,
+        "backfill_published": 0,
+        "backfill_oldest_published_at": "",
     }
     rejections = 0
     try:
         if limit < 1:
             return 0
         batch_size = max(1, page_size or limit)
-        offset = 0
-        while counts["published"] < limit:
-            envelopes = handoff.ready_handoffs(
-                binding.manifest.run_id, limit=batch_size, offset=offset
-            )
-            if not envelopes:
-                break
-            offset += len(envelopes)
-            counts["examined"] += len(envelopes)
-            for envelope in envelopes:
-                try:
-                    task = binding.task_from_handoff(envelope)
-                except (KeyError, TypeError, ValueError) as exc:
-                    rejections += 1
-                    record = {
-                        "handoff_key": str(envelope.get("handoff_key") or ""),
-                        "run_id": str(envelope.get("run_id") or ""),
-                        "reason": f"{type(exc).__name__}: {exc}",
-                    }
-                    if rejected is not None:
-                        rejected.append(record)
-                    if rejections <= _REJECTION_DETAIL_LIMIT:
-                        logger.warning(
-                            "AI26 handoff quarantined at seed: handoff_key=%s reason=%s "
-                            "(it stays ready upstream and is retried next cycle)",
-                            record["handoff_key"] or "<missing>",
-                            record["reason"],
-                        )
-                    continue
-                if durable_store.has_result(task.idempotency_key, fingerprint):
-                    counts["already_analyzed"] += 1
-                    continue
-                if durable_store.has_terminal_failure(task.idempotency_key):
-                    rearmed = _maybe_rearm_terminal_failure_for_higher_budget(
-                        durable_store, task.idempotency_key
+
+        def publish_envelope(envelope: dict[str, Any], *, backfill: bool) -> bool:
+            """Publish one handoff if it is genuinely new work. Returns True when published."""
+            nonlocal rejections
+            try:
+                task = binding.task_from_handoff(envelope)
+            except (KeyError, TypeError, ValueError) as exc:
+                rejections += 1
+                record = {
+                    "handoff_key": str(envelope.get("handoff_key") or ""),
+                    "run_id": str(envelope.get("run_id") or ""),
+                    "reason": f"{type(exc).__name__}: {exc}",
+                }
+                if rejected is not None:
+                    rejected.append(record)
+                if rejections <= _REJECTION_DETAIL_LIMIT:
+                    logger.warning(
+                        "AI26 handoff quarantined at seed: handoff_key=%s reason=%s "
+                        "(it stays ready upstream and is retried next cycle)",
+                        record["handoff_key"] or "<missing>",
+                        record["reason"],
                     )
-                    if rearmed:
-                        counts["rearmed"] += rearmed
-                        logger.info(
-                            "Automatically re-armed %s terminal truncation failure record(s) "
-                            "for %s during seed after structured-output ceiling increase",
-                            rearmed,
-                            task.idempotency_key,
-                        )
-                    if durable_store.has_terminal_failure(task.idempotency_key):
-                        counts["terminal_failure"] += 1
-                        continue
-                queue.publish(task)
-                counts["published"] += 1
-                if counts["published"] >= limit:
+                return False
+            if durable_store.has_result(task.idempotency_key, fingerprint):
+                counts["already_analyzed"] += 1
+                return False
+            if durable_store.has_terminal_failure(task.idempotency_key):
+                rearmed = _maybe_rearm_terminal_failure_for_higher_budget(
+                    durable_store, task.idempotency_key
+                )
+                if rearmed:
+                    counts["rearmed"] += rearmed
+                    logger.info(
+                        "Automatically re-armed %s terminal truncation failure record(s) "
+                        "for %s during seed after structured-output ceiling increase",
+                        rearmed,
+                        task.idempotency_key,
+                    )
+                if durable_store.has_terminal_failure(task.idempotency_key):
+                    counts["terminal_failure"] += 1
+                    return False
+            queue.publish(task)
+            counts["published"] += 1
+            if backfill:
+                counts["backfill_published"] += 1
+                published_at = str(envelope.get("published_at") or "")
+                if published_at and not counts["backfill_oldest_published_at"]:
+                    counts["backfill_oldest_published_at"] = published_at
+            return True
+
+        def walk(fetch, *, quota: int, backfill: bool) -> None:
+            """Walk one ordering until the cycle's budget is spent or the frame ends."""
+            offset = 0
+            while counts["published"] < quota:
+                envelopes = fetch(limit=batch_size, offset=offset)
+                if not envelopes:
                     break
-            if len(envelopes) < batch_size:
-                break
+                offset += len(envelopes)
+                if backfill:
+                    counts["backfill_examined"] += len(envelopes)
+                else:
+                    counts["examined"] += len(envelopes)
+                for envelope in envelopes:
+                    publish_envelope(envelope, backfill=backfill)
+                    if counts["published"] >= quota:
+                        break
+                if len(envelopes) < batch_size:
+                    break
+
+        # #429: the oldest waiting documents get a reserved slice of the budget *first*, because the
+        # priority walk below spends everything it is given inside the highest tier it can reach. A
+        # reserved slice is what turns "never reached" into "draining at N per cycle"; without it,
+        # ordering alone still loses to a tier that receives new work every hour.
+        backfill_reader = getattr(handoff, "oldest_ready_handoffs", None)
+        backfill_quota = min(max(backfill_limit, 0), limit)
+        if backfill_quota and callable(backfill_reader):
+            walk(
+                lambda **kwargs: backfill_reader(binding.manifest.run_id, **kwargs),
+                quota=backfill_quota,
+                backfill=True,
+            )
+        elif backfill_quota:
+            logger.warning(
+                "AI26 backfill requested (%d of %d) but this handoff reader cannot walk the frame "
+                "oldest-first; the never-analysed tail will not drain this cycle",
+                backfill_quota,
+                limit,
+            )
+
+        walk(
+            lambda **kwargs: handoff.ready_handoffs(binding.manifest.run_id, **kwargs),
+            quota=limit,
+            backfill=False,
+        )
         counts["rejected"] = rejections
         if rejections > _REJECTION_DETAIL_LIMIT:
             logger.error(
@@ -1027,6 +1108,15 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument("--reclaim-idle-ms", type=int, default=900_000)
+    parser.add_argument(
+        "--backfill-tasks",
+        type=int,
+        default=int(os.environ.get("LACLAUGPT_AI26_BACKFILL_TASKS", "3")),
+        help=(
+            "Slots of the cycle budget reserved for the oldest never-analysed documents (#429). "
+            "0 restores the pure priority order, which never reaches the tail of the ready frame."
+        ),
+    )
     parser.add_argument("--seed-ready", action="store_true")
     parser.add_argument(
         "--rearm-failed",
@@ -1073,6 +1163,7 @@ def main(argv: list[str] | None = None) -> int:
             worker.queue,
             worker.durable_store,
             limit=max(args.max_tasks, 0),
+            backfill_limit=max(args.backfill_tasks, 0),
             fingerprint=worker.generation_fingerprint,
             rejected=rejected_handoffs,
             diagnostics=seed_diagnostics,
