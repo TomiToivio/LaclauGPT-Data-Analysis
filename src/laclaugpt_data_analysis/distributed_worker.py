@@ -379,7 +379,8 @@ def build_media_stager(settings: Settings) -> MediaStager | None:
 
 def ready_handoff_query(*, project_id: str, run_id: str | None = None,
                         not_before: str | None = None,
-                        platform: str | None = None) -> dict[str, Any]:
+                        platform: str | None = None,
+                        before: str | None = None) -> dict[str, Any]:
     """Build the canonical Collection -> Analysis handoff query.
 
     Study date boundaries come from the Phase 1 protocol profile. Keeping this
@@ -395,8 +396,15 @@ def ready_handoff_query(*, project_id: str, run_id: str | None = None,
         # Do not filter handoff.run_id: it is a producer/capture provenance id.
         # Project, readiness and publication floor define the eligible corpus.
     }
-    if not_before:
-        query["handoff.published_at"] = {"$gt": not_before}
+    if not_before or before:
+        if not_before and before and before <= not_before:
+            raise ValueError("HANDOFF_BEFORE must be later than the Phase 1 date floor")
+        bounds = {}
+        if not_before:
+            bounds["$gt"] = not_before
+        if before:
+            bounds["$lt"] = before
+        query["handoff.published_at"] = bounds
     if platform:
         # Scoped backfill: source_priority puts an entire stratum last, so without this a bounded cycle
         # cannot reach the platform it is meant to repair.
@@ -415,6 +423,7 @@ class MongoCollectionHandoff:
         self.not_before = not_before
         #: Optional scoped backfill (LACLAUGPT_HANDOFF_PLATFORM). See ready_handoff_query.
         self.platform = getattr(settings, "handoff_platform", None)
+        self.before = getattr(settings, "handoff_before", None)
 
     def resolve(self, source_url: str) -> CanonicalRecord:
         row = self.collection.find_one({"project_id": self.project_id, "source_url": source_url})
@@ -438,12 +447,13 @@ class MongoCollectionHandoff:
                 run_id=run_id,
                 not_before=self.not_before,
                 platform=platform,
+                before=self.before,
             ),
             {"handoff": 1, "_id": 0},
         ).sort(
             [
                 ("handoff.source_priority", 1),
-                ("handoff.published_at", -1),
+                ("handoff.published_at", 1 if self.before else -1),
                 ("source_url", 1),
             ]
         ).skip(max(offset, 0)).limit(limit)
