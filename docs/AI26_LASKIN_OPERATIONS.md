@@ -138,6 +138,27 @@ Lines worth acting on:
 slow-but-healthy cycle: of 495 logged cycles the median is 9 minutes, p90 is 41, and four
 historic successes exceeded 70. **Never kill a cycle for looking slow.**
 
+### The reserved backfill slice and a closed stratum (#429 / #433)
+
+Three of the ten slots per cycle (`LACLAUGPT_AI26_BACKFILL_TASKS`, default `3`) are spent
+oldest-first on the ready frame instead of on the priority order, so the tail the priority order
+cannot reach still drains. The slice is only worth its slots if it reaches the pool it was created
+for. The X capture stopped on 2026-10-26 (#401), so the X stratum reaches further back in
+publication time than every live stratum: on 2026-11-12 the slice published 29 of its 30 completions
+into September-dated X records while the non-X never-analysed pool grew 416 -> 439.
+
+`LACLAUGPT_AI26_BACKFILL_EXCLUDE_PLATFORMS` (comma-separated, **empty by default**) names platforms
+the oldest-first backfill walk must skip. The priority walk still sees every platform, so the live
+tiers stay exactly as fresh as before; nothing changes until a name is set, and unsetting it restores
+the pre-#433 order exactly. This host sets `=x` in `laskin.env` (2026-11-15) because the X stratum is
+closed for Phase 1 and can never be refreshed, while the non-X tail can.
+
+Read the effect off the cycle's own disposition line rather than a separate query:
+`backfill_excluded_platforms` becomes `1`, `backfill_published` stays `3`, and
+`backfill_oldest_published_at` starts advancing through non-X publication dates. If the key is
+missing from the line, the deployed worker predates #433 and the switch is inert — check the drift
+line before concluding the exclusion does nothing.
+
 If a cycle is genuinely stuck, and a human has decided to terminate it: an unacknowledged Redis
 message is reclaimable via `--reclaim-idle-ms`, and MongoDB's unique
 `(project_id, run_id, idempotency_key)` index keeps the result idempotent. **Never move the
@@ -154,6 +175,9 @@ re-process thousands of already handled entries.
 * **A bad run's results:** results are durable and idempotent, so a re-run from the same handoff
   revision converges rather than duplicating. Prefer re-running a record to editing a stored
   result by hand.
+* **The backfill exclusion:** remove or blank `LACLAUGPT_AI26_BACKFILL_EXCLUDE_PLATFORMS` in
+  `laskin.env`; the next cycle is back to the pre-#433 oldest-first order. No code change, no
+  restart, nothing in the queue to unwind.
 
 ## 6. What to ask before doing
 
