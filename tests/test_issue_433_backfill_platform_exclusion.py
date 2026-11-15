@@ -26,7 +26,6 @@ from laclaugpt_data_analysis.distributed_worker import (
     seed_ready_tasks,
 )
 
-
 # ---------------------------------------------------------------- query builder
 
 def test_no_exclusion_leaves_the_query_untouched():
