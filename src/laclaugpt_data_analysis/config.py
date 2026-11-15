@@ -72,6 +72,8 @@ class Settings:
     #: Exists because source_priority puts a whole stratum last: the 1,172 ready X records sit behind 2,652
     #: higher-priority ones, so a bounded cycle can never reach them to prove the fix (#407).
     handoff_platform: str | None = None
+    #: Optional exclusive upper publication bound for an old-tail backfill (#429).
+    handoff_before: str | None = None
     object_backend: str = "local"
     s3_endpoint_url: str | None = None
     s3_bucket: str | None = None
@@ -159,6 +161,7 @@ def load_settings() -> Settings:
         mongo_vector_index=_env("MONGODB_VECTOR_INDEX") or _env("MONGO_VECTOR_INDEX", "laclaugpt_record_embedding") or "laclaugpt_record_embedding",
         object_store_required=_bool_env("OBJECT_STORE_REQUIRED", True),
         handoff_platform=_env("HANDOFF_PLATFORM") or None,
+        handoff_before=_env("HANDOFF_BEFORE") or None,
         object_backend=_env("OBJECT_BACKEND", "local") or "local",
         s3_endpoint_url=_env("S3_ENDPOINT") or _env("S3_ENDPOINT_URL"),
         s3_bucket=_env("S3_BUCKET"),
