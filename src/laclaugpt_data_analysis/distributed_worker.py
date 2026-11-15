@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import importlib.util
+import inspect
 import json
 import logging
 import os
@@ -16,7 +17,7 @@ import socket
 import subprocess
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from .canonical import SCHEMA_VERSION, CanonicalRecord
 from .canonical_pipeline import PipelineContext, run_canonical_pipeline
@@ -380,7 +381,8 @@ def build_media_stager(settings: Settings) -> MediaStager | None:
 def ready_handoff_query(*, project_id: str, run_id: str | None = None,
                         not_before: str | None = None,
                         platform: str | None = None,
-                        before: str | None = None) -> dict[str, Any]:
+                        before: str | None = None,
+                        exclude_platforms: Sequence[str] | None = None) -> dict[str, Any]:
     """Build the canonical Collection -> Analysis handoff query.
 
     Study date boundaries come from the Phase 1 protocol profile. Keeping this
@@ -389,6 +391,11 @@ def ready_handoff_query(*, project_id: str, run_id: str | None = None,
     ``run_id`` is accepted and deliberately not used as a filter: it is the producer's capture run, not the
     analysis run (#407). ``platform`` is an opt-in scoped backfill, because source_priority places an entire
     stratum last — the 1,172 ready X records sit behind 2,652 higher-priority ones.
+
+    ``exclude_platforms`` is the mirror image and exists because of #433: the oldest-first backfill walk
+    spends its reserved slice at the very front of the frame, and the closed X stratum reaches further
+    back than every live strata, so 29 of 30 backfill completions were X while the non-X tail grew. It is
+    opt-in and empty by default, so nothing changes until a caller asks for it.
     """
     query: dict[str, Any] = {
         "project_id": project_id,
@@ -399,16 +406,27 @@ def ready_handoff_query(*, project_id: str, run_id: str | None = None,
     if not_before or before:
         if not_before and before and before <= not_before:
             raise ValueError("HANDOFF_BEFORE must be later than the Phase 1 date floor")
-        bounds = {}
+        bounds: dict[str, Any] = {}
         if not_before:
             bounds["$gt"] = not_before
         if before:
             bounds["$lt"] = before
         query["handoff.published_at"] = bounds
+    excluded = [str(name).strip() for name in (exclude_platforms or []) if str(name).strip()]
+    platform_condition: Any = None
     if platform:
         # Scoped backfill: source_priority puts an entire stratum last, so without this a bounded cycle
         # cannot reach the platform it is meant to repair.
-        query["source.platform"] = platform
+        platform_condition = platform
+    if excluded:
+        # #433: keep the reserved slice out of a stratum that is already closed, without asking the
+        # caller to enumerate every live platform.
+        platform_condition = (
+            {"$nin": excluded} if platform_condition is None
+            else {"$in": [platform_condition], "$nin": excluded}
+        )
+    if platform_condition is not None:
+        query["source.platform"] = platform_condition
     return query
 
 
@@ -461,7 +479,8 @@ class MongoCollectionHandoff:
 
 
     def oldest_ready_handoffs(self, run_id: str, *, limit: int, offset: int = 0,
-                              platform: str | None = None) -> list[dict[str, Any]]:
+                              platform: str | None = None,
+                              exclude_platforms: Sequence[str] | None = None) -> list[dict[str, Any]]:
         """Ready handoffs in publication order, oldest first (#429).
 
         The priority-ordered frame is right for keeping the live tiers fresh, and wrong as the *only*
@@ -472,6 +491,11 @@ class MongoCollectionHandoff:
 
         This reader walks the same boundary the other way, so the oldest waiting document is
         reachable in a bounded number of cycles instead of never.
+
+        ``exclude_platforms`` (issue #433) keeps the walk out of a stratum that is already closed. The
+        X capture stopped on 2026-10-26, so the X stratum reaches further back in publication time than
+        every live stratum; without an exclusion the reserved slice is spent on X documents that can
+        never be refreshed while the non-X tail it was created for keeps growing.
         """
         if limit < 1:
             return []
@@ -482,6 +506,7 @@ class MongoCollectionHandoff:
                 run_id=run_id,
                 not_before=self.not_before,
                 platform=platform,
+                exclude_platforms=exclude_platforms,
             ),
             {"handoff": 1, "_id": 0},
         ).sort(
@@ -822,6 +847,17 @@ def seed_disposition(diagnostics: dict[str, int]) -> str:
     return SEED_NO_NEW_WORK
 
 
+def _accepts_keyword(func: Any, name: str) -> bool:
+    """Does ``func`` accept ``name`` as a keyword (explicitly or via ``**kwargs``)?"""
+    try:
+        parameters = inspect.signature(func).parameters
+    except (TypeError, ValueError):  # builtins and C callables: assume yes rather than refuse work
+        return True
+    if name in parameters:
+        return True
+    return any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values())
+
+
 def seed_ready_tasks(
     binding: WorkerBinding,
     handoff: MongoCollectionHandoff,
@@ -834,6 +870,7 @@ def seed_ready_tasks(
     rejected: list[dict[str, str]] | None = None,
     diagnostics: dict[str, int] | None = None,
     backfill_limit: int = 0,
+    backfill_exclude_platforms: Sequence[str] | None = None,
 ) -> int:
     """Queue ready handoffs, quarantining any that cannot become a task (issue #382).
 
@@ -962,9 +999,30 @@ def seed_ready_tasks(
         # ordering alone still loses to a tier that receives new work every hour.
         backfill_reader = getattr(handoff, "oldest_ready_handoffs", None)
         backfill_quota = min(max(backfill_limit, 0), limit)
+        backfill_excluded = [
+            str(name).strip() for name in (backfill_exclude_platforms or []) if str(name).strip()
+        ]
+        counts["backfill_excluded_platforms"] = len(backfill_excluded)
         if backfill_quota and callable(backfill_reader):
+            # #433: the reserved slice must be reachable by the pool it was created for. An exclusion is
+            # passed only when configured, so a reader that does not implement it keeps working and the
+            # default behaviour is exactly the pre-#433 behaviour.
+            reader_kwargs: dict[str, Any] = {}
+            if backfill_excluded:
+                if _accepts_keyword(backfill_reader, "exclude_platforms"):
+                    reader_kwargs["exclude_platforms"] = backfill_excluded
+                    logger.info(
+                        "AI26 backfill slice excludes platform(s) %s for the oldest-first walk (#433)",
+                        ", ".join(backfill_excluded),
+                    )
+                else:
+                    logger.warning(
+                        "AI26 backfill exclusion requested (%s) but this handoff reader cannot skip a "
+                        "platform; the reserved slice keeps its pre-#433 ordering",
+                        ", ".join(backfill_excluded),
+                    )
             walk(
-                lambda **kwargs: backfill_reader(binding.manifest.run_id, **kwargs),
+                lambda **kwargs: backfill_reader(binding.manifest.run_id, **kwargs, **reader_kwargs),
                 quota=backfill_quota,
                 backfill=True,
             )
@@ -1127,6 +1185,14 @@ def _parser() -> argparse.ArgumentParser:
             "0 restores the pure priority order, which never reaches the tail of the ready frame."
         ),
     )
+    parser.add_argument(
+        "--backfill-exclude-platforms",
+        default=os.environ.get("LACLAUGPT_AI26_BACKFILL_EXCLUDE_PLATFORMS", ""),
+        help=(
+            "Comma-separated platforms the oldest-first backfill slice must skip (#433). "
+            "Empty by default: nothing changes until a closed stratum is named here."
+        ),
+    )
     parser.add_argument("--seed-ready", action="store_true")
     parser.add_argument(
         "--rearm-failed",
@@ -1174,6 +1240,9 @@ def main(argv: list[str] | None = None) -> int:
             worker.durable_store,
             limit=max(args.max_tasks, 0),
             backfill_limit=max(args.backfill_tasks, 0),
+            backfill_exclude_platforms=[
+                name.strip() for name in str(args.backfill_exclude_platforms).split(",") if name.strip()
+            ],
             fingerprint=worker.generation_fingerprint,
             rejected=rejected_handoffs,
             diagnostics=seed_diagnostics,
