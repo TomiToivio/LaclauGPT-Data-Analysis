@@ -340,14 +340,27 @@ def run_optional_dna_statement_coding(
         rendered_task.text,
     )
     selected_model = config.model or model
-    batch, response = chat_structured(
-        provider,
-        DNAStatementBatch,
-        model=selected_model,
-        system_prompt=system_resource.text,
-        user_prompt=envelope.render(),
-        allow_cloud_fallback=allow_cloud_fallback,
-    )
+    try:
+        batch, response = chat_structured(
+            provider,
+            DNAStatementBatch,
+            model=selected_model,
+            system_prompt=system_resource.text,
+            user_prompt=envelope.render(),
+            allow_cloud_fallback=allow_cloud_fallback,
+        )
+    except Exception as exc:
+        # A failed retry produces no new statements. It must not leave the previous payload looking
+        # like the current result, so the failure is recorded on the record before propagating
+        # (upstream #410's rule, applied to AI26's optional stage -- issue #435).
+        record.analysis.plugin_failures["dna_statement_coding"] = {
+            "stage": "dna_statement_coding",
+            "error": type(exc).__name__,
+            "message": str(exc)[:500],
+            "prompt_version": config.prompt_version,
+            "result_preserved": bool(record.analysis.plugin_results.get("dna_statement_coding")),
+        }
+        raise
     prompt_meta = prompt_provenance(system_resource, task_resource, rendered=rendered_task)
     actual_model = response.provenance.actual_model or selected_model
     statements = [
