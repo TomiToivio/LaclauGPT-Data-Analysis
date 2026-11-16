@@ -87,24 +87,38 @@ def audit(csv_path: Path, manifest_path: Path, *, seed: int = 444,
     """Return safe aggregates and *private* sampled rows."""
     if per_stratum < 1:
         raise ValueError("per_stratum must be positive")
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if manifest.get("schema") != "ai26.human_review/1":
-        raise ValueError("Unexpected/missing review-export schema")
+    manifest_text = manifest_path.read_text(encoding="utf-8")
+    if manifest_text.startswith("version https://git-lfs.github.com/spec/v1"):
+        raise ValueError("Git LFS manifest pointer; hydrate private data with git lfs pull")
+    with csv_path.open("rb") as probe:
+        if probe.read(80).startswith(b"version https://git-lfs.github.com/spec/v1"):
+            raise ValueError("Git LFS CSV pointer; hydrate private data with git lfs pull")
+    manifest = json.loads(manifest_text)
+    # Require verifiable provenance instead of silently treating an arbitrary CSV
+    # as an AI26 export. Variant field names are allowed only when present.
+    if manifest.get("schema") not in (None, "ai26.human_review/1", "ai26.review/1"):
+        raise ValueError("Unexpected review-export schema")
     checksum = hashlib.sha256(csv_path.read_bytes()).hexdigest()
-    if checksum != manifest.get("file_sha256"):
-        raise ValueError("CSV SHA256 disagrees with manifest")
+    expected_digest = manifest.get("file_sha256") or manifest.get("sha256")
+    if not expected_digest or checksum != expected_digest:
+        raise ValueError("CSV SHA256 missing or disagrees with manifest")
     with csv_path.open(encoding="utf-8", newline="") as file:
         reader = csv.DictReader(file)
         headers = reader.fieldnames or []
         if any(field not in headers for field in REQUIRED):
             raise ValueError("Required review columns missing")
+        if not _column(headers, "analysis_summary"):
+            raise ValueError("No readable AI26 analysis summary column")
+        if not _column(headers, "source_text"):
+            raise ValueError("No source evidence text/excerpt column")
         if len(set(headers)) != len(headers):
             raise ValueError("Duplicate CSV column names")
         rows = list(reader)
     if not rows:
         raise ValueError("Review export is empty: no accuracy audit can be performed")
-    if len(rows) != manifest.get("exported_rows"):
-        raise ValueError("CSV row count disagrees with manifest")
+    expected_rows = manifest.get("exported_rows", manifest.get("rows"))
+    if expected_rows is None or len(rows) != expected_rows:
+        raise ValueError("CSV row count missing or disagrees with manifest")
     ids = [r["source_url"].strip() for r in rows]
     if any(not item for item in ids) or len(ids) != len(set(ids)):
         raise ValueError("Missing or duplicated source_url")
@@ -115,17 +129,20 @@ def audit(csv_path: Path, manifest_path: Path, *, seed: int = 444,
     by_platform = Counter()
     strata = defaultdict(list)
     for row in rows:
-        status = row["analysis_status"].strip() or "(empty)"
-        arena = row["arena"].strip() or "(unknown)"
-        platform = row["platform"].strip() or "(unknown)"
+        status = _value(row, headers, "analysis_status") or "(unknown)"
+        arena = _value(row, headers, "arena") or "(unknown)"
+        platform = _value(row, headers, "platform") or "(unknown)"
         by_arena[arena] += 1
         by_platform[platform] += 1
         status_counts[status] += 1
         for field in ("source_text", "analysis_summary", *INTERPRETATIONS):
-            if field in row and not row[field].strip():
+            if _column(headers, field) and not _value(row, headers, field):
                 missing[field] += 1
-        # Stratify on actual metadata; no guessed language/model fields.
-        strata[(arena, platform, bool(row["analysis_summary"].strip()))].append(row)
+        # Stratify only on available fields; missing excerpt is not proof that
+        # the *full* canonical source record contains no evidence.
+        strata[(arena, platform, bool(_value(row, headers, "analysis_summary")),
+                bool(_value(row, headers, "source_text")),
+                bool(_value(row, headers, "formations")))].append(row)
     samples = []
     for key in sorted(strata):
         group = sorted(strata[key], key=lambda r: r["source_url"])
@@ -133,7 +150,7 @@ def audit(csv_path: Path, manifest_path: Path, *, seed: int = 444,
     report = {
         "contract": "ai26-review-audit/1",
         "export_sha256": checksum,
-        "generated_at_utc": manifest.get("generated_at_utc"),
+        "generated_at_utc": manifest.get("generated_at_utc") or manifest.get("generated_at"),
         "rows": len(rows),
         "sample_seed": seed,
         "sample_per_stratum": per_stratum,
@@ -148,7 +165,7 @@ def audit(csv_path: Path, manifest_path: Path, *, seed: int = 444,
         "empty_in_every_row": sorted(field for field, count in missing.items() if count == len(rows)),
         "evidence": _evidence_summary(rows),
         "accuracy_assessed": False,
-        "interpretation": "Structural profiling only; researcher review of source evidence required",
+        "interpretation": "Structural profiling only; a short source excerpt cannot establish quote fidelity or coding accuracy",
     }
     return report, samples
 

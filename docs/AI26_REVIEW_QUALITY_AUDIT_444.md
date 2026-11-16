@@ -1,6 +1,6 @@
 # AI26 review-data quality audit (issue #444)
 
-## Current dependency (2026-11-16)
+## Current dependency (2026-11-16, rechecked)
 
 Private PR [#69](https://github.com/TomiToivio/LaclauGPT-Private/pull/69)
 has merged its exporter code, but a repository inspection found only
@@ -10,6 +10,20 @@ scientific accuracy assessment, pipeline quality gain or evidence-based
 codebook revision can yet be claimed**. The full snapshot under
 `analysis/ai26_snapshot/` is a backup with separate inclusion rules,
 not a replacement for the issue #68 review export.
+
+**Updated GitHub state:** `analysis/ai26/exports/review/ai26_review.csv` and
+`MANIFEST.json` are now tracked in the private repository, but the GitHub
+connector returns Git LFS *pointer text*, not hydrated data. Historical issue
+comments also describe an earlier `analysis/ai26/review/` export with
+5,302 rows and a 100-record sample, but that location is not on current
+`main`. Therefore previous counts are historical, not freshly validated.
+On an authenticated checkout, run `git lfs pull` and validate the current
+payload/manifest before evaluating any source interpretations. Never publish
+private row-level data or credentials. The exporter can emit either full
+`source_text` or the compact `text_excerpt` projection, depending on version;
+the audit detects both. A 600-character excerpt is **insufficient for
+asserting hallucinated quotations absent from the full source**.
+
 
 ## When the live export exists
 
