@@ -199,7 +199,9 @@ def postprocess_record(
         if enabled(ctx, "sociotechnical_imaginaries")
         else []
     )
-    record.analysis.us = _objects(record, discourse.collective_subjects, "collective_subject")
+    record.analysis.collective_subjects = _objects(
+        record, discourse.collective_subjects, "collective_subject"
+    )
     record.analysis.frontier = _objects(record, discourse.frontiers, "frontier")
     record.analysis.affects = _objects(record, discourse.affects, "affect")
     record.analysis.formula_of_populism = {

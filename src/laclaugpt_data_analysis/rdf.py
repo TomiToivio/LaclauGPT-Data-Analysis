@@ -221,6 +221,11 @@ def materialize_record(
         # dropped from the RDF projection.
         (record.analysis.discourses, ns.Discourse),
         (record.analysis.imaginaries, ns.SociotechnicalImaginary),
+        # Phase 1 codes collective subjects (#452). The legacy `us`/`them` pair is
+        # still projected when a historical record carries it, but new records do
+        # not write it: `them` never had a producer, and the opposed pole is an
+        # antagonism target_ref where the source states one.
+        (record.analysis.collective_subjects, ns.CollectiveSubject),
         (record.analysis.us, ns.CollectiveSubject),
         (record.analysis.them, ns.Other),
         (record.analysis.affects, ns.Affect),
