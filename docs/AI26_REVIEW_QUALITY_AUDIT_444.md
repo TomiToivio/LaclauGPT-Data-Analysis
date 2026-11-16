@@ -74,3 +74,30 @@ The existing canonical JSONL audit is `tools/ai26_output_audit.py`; use it for
 evidence offsets, relation references, provenance and stale plugin outputs
 when richer records are available. The new CSV auditor does not duplicate
 those semantic checks.
+
+## Measuring a change: `tools/ai26_review_delta.py`
+
+The exporter above profiles and samples one export. The before/after step in #444 needs the other
+direction — the same records, two versions — so that tool stays the only profiler and this one does
+one job:
+
+```bash
+python tools/ai26_review_delta.py --before old.csv --after new.csv --json delta.json
+```
+
+It is paired on `record_id` and reports, per Phase 1 concept, how many records **gained** a value, how
+many **lost** one, and how many summaries changed. Gains and regressions are separate columns because a
+net figure hides a regression behind two improvements; `--fail-on-regression` makes that a gate.
+
+Two things it deliberately reports instead of smoothing over:
+
+- **Population changes.** Comparing the 5,302-row export with the 3,632-row one gives 3,632 shared ids
+  and **1,670 only-before**: the newer export keeps only the newest analysis result per `source_url`.
+  That is a change of population, not a defect, and it is counted rather than folded into a percentage.
+- **Absent columns.** If a concept has no column in the older file, the row says `absent` rather than
+  `0`, because "not measured" and "measured as zero" are different facts — the distinction the whole
+  audit rests on.
+
+Coverage is all it measures. An empty cell becoming filled says the pipeline produced something, never
+that the interpretation is right; the source-grounded reading pass is still a human task with the
+audit sample as its denominator.
