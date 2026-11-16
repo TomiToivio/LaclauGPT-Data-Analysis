@@ -105,3 +105,38 @@ class TestEvidenceRecording:
         record = _record()
         assert evidence_ids(record, ["", "   "], "step6") == []
         assert record.evidence == []
+
+
+class TestElidedQuotations:
+    """A model that elides the middle of a passage is still quoting, not inventing.
+
+    Before this, `locate_quote` required one contiguous span, so every "first words ... last words"
+    quotation was recorded as `exact=False`. On the live corpus 11.9 % of sampled quotations carry
+    an ellipsis, and they were counted against the model's grounding for no reason.
+    """
+
+    SOURCE = ("The ministry confirmed the timetable for the audit would not change, "
+              "and the opposition said it would hold the government to that promise in parliament.")
+
+    def test_elided_quote_is_located_as_an_outer_span(self):
+        start, end = locate_quote(
+            self.SOURCE,
+            "The ministry confirmed the timetable... hold the government to that promise")
+        assert start is not None and end is not None
+        assert self.SOURCE[start:end].startswith("The ministry confirmed")
+        assert "that promise" in self.SOURCE[start:end]
+
+    def test_segments_must_appear_in_order(self):
+        assert locate_quote(self.SOURCE,
+                            "hold the government... The ministry confirmed") == (None, None)
+
+    def test_a_segment_not_in_the_source_still_fails(self):
+        assert locate_quote(self.SOURCE,
+                            "The ministry confirmed... a sentence nobody wrote") == (None, None)
+
+    def test_one_short_segment_does_not_count(self):
+        # "audit..." — the second segment is below the minimum length, so the quote is not accepted.
+        assert locate_quote(self.SOURCE, "The ministry confirmed the timetable... audit") == (None, None)
+
+    def test_plain_quote_still_works(self):
+        assert locate_quote(self.SOURCE, "the opposition said it would hold")[0] is not None
