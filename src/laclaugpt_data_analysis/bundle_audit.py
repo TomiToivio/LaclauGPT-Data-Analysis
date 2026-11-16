@@ -55,7 +55,7 @@ def audit_research_bundle(root: str | Path, *, stem: str = "analysis") -> dict[s
                             if None in row:
                                 problems.append("csv_row_width_mismatch")
                             records.append(str(row.get("source_url") or "").strip())
-        except (OSError, UnicodeError, ValueError, csv.Error) as exc:
+        except (OSError, UnicodeError, ValueError, csv.Error):
             # No exception messages: they may contain private data.
             problems.append(f"{label}_unreadable_or_invalid")
             result["counts"][label] = len(records)
