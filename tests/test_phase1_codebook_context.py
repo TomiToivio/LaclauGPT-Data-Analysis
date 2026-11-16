@@ -68,3 +68,38 @@ def test_codebook_context_is_opt_in_and_not_memory_or_source_evidence():
     assert "role=context" in prompt
     assert "[MEMORY CONTEXT]" in prompt
     assert record.intermediate.stage_outputs["phase1_codebook_context"][0]["evidence_role"] == "researcher_context"
+
+
+def test_codebook_audit_distinguishes_disabled_from_empty_selection():
+    disabled = run_phase1_text_record(
+        document(), provider=Provider(),
+        config=Phase1TextConfig(enabled=True, model="fake"),
+        codebook_entries=entries(),
+    )
+    audit = disabled.intermediate.stage_outputs["phase1_codebook_context"][0]
+    assert audit["enabled"] is False
+    assert audit["selected_entries"] == []
+    assert audit["full_codebook_revision_known"] is False
+    assert disabled.analysis.codebook_refs == []
+
+    no_match = run_phase1_text_record(
+        document(), provider=Provider(),
+        config=Phase1TextConfig(enabled=True, codebook_context_enabled=True, model="fake"),
+        codebook_entries=[CodebookEntry(kind="signifier", label="absent term")],
+    )
+    audit = no_match.intermediate.stage_outputs["phase1_codebook_context"][0]
+    assert audit["enabled"] is True
+    assert audit["selected_entries"] == []
+    assert no_match.analysis.codebook_refs == []
+
+
+def test_selected_context_entries_are_recorded_without_claiming_full_codebook_revision():
+    record = run_phase1_text_record(
+        document(), provider=Provider(),
+        config=Phase1TextConfig(enabled=True, codebook_context_enabled=True, model="fake"),
+        codebook_entries=entries(),
+    )
+    assert record.analysis.codebook_refs == ["accountable governance", "democratic AI"]
+    audit = record.intermediate.stage_outputs["phase1_codebook_context"][0]
+    assert audit["codebook_context_sha256"]
+    assert audit["full_codebook_revision_known"] is False
