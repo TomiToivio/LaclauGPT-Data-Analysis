@@ -1,17 +1,16 @@
 # AI26 review-data quality audit (issue #444)
 
-## Current dependency (2026-11-16)
+## Current evidence gate (2026-11-16)
 
-Private PR [#69](https://github.com/TomiToivio/LaclauGPT-Private/pull/69)
-has merged its exporter code, but a repository inspection found only
-`analysis/ai26/exports/review/README.md`, not the live
-`ai26_review.csv` and `MANIFEST.json`. Consequently **no row-level
-scientific accuracy assessment, pipeline quality gain or evidence-based
-codebook revision can yet be claimed**. The full snapshot under
-`analysis/ai26_snapshot/` is a backup with separate inclusion rules,
-not a replacement for the issue #68 review export.
+The **current private main branch tracks** `analysis/ai26/exports/review/ai26_review.csv`, `MANIFEST.json`, and `README.md`. The GitHub connector returns **Git LFS pointer text**, not hydrated research data. At inspection the CSV pointer declared SHA-256 `b93713a5ab577499e1995a15874e16dec099aac79786fcb3d864c5ea671863cd` and 50,721,584 bytes; the manifest was also an LFS pointer. These are *tracked-object metadata*, **not** an independent checksum or row-level validation of the actual working-copy payload.
 
-## When the live export exists
+Previous authenticated Laskin audit comments on [#444](https://github.com/TomiToivio/LaclauGPT-Data-Analysis/issues/444) report 5,302 analysis documents collapsed to 3,632 distinct reviewed items, 2,210 filled antagonism fields, and 27 items without source text, and describe verified manifest checks. Treat those as **reported results from that environment**, not independent measurements from this connector. Earlier 5,302-row exports counted analysis versions rather than unique items and must not be mixed with the corrected denominator.
+
+The corrected projection and export changes were merged in [Private #73](https://github.com/TomiToivio/LaclauGPT-Private/pull/73); older comments about missing exports and alternate `analysis/ai26/review/` paths are historical. The snapshot `analysis/ai26_snapshot/` is a backup with separate inclusion rules, not a substitute for the current review export.
+
+**Remaining gate:** hydrate the CSV and manifest in an authenticated, authorized workstation/Laskin environment, verify their content SHA-256, schema, row/URL uniqueness and source-join integrity, and inspect full source evidence for the qualitative sample. Git LFS pointers alone cannot establish source-grounded coding accuracy.
+
+## Run the audit on hydrated private data
 
 On an authorized workstation/Laskin with both repositories available:
 
@@ -59,13 +58,13 @@ human annotations.
 The existing `ai26_output_audit.py` incorrectly treated records with only
 formations, signifiers, discourses or imaginaries as `complete_without_findings`:
 these Phase 1 analysis fields were missing from its `FINDING_FIELDS` tuple.
-This branch corrects that **audit detector**, with synthetic regressions. This
+The merged review-auditor fix corrects that **audit detector**, with synthetic regressions. This
 is not evidence that the underlying AI26 model was inaccurate, and does not
 alter the analytical methodology, prompts or codebooks.
 
-## Deferred until data is available
+## Deferred until hydrated data and human review are available
 
-- Accurate per-field missingness and source-grounded hallucination/error rates.
+- Independent verification of the corrected export's field missingness and source-grounded hallucination/error rates in the current environment.
 - Any attribution of observed errors to specific model prompts or codebooks.
 - Codebook changes justified by repeatedly observed misclassifications.
 - Before/after measured accuracy improvements and Laskin production validation.
