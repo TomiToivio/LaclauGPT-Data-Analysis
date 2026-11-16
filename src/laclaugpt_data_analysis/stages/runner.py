@@ -36,7 +36,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from ..canonical import CanonicalRecord
-from ..codebooks import CodebookEntry
+from ..codebooks import CodebookEntry, entries_fingerprint
 from ..modality_routing import (
     build_modality_plan,
     ensure_still_image_frames,
@@ -55,11 +55,30 @@ from .shared import (
     Preprocessor,
     VectorSink,
     append_stage,
+    codebook_context_audit,
     enabled,
     now_iso,
     validate_project_analysis_config,
 )
 from .summary import summarize_record
+
+
+def _codebook_revision_source(context: PipelineContext, entries: list[CodebookEntry]) -> str:
+    """Name the quantity in ``codebook_revision`` so two runs can be compared honestly.
+
+    A frozen run records the manifest's file SHA-256; a direct caller gets the content
+    fingerprint of the supplied entries. Both are legitimate identifiers and they are
+    not interchangeable, so the audit says which one it is holding.
+    """
+    revision = context.codebook_revision
+    if not revision:
+        return "none"
+    frozen = str(context.codebook_provenance.get("frozen_file_sha256") or "")
+    if frozen and revision == frozen:
+        return "run_manifest_file_sha256"
+    if entries and revision == entries_fingerprint(entries):
+        return "entries_content_fingerprint"
+    return "supplied_by_caller"
 
 
 def run_canonical_pipeline(
@@ -81,6 +100,28 @@ def run_canonical_pipeline(
     if project_profile.casefold() == "ai26":
         validate_project_analysis_config(ctx)
     entries = codebook_entries or []
+    revision_source = _codebook_revision_source(ctx, entries)
+    if not ctx.codebook_revision and entries:
+        # The worker records the frozen revision; a direct caller does not. Record
+        # what the prompt actually received instead of an empty string, so a stored
+        # result can say which priors produced it (issue #459, item 1).
+        revision = entries_fingerprint(entries)
+        ctx = ctx.model_copy(update={
+            "codebook_revision": revision,
+            "codebook_provenance": ctx.codebook_provenance or {
+                "effective": {"sha256": revision, "entry_count": len(entries)},
+                "selection": "whole_codebook_as_context_no_per_item_selection",
+                "source": "entries_supplied_to_prompt",
+            },
+        })
+        revision_source = "entries_content_fingerprint"
+    # Recorded unconditionally, even with no entries: "the codebook stage ran and
+    # supplied nothing" is a different fact from "the stage never ran" (#459, item 2).
+    append_stage(
+        record,
+        "phase1_codebook_context",
+        codebook_context_audit(ctx, entries, revision_source=revision_source),
+    )
     record.analysis.started_at = record.analysis.started_at or datetime.now(UTC)
 
     # 1. Enrich: derived inputs (ASR, OCR, frames, translations).

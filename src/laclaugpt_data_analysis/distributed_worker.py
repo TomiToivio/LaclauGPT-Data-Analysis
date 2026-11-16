@@ -153,6 +153,13 @@ class FrozenRunManifest:
     model: str
     public_git_sha: str
     source_tree_sha256: str = ""
+    # Which effective codebook produced the analysis, and what it was assembled
+    # from. Absent in manifests frozen before issue #459; the layer list is then
+    # empty and the merged identity still comes from the loaded codebook.
+    codebook_fingerprint: str = ""
+    codebook_id: str = ""
+    codebook_version: str = ""
+    codebook_layers: tuple[dict[str, Any], ...] = ()
 
     @classmethod
     def load(cls, path: str | Path) -> FrozenRunManifest:
@@ -578,16 +585,34 @@ def _codebook_identity(codebook: Any) -> dict[str, list[str]]:
 
 
 def _analysis_context(binding: Any, project_config: dict[str, Any], codebook: Any) -> PipelineContext:
-    """The per-worker context, carrying the revisions that produced each stored result (#459)."""
+    """The per-worker context, carrying the revisions that produced each stored result (#459).
+
+    ``codebook_revision`` holds the frozen file's SHA-256 because that is what the run
+    manifest binds and `WorkerBinding.validate_files()` proves; ``codebook_provenance``
+    adds what a hash cannot say -- the effective codebook's identity and the
+    base/overlay layers it was merged from, so "which of the two produced this label"
+    is answerable without the private inputs in hand.
+    """
     manifest = binding.manifest
+    snapshot = codebook.provenance_snapshot()
     return PipelineContext(
         project_context="AI26 distributed bounded test",
         project_config=project_config,
         config_revision=manifest.config_sha256,
         codebook_revision=manifest.codebook_sha256,
+        codebook_provenance={
+            "effective": snapshot,
+            # getattr: a manifest object may predate these fields (and test doubles
+            # model only the fields their call site reads), so absence is legal.
+            "layers": [dict(layer) for layer in getattr(manifest, "codebook_layers", ())],
+            "frozen_file_sha256": manifest.codebook_sha256,
+            "frozen_fingerprint": getattr(manifest, "codebook_fingerprint", ""),
+            "selection": "whole_codebook_as_context_no_per_item_selection",
+        },
         provenance={
             "private_config_sha256": [manifest.config_sha256],
             "codebook_sha256": [manifest.codebook_sha256],
+            "codebook_fingerprint": [str(snapshot["sha256"])],
             **_codebook_identity(codebook),
         },
     )
