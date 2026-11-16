@@ -561,6 +561,38 @@ def _publish_local_media_refs(record: Any, report: Any) -> None:
             media.local_ref = str(by_ref[ref].path)
 
 
+def _codebook_identity(codebook: Any) -> dict[str, list[str]]:
+    """Which codebook is in force, by identity rather than by hash alone (#459).
+
+    The manifest carries a codebook digest, which answers "did it change?" but not
+    "which codebook was it?", and a merged codebook hides the precedence of its layers
+    behind a single hash. `Codebook.provenance_snapshot()` is the public answer, and it
+    never exposes the source path.
+    """
+    snapshot = codebook.provenance_snapshot()
+    return {
+        "codebook_id": [str(snapshot["codebook_id"])],
+        "codebook_version": [str(snapshot["version"])],
+        "codebook_entries": [str(snapshot["entry_count"])],
+    }
+
+
+def _analysis_context(binding: Any, project_config: dict[str, Any], codebook: Any) -> PipelineContext:
+    """The per-worker context, carrying the revisions that produced each stored result (#459)."""
+    manifest = binding.manifest
+    return PipelineContext(
+        project_context="AI26 distributed bounded test",
+        project_config=project_config,
+        config_revision=manifest.config_sha256,
+        codebook_revision=manifest.codebook_sha256,
+        provenance={
+            "private_config_sha256": [manifest.config_sha256],
+            "codebook_sha256": [manifest.codebook_sha256],
+            **_codebook_identity(codebook),
+        },
+    )
+
+
 class AI26Handler:
     def __init__(
         self,
@@ -583,19 +615,13 @@ class AI26Handler:
         # It cannot be handed to PipelineContext — that model declares no stager field
         # and silently drops unknown keys, which would make staging a silent no-op.
         self.stager = stager if stager is not None else build_media_stager(settings)
-        # Only declared PipelineContext fields belong here. An undeclared kwarg is
-        # discarded without warning, so the manifest revisions are carried in
-        # `provenance`, which the context actually keeps (matching the proven working
-        # implementation). `config_revision`/`codebook_revision` are left for the
-        # analysis stages to fill from the run manifest.
-        self.context = PipelineContext(
-            project_context="AI26 distributed bounded test",
-            project_config=self.project_config,
-            provenance={
-                "private_config_sha256": [binding.manifest.config_sha256],
-                "codebook_sha256": [binding.manifest.codebook_sha256],
-            },
-        )
+        # Only declared PipelineContext fields belong here: an undeclared kwarg is
+        # discarded without warning. `config_revision` and `codebook_revision` *are*
+        # declared, and issue #459 is what happens when they are left empty on the
+        # theory that a later stage would fill them: nothing filled them, so every
+        # stored `model_runs[].codebook_revision` in the AI26 corpus is "" and no
+        # record can say which codebook produced it.
+        self.context = _analysis_context(binding, self.project_config, self.codebook)
 
     def __call__(self, task: TaskEnvelope) -> dict[str, Any]:
         record = self.handoff.resolve(task.record_ref)
