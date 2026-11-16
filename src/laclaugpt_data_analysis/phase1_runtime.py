@@ -187,15 +187,26 @@ def run_phase1_text_record(
         ctx = phase1_codebook_context(
             ctx, selected_entries, limit=cfg.codebook_context_limit
         )
-        record.intermediate.stage_outputs["phase1_codebook_context"] = [{
-            "enabled": True,
-            "selection_method": "current_source_label_or_alias_match",
-            "evidence_role": "researcher_context",
-            "selected_entries": [
-                {"kind": entry.kind, "label": entry.label} for entry in selected_entries
-            ],
-            "codebook_context_sha256": ctx.codebook_revision,
-        }]
+        # These are context entries, not necessarily codes assigned by the model.
+        record.analysis.codebook_refs = sorted({entry.label for entry in selected_entries})
+
+    # Always record whether the optional codebook context was active. An empty
+    # selection is not evidence that the feature was disabled, and a fragment
+    # fingerprint must not be represented as the full source-codebook hash.
+    record.intermediate.stage_outputs["phase1_codebook_context"] = [{
+        "enabled": cfg.codebook_context_enabled,
+        "selection_method": (
+            "current_source_label_or_alias_match"
+            if cfg.codebook_context_enabled else "disabled"
+        ),
+        "evidence_role": "researcher_context",
+        "selected_entries": [
+            {"kind": entry.kind, "label": entry.label} for entry in selected_entries
+        ],
+        "selection_limit": cfg.codebook_context_limit,
+        "codebook_context_sha256": ctx.codebook_revision if cfg.codebook_context_enabled else "",
+        "full_codebook_revision_known": False,
+    }]
 
     # Phase 1 multimodality is capability-driven. The historical EP24 flag is
     # retained in configuration for compatibility, but media presence now decides
