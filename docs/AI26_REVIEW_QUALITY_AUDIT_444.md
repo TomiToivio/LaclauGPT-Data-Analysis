@@ -1,16 +1,24 @@
 # AI26 review-data quality audit (issue #444)
 
-## Current evidence gate (2026-11-16)
+## Current dependency (2026-11-16, rechecked)
 
 The **current private main branch tracks** `analysis/ai26/exports/review/ai26_review.csv`, `MANIFEST.json`, and `README.md`. The GitHub connector returns **Git LFS pointer text**, not hydrated research data. At inspection the CSV pointer declared SHA-256 `b93713a5ab577499e1995a15874e16dec099aac79786fcb3d864c5ea671863cd` and 50,721,584 bytes; the manifest was also an LFS pointer. These are *tracked-object metadata*, **not** an independent checksum or row-level validation of the actual working-copy payload.
 
-Previous authenticated Laskin audit comments on [#444](https://github.com/TomiToivio/LaclauGPT-Data-Analysis/issues/444) report 5,302 analysis documents collapsed to 3,632 distinct reviewed items, 2,210 filled antagonism fields, and 27 items without source text, and describe verified manifest checks. Treat those as **reported results from that environment**, not independent measurements from this connector. Earlier 5,302-row exports counted analysis versions rather than unique items and must not be mixed with the corrected denominator.
+**Updated GitHub state:** `analysis/ai26/exports/review/ai26_review.csv` and
+`MANIFEST.json` are now tracked in the private repository, but the GitHub
+connector returns Git LFS *pointer text*, not hydrated data. Historical issue
+comments also describe an earlier `analysis/ai26/review/` export with
+5,302 rows and a 100-record sample, but that location is not on current
+`main`. Therefore previous counts are historical, not freshly validated.
+On an authenticated checkout, run `git lfs pull` and validate the current
+payload/manifest before evaluating any source interpretations. Never publish
+private row-level data or credentials. The exporter can emit either full
+`source_text` or the compact `text_excerpt` projection, depending on version;
+the audit detects both. A 600-character excerpt is **insufficient for
+asserting hallucinated quotations absent from the full source**.
 
-The corrected projection and export changes were merged in [Private #73](https://github.com/TomiToivio/LaclauGPT-Private/pull/73); older comments about missing exports and alternate `analysis/ai26/review/` paths are historical. The snapshot `analysis/ai26_snapshot/` is a backup with separate inclusion rules, not a substitute for the current review export.
 
-**Remaining gate:** hydrate the CSV and manifest in an authenticated, authorized workstation/Laskin environment, verify their content SHA-256, schema, row/URL uniqueness and source-join integrity, and inspect full source evidence for the qualitative sample. Git LFS pointers alone cannot establish source-grounded coding accuracy.
-
-## Run the audit on hydrated private data
+## When the live export exists
 
 On an authorized workstation/Laskin with both repositories available:
 
@@ -73,3 +81,30 @@ The existing canonical JSONL audit is `tools/ai26_output_audit.py`; use it for
 evidence offsets, relation references, provenance and stale plugin outputs
 when richer records are available. The new CSV auditor does not duplicate
 those semantic checks.
+
+## Measuring a change: `tools/ai26_review_delta.py`
+
+The exporter above profiles and samples one export. The before/after step in #444 needs the other
+direction — the same records, two versions — so that tool stays the only profiler and this one does
+one job:
+
+```bash
+python tools/ai26_review_delta.py --before old.csv --after new.csv --json delta.json
+```
+
+It is paired on `record_id` and reports, per Phase 1 concept, how many records **gained** a value, how
+many **lost** one, and how many summaries changed. Gains and regressions are separate columns because a
+net figure hides a regression behind two improvements; `--fail-on-regression` makes that a gate.
+
+Two things it deliberately reports instead of smoothing over:
+
+- **Population changes.** Comparing the 5,302-row export with the 3,632-row one gives 3,632 shared ids
+  and **1,670 only-before**: the newer export keeps only the newest analysis result per `source_url`.
+  That is a change of population, not a defect, and it is counted rather than folded into a percentage.
+- **Absent columns.** If a concept has no column in the older file, the row says `absent` rather than
+  `0`, because "not measured" and "measured as zero" are different facts — the distinction the whole
+  audit rests on.
+
+Coverage is all it measures. An empty cell becoming filled says the pipeline produced something, never
+that the interpretation is right; the source-grounded reading pass is still a human task with the
+audit sample as its denominator.
