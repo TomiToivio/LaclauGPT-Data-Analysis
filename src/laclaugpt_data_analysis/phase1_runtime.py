@@ -187,17 +187,14 @@ def run_phase1_text_record(
         ctx = phase1_codebook_context(
             ctx, selected_entries, limit=cfg.codebook_context_limit
         )
-        # These are context entries, not necessarily codes assigned by the model.
-        record.analysis.codebook_refs = sorted({entry.label for entry in selected_entries})
-
-    # Always record whether the optional codebook context was active. An empty
-    # selection is not evidence that the feature was disabled, and a fragment
-    # fingerprint must not be represented as the full source-codebook hash.
+    # Record the codebook-context decision in both branches (#459). "This stage never
+    # ran" and "it ran and selected nothing" are different facts, and an absent key
+    # cannot be told from an empty one by a later reader — which is how the AI26 corpus
+    # ended up with no record of whether a codebook was in force at all.
     record.intermediate.stage_outputs["phase1_codebook_context"] = [{
         "enabled": cfg.codebook_context_enabled,
         "selection_method": (
-            "current_source_label_or_alias_match"
-            if cfg.codebook_context_enabled else "disabled"
+            "current_source_label_or_alias_match" if cfg.codebook_context_enabled else "disabled"
         ),
         "evidence_role": "researcher_context",
         "selected_entries": [
@@ -205,7 +202,7 @@ def run_phase1_text_record(
         ],
         "selection_limit": cfg.codebook_context_limit,
         "codebook_context_sha256": ctx.codebook_revision if cfg.codebook_context_enabled else "",
-        "full_codebook_revision_known": False,
+        "codebook_entries_offered": len(entries),
     }]
 
     # Phase 1 multimodality is capability-driven. The historical EP24 flag is
