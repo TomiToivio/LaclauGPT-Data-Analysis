@@ -43,6 +43,7 @@ from ..modality_routing import (
     legacy_multimodal_projection,
 )
 from .evidence import evidence_ids as _evidence_ids_impl
+from .evidence_gate import abstain_without_source_evidence
 from .frame import analyze_frames
 from .graph import build_discourse_graph
 from .laclau import discourse_analysis
@@ -172,6 +173,20 @@ def run_canonical_pipeline(
         )
 
     # 3. Descriptive pass over the whole item, then 4. the theory stage.
+    #    Evidence-first gate: an item with no materialised text, transcript, OCR or
+    #    frame description is abstained before the model is asked at all (#451).
+    if abstain_without_source_evidence(record, stage="runner"):
+        append_stage(
+            record,
+            "pipeline_abstained",
+            {
+                "created_at": now_iso(),
+                "skipped_stages": ["summary", "discourse", "postprocess", "discourse_graph"],
+                "reason": "no_source_evidence",
+            },
+        )
+        return record
+
     summary = summarize_record(
         record,
         provider=provider,

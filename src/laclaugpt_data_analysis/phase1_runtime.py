@@ -22,6 +22,7 @@ from .memory.normalization import apply_accepted_memory
 from .memory.sqlite import SQLiteMemory
 from .modality_routing import build_modality_plan, ensure_still_image_frames
 from .phase1_shadow import preprocess_shadow_record
+from .stages.evidence_gate import abstain_without_source_evidence
 
 PHASE1_NAMESPACE = "phase1"
 PHASE1_RUNTIME_VERSION = "phase1-text-v1"
@@ -226,6 +227,12 @@ def run_phase1_text_record(
             allow_cloud_fallback=cfg.allow_cloud_fallback,
         )
         record.intermediate.stage_outputs["multimodal_visibility"] = [frame_provider.audit()]
+
+    # Evidence-first gate: Phase 1 does not interpret a record with nothing to read.
+    # Before this, an empty `content.text` still produced a full interpretation from
+    # the record's metadata (#451).
+    if abstain_without_source_evidence(record, stage="phase1_runtime"):
+        return record
 
     summary = summarize_record(
         record,

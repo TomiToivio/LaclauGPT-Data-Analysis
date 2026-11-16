@@ -51,6 +51,7 @@ from ..models import Topic
 from ..research_record import ensure_research_layers
 from ..social_semiotic import UncertaintyObservation
 from .evidence import evidence_ids
+from .evidence_gate import abstain_without_source_evidence
 from .proposals import (
     DiscourseProposal,
     DiscursiveElement,
@@ -169,6 +170,13 @@ def postprocess_record(
 ) -> CanonicalRecord:
     """Write both proposals into the canonical analysis record."""
     ctx = context or PipelineContext()
+
+    # Evidence-first: a record with nothing to read is abstained, not interpreted.
+    # This covers every caller of the postprocessor, so a caller that skipped the
+    # runner-level gate cannot still write labels derived from metadata (#451).
+    if abstain_without_source_evidence(record, stage="postprocess"):
+        return ensure_research_layers(record)
+
     record.analysis.status = "analyzed"
     record.analysis.summary = summary.summary or None
     _project_summary_capabilities(record, summary, ctx)
