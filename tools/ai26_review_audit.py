@@ -190,11 +190,11 @@ def profile(columns: list[str], rows: list[dict[str, str]]) -> dict[str, Any]:
     by_version = Counter((row.get("analysis_version") or "").strip() or "(none)" for row in rows)
 
     cross = Counter()
-    for text, summary, formation in zip(has_text, has_summary, has_formation):
+    for text, summary, formation in zip(has_text, has_summary, has_formation, strict=True):
         cross[f"text={int(text)}|summary={int(summary)}|formation={int(formation)}"] += 1
 
     platform_text = defaultdict(lambda: {"rows": 0, "with_text": 0, "with_formation": 0})
-    for row, text, formation in zip(rows, has_text, has_formation):
+    for row, text, formation in zip(rows, has_text, has_formation, strict=True):
         key = (row.get("platform") or "").strip() or "(none)"
         platform_text[key]["rows"] += 1
         platform_text[key]["with_text"] += int(text)
@@ -248,7 +248,7 @@ def _seeded_order(record_id: str, seed: int) -> str:
     A row position would depend on the export's ordering; a hash of the id does not. Two runs with the
     same seed therefore draw the same records from the same population.
     """
-    return hashlib.sha256(f"{seed}:{record_id}".encode("utf-8")).hexdigest()
+    return hashlib.sha256(f"{seed}:{record_id}".encode()).hexdigest()
 
 
 def allocate(counts: dict[str, int], size: int, *, floor: int = 0) -> dict[str, int]:
@@ -296,7 +296,7 @@ def allocate(counts: dict[str, int], size: int, *, floor: int = 0) -> dict[str, 
 def sample(rows: list[dict[str, str]], size: int, seed: int, *, floor: int = 1) -> dict[str, Any]:
     keys = strata_keys(rows)
     grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
-    for key, row in zip(keys, rows):
+    for key, row in zip(keys, rows, strict=True):
         grouped[key].append(row)
 
     quotas = allocate({k: len(v) for k, v in grouped.items()}, size, floor=floor)
