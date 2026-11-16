@@ -45,9 +45,14 @@ CHECKS = (
 
 #: Analysis surface families a complete record is expected to have produced something in.
 FINDING_FIELDS = (
+    # Include the actual AI26 Phase 1 interpretive categories. An analysis with only
+    # formations or imaginaries is not an empty analysis (issue #444).
+    "formations", "signifiers", "nodal_points", "floating_signifiers",
+    "empty_signifier_candidates", "discourses", "imaginaries",
     "entities", "themes", "topics", "relations", "equivalence_chains", "difference_chains",
-    "antagonisms", "actor_entity_relations", "nodal_points", "floating_signifiers", "us", "them",
-    "frontier", "affects", "sentiments", "stances", "classifications", "embeddings",
+    "antagonisms", "actor_entity_relations", "us", "them",
+    "frontier", "affects", "sentiments", "stances", "classifications",
+    "representations", "embeddings",
 )
 
 COMPLETE_STATUSES = {"complete", "completed", "done", "ok"}

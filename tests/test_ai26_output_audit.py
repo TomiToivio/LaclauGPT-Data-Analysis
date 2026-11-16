@@ -178,3 +178,21 @@ def test_the_cli_can_watch_one_check_and_ignore_others(tmp_path):
     path.write_text(json.dumps(thin) + "\n", encoding="utf-8")
     assert module.main(["--input", str(path), "--fail-on", "offset_mismatch"]) == 0
     assert module.main(["--input", str(path), "--fail-on", "complete_without_model_runs"]) == 1
+
+
+def test_phase1_interpretations_count_as_findings():
+    """A valid AI26 interpretation need not contain relational/network outputs."""
+    module = _audit()
+    for field in ("formations", "signifiers", "imaginaries", "discourses",
+                  "empty_signifier_candidates"):
+        valid = record(analysis={"relations": [], "us": [], field: [
+            {"object_id": "obj-1", "label": "synthetic concept"}]})
+        report = module.audit_stream([valid])
+        assert report["checks"]["complete_without_findings"] == 0, field
+
+
+def test_analysis_without_any_interpretive_content_is_still_flagged():
+    module = _audit()
+    empty = record(analysis={"status": "complete", "relations": [], "us": []})
+    report = module.audit_stream([empty])
+    assert report["checks"]["complete_without_findings"] == 1
