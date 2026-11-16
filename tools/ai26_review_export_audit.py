@@ -49,6 +49,39 @@ def _hint(error: Exception) -> str:
     return "I/O failure"
 
 
+def _evidence_summary(rows: list[dict]) -> dict:
+    """How much of the model's evidence is actually present in the source it cites.
+
+    Read from the export's `evidence_count` / `evidence_exact_count` columns, which the pipeline fills
+    from its own verbatim check. A paraphrase or an "implied by context" gloss counts as unverified:
+    that is the point of the measure.
+    """
+    if "evidence_count" not in (rows[0] if rows else {}):
+        return {"available": False,
+                "reason": "export has no evidence columns; regenerate it with the current exporter"}
+    total = exact = rows_with_none = rows_with_evidence = 0
+    for row in rows:
+        try:
+            count = int(row.get("evidence_count") or 0)
+            found = int(row.get("evidence_exact_count") or 0)
+        except ValueError:
+            continue
+        total += count
+        exact += found
+        if count:
+            rows_with_evidence += 1
+            if not found:
+                rows_with_none += 1
+    return {
+        "available": True,
+        "items": total,
+        "verbatim_in_source": exact,
+        "verbatim_share": round(exact / total, 4) if total else None,
+        "rows_with_evidence": rows_with_evidence,
+        "rows_with_no_verbatim_citation": rows_with_none,
+    }
+
+
 def audit(csv_path: Path, manifest_path: Path, *, seed: int = 444,
           per_stratum: int = 3) -> tuple[dict, list[dict]]:
     """Return safe aggregates and *private* sampled rows."""
@@ -113,6 +146,7 @@ def audit(csv_path: Path, manifest_path: Path, *, seed: int = 444,
         # A field missing from every row is not "sparse data": nothing produces it. The difference
         # decides whether a researcher reports a finding or files a pipeline defect.
         "empty_in_every_row": sorted(field for field, count in missing.items() if count == len(rows)),
+        "evidence": _evidence_summary(rows),
         "accuracy_assessed": False,
         "interpretation": "Structural profiling only; researcher review of source evidence required",
     }

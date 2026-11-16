@@ -128,3 +128,31 @@ def test_a_field_empty_in_every_row_is_reported_as_unproduced(tmp_path):
     report, _ = audit_module.audit(csv_file, manifest, seed=444)
     assert report["empty_in_every_row"] == ["discourses"]
     assert "formations" not in report["empty_in_every_row"]
+
+
+def test_evidence_grounding_is_measured_not_assumed(tmp_path):
+    """A paraphrase counts as unverified; the report must say so instead of assuming quotations."""
+    rows = [
+        {"source_url": "https://example.invalid/1", "platform": "rss", "arena": "elites",
+         "source_text": "synthetic source text", "analysis_status": "analyzed",
+         "analysis_summary": "s", "review_note": "", "formations": "",
+         "evidence_count": "3", "evidence_exact_count": "2"},
+        {"source_url": "https://example.invalid/2", "platform": "rss", "arena": "elites",
+         "source_text": "other", "analysis_status": "analyzed",
+         "analysis_summary": "s", "review_note": "", "formations": "",
+         "evidence_count": "2", "evidence_exact_count": "0"},
+    ]
+    csv_file, manifest = fixture(tmp_path, rows)
+    report, _ = audit_module.audit(csv_file, manifest, seed=444)
+    evidence = report["evidence"]
+    assert evidence["available"] is True
+    assert evidence["items"] == 5
+    assert evidence["verbatim_in_source"] == 2
+    assert evidence["verbatim_share"] == 0.4
+    assert evidence["rows_with_no_verbatim_citation"] == 1
+
+
+def test_evidence_metric_says_so_when_the_export_lacks_the_columns(tmp_path):
+    csv_file, manifest = fixture(tmp_path)  # fixture rows carry no evidence columns
+    report, _ = audit_module.audit(csv_file, manifest, seed=444)
+    assert report["evidence"]["available"] is False
