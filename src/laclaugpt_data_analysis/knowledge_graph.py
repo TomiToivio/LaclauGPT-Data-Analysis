@@ -209,7 +209,8 @@ def project_laclau_record(
         "empty-signifier": record.analysis.empty_signifier_candidates,
         "discourse": record.analysis.discourses,
         "imaginary": record.analysis.imaginaries,
-        "collective-subject": record.analysis.us,
+        "collective-subject": record.analysis.collective_subjects,
+        # Legacy view of the same objects, for records analysed before #452.
         "other": record.analysis.them,
         "frontier": record.analysis.frontier,
         "affect": record.analysis.affects,

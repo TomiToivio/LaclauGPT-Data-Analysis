@@ -79,6 +79,13 @@ Recommended for decision: **(b) with a named criterion and a guard** — but onl
 corpus already supports; (a) requires a criterion the codebook does not yet state, and (c) discards a
 field the theory needs.
 
+**Decided (2026-11-16): (c), retire the pair — with the opposed pole kept where the source states it.**
+`phase1_v1.yaml` declares `collective_subjects` and no `them`, so the codebook-derived answer is the
+collective subject, not a two-pole formula. The pipeline now writes `analysis.collective_subjects`; `us`
+becomes a documented read-only legacy alias (lifted into `collective_subjects` on load) and `them` is not
+derived or exported for Phase 1. Nothing is lost: an opposed pole the source states is already an
+`antagonism` relation with a `target_ref`.
+
 Success criterion: `them` populated iff a record has an antagonism whose source is in `us`; both empty
 otherwise; no record with `them` and empty `us`.
 

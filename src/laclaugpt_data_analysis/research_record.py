@@ -174,8 +174,16 @@ def legacy_projection(record: CanonicalRecord) -> dict[str, Any]:
         "positive": _semicolon(positive),
         "neutral": _semicolon(neutral),
         "negative": _semicolon(negative),
-        "us": _semicolon(_labels(record.analysis.us)),
-        "them": _semicolon(_labels(record.analysis.them)),
+        "collective_subjects": _semicolon(_labels(record.analysis.collective_subjects)),
+        # `us` is a deprecated alias of `collective_subjects`: Phase 1 codes
+        # collective subjects, not a us/them pair (#452). `them` is no longer
+        # exported — it had no producer, and the opposed pole lives in the
+        # antagonism relations where the source actually states it.
+        "us": _semicolon(_labels(record.analysis.collective_subjects)),
+        # The EP24-era wide frame keeps a `them` column so old researcher
+        # dataframes keep their shape, but nothing derives it from the canonical
+        # analysis any more: Phase 1 never produced a `them` (#452).
+        "them": "",
         "formula_of_populism_analysis": (
             json.dumps(formula, ensure_ascii=False, sort_keys=True) if formula else ""
         ),
@@ -318,8 +326,12 @@ def render_human_readable(record: CanonicalRecord) -> HumanReadableSection:
         "difference_chains": _chains(record.analysis.difference_chains),
         "antagonisms": _relations(record.analysis.antagonisms),
         "actor_entity_relations": _relations(record.analysis.actor_entity_relations),
-        "us": _semicolon(_labels(record.analysis.us)),
-        "them": _semicolon(_labels(record.analysis.them)),
+        "collective_subjects": _semicolon(_labels(record.analysis.collective_subjects)),
+        # `us` is a deprecated alias of `collective_subjects`: Phase 1 codes
+        # collective subjects, not a us/them pair (#452). `them` is no longer
+        # exported — it had no producer, and the opposed pole lives in the
+        # antagonism relations where the source actually states it.
+        "us": _semicolon(_labels(record.analysis.collective_subjects)),
         "frontier": _semicolon(_labels(record.analysis.frontier)),
         "affects": _semicolon(_labels(record.analysis.affects)),
         "sentiments": _semicolon(_labels(record.analysis.sentiments)),
@@ -355,8 +367,7 @@ def render_human_readable(record: CanonicalRecord) -> HumanReadableSection:
         f"Difference chains: {sections['difference_chains'] or 'n/a'}\n\n"
         f"Antagonisms: {sections['antagonisms'] or 'n/a'}\n\n"
         f"Actor/entity relations: {sections['actor_entity_relations'] or 'n/a'}\n\n"
-        f"## Us / them / frontier / affects\nUs: {sections['us'] or 'n/a'}\n\n"
-        f"Them: {sections['them'] or 'n/a'}\n\n"
+        f"## Collective subjects / frontier / affects\nCollective subjects: {sections['collective_subjects'] or 'n/a'}\n\n"
         f"Frontier: {sections['frontier'] or 'n/a'}\n\n"
         f"Affects: {sections['affects'] or 'n/a'}\n\n"
         f"## Uncertainty / abstentions\nUncertainty: {sections['uncertainty'] or 'n/a'}\n\n"
@@ -375,6 +386,11 @@ def render_human_readable(record: CanonicalRecord) -> HumanReadableSection:
 
 def ensure_research_layers(record: CanonicalRecord) -> CanonicalRecord:
     """Synchronize stage history, report and legacy projection before persistence/export."""
+    # Migration for records analysed before #452: those carry the collective
+    # subjects under the legacy `us` name. Lift them once, in memory, so the
+    # record states what the codebook actually codes.
+    if not record.analysis.collective_subjects and record.analysis.us:
+        record.analysis.collective_subjects = list(record.analysis.us)
     sync_intermediate_from_content(record)
     record.human_readable = render_human_readable(record)
     record.legacy = legacy_projection(record)

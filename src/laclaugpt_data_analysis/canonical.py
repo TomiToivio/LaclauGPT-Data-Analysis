@@ -268,6 +268,15 @@ class AnalysisSection(Model):
     difference_chains: list[RelationChain] = Field(default_factory=list)
     antagonisms: list[Relation] = Field(default_factory=list)
     actor_entity_relations: list[Relation] = Field(default_factory=list)
+    # Phase 1 codes *collective subjects* (codebook `collective_subjects`), not a
+    # us/them pair: the codebook has no `them` entry and the pipeline never wrote
+    # one, while exporting the pair made half a relation look complete (#452).
+    # The antagonistic pole is carried by `antagonisms`, whose target_ref is the
+    # opposed subject when the source says so.
+    collective_subjects: list[DiscourseObject] = Field(default_factory=list)
+    # Legacy: `us` was written from the same collective subjects and `them` was
+    # never produced. Both are retained so historical records still load and
+    # project; new records do not write them.
     us: list[DiscourseObject] = Field(default_factory=list)
     them: list[DiscourseObject] = Field(default_factory=list)
     frontier: list[DiscourseObject] = Field(default_factory=list)

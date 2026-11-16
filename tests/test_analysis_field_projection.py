@@ -39,6 +39,7 @@ PROJECTED_BY_CANONICAL_PIPELINE = {
     "abstentions",
     "affects",
     "antagonisms",
+    "collective_subjects",
     "completed_at",
     "difference_chains",
     "empty_signifier_candidates",
@@ -56,7 +57,6 @@ PROJECTED_BY_CANONICAL_PIPELINE = {
     "status",
     "summary",
     "uncertainty",
-    "us",
 }
 
 # Fields deliberately owned by another layer (plugins, RDF, periodic summaries,
@@ -80,6 +80,8 @@ NOT_PROJECTED_HERE = {
     "them",
     "topic_assignments",
     "topics",
+    # Legacy us/them pair: read-only view of records analysed before #452.
+    "us",
 }
 
 

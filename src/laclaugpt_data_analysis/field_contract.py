@@ -47,15 +47,25 @@ class UnproducedField:
 #: Fields declared on `AnalysisSection` that nothing assigns. Adding an entry is a claim that the field
 #: is knowingly empty; removing one is a claim that a producer now exists. Both are checked.
 UNPRODUCED_FIELDS: dict[str, UnproducedField] = {
+    "us": UnproducedField(
+        field="us",
+        issue="#452",
+        defect=NO_PRODUCER,
+        reason="the pipeline wrote `us` from the same collective subjects it now stores under the "
+               "codebook's own name; nothing produces `us` after the ruling",
+        decision="RETIRED for Phase 1: kept as a read-only legacy alias (lifted into "
+                 "collective_subjects on load) so historical records still project",
+    ),
     "them": UnproducedField(
         field="them",
         issue="#452",
         defect=NO_PRODUCER,
-        reason="postprocess writes us from collective_subjects and nothing writes them; "
+        reason="postprocess wrote us from collective_subjects and nothing wrote them; "
                "stage_contract does not declare it either, so the us/them pair is half-populated by "
                "construction",
-        decision="split collective_subjects into us/them by a stated criterion, or retire them and stop "
-                 "exporting a pair that cannot be complete",
+        decision="RETIRED for Phase 1: the codebook codes collective_subjects and the opposed pole is "
+                 "an antagonism target_ref. New records write collective_subjects; the legacy us/them "
+                 "fields stay declared only so historical records load and project",
     ),
     "topic_assignments": UnproducedField(
         field="topic_assignments",
