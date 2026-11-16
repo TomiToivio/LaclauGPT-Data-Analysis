@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
@@ -21,6 +22,8 @@ from .discourse_network.models import DiscourseStatement, EvidenceSpan, Stance, 
 from .llm.structured_output import chat_structured
 from .prompt_library import load_prompt, prompt_provenance
 from .social_semiotic import TaxonomyToleranceMixin
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from .canonical_pipeline import PipelineContext
@@ -353,13 +356,21 @@ def run_optional_dna_statement_coding(
         # A failed retry produces no new statements. It must not leave the previous payload looking
         # like the current result, so the failure is recorded on the record before propagating
         # (upstream #410's rule, applied to AI26's optional stage -- issue #435).
+        #
+        # The error *class* is recorded, the message is not: ``write_research_bundle`` serialises the
+        # whole record with ``model_dump_json``, and a Pydantic ValidationError message embeds the
+        # offending input -- i.e. fragments of model output, and possibly quoted source text -- into a
+        # researcher bundle that is meant to be privacy-safe. The class plus the truncation/validation
+        # distinction is what an operator needs to act; the private text belongs in the server log.
         record.analysis.plugin_failures["dna_statement_coding"] = {
             "stage": "dna_statement_coding",
             "error": type(exc).__name__,
-            "message": str(exc)[:500],
             "prompt_version": config.prompt_version,
             "result_preserved": bool(record.analysis.plugin_results.get("dna_statement_coding")),
         }
+        logger.warning(
+            "dna_statement_coding failed on %s: %s", record.source_url, type(exc).__name__
+        )
         raise
     prompt_meta = prompt_provenance(system_resource, task_resource, rendered=rendered_task)
     actual_model = response.provenance.actual_model or selected_model
