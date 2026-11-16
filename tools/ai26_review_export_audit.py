@@ -49,8 +49,9 @@ def audit(csv_path: Path, manifest_path: Path, *, seed: int = 444,
     manifest_text = manifest_path.read_text(encoding="utf-8")
     if manifest_text.startswith("version https://git-lfs.github.com/spec/v1"):
         raise ValueError("Git LFS manifest pointer; hydrate private data with git lfs pull")
-    if csv_path.open("rb").read(80).startswith(b"version https://git-lfs.github.com/spec/v1"):
-        raise ValueError("Git LFS CSV pointer; hydrate private data with git lfs pull")
+    with csv_path.open("rb") as probe:
+        if probe.read(80).startswith(b"version https://git-lfs.github.com/spec/v1"):
+            raise ValueError("Git LFS CSV pointer; hydrate private data with git lfs pull")
     manifest = json.loads(manifest_text)
     # Require verifiable provenance instead of silently treating an arbitrary CSV
     # as an AI26 export. Variant field names are allowed only when present.
