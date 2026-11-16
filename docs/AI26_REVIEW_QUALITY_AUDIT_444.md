@@ -2,14 +2,7 @@
 
 ## Current dependency (2026-11-16, rechecked)
 
-Private PR [#69](https://github.com/TomiToivio/LaclauGPT-Private/pull/69)
-has merged its exporter code, but a repository inspection found only
-`analysis/ai26/exports/review/README.md`, not the live
-`ai26_review.csv` and `MANIFEST.json`. Consequently **no row-level
-scientific accuracy assessment, pipeline quality gain or evidence-based
-codebook revision can yet be claimed**. The full snapshot under
-`analysis/ai26_snapshot/` is a backup with separate inclusion rules,
-not a replacement for the issue #68 review export.
+The **current private main branch tracks** `analysis/ai26/exports/review/ai26_review.csv`, `MANIFEST.json`, and `README.md`. The GitHub connector returns **Git LFS pointer text**, not hydrated research data. At inspection the CSV pointer declared SHA-256 `b93713a5ab577499e1995a15874e16dec099aac79786fcb3d864c5ea671863cd` and 50,721,584 bytes; the manifest was also an LFS pointer. These are *tracked-object metadata*, **not** an independent checksum or row-level validation of the actual working-copy payload.
 
 **Updated GitHub state:** `analysis/ai26/exports/review/ai26_review.csv` and
 `MANIFEST.json` are now tracked in the private repository, but the GitHub
@@ -73,13 +66,13 @@ human annotations.
 The existing `ai26_output_audit.py` incorrectly treated records with only
 formations, signifiers, discourses or imaginaries as `complete_without_findings`:
 these Phase 1 analysis fields were missing from its `FINDING_FIELDS` tuple.
-This branch corrects that **audit detector**, with synthetic regressions. This
+The merged review-auditor fix corrects that **audit detector**, with synthetic regressions. This
 is not evidence that the underlying AI26 model was inaccurate, and does not
 alter the analytical methodology, prompts or codebooks.
 
-## Deferred until data is available
+## Deferred until hydrated data and human review are available
 
-- Accurate per-field missingness and source-grounded hallucination/error rates.
+- Independent verification of the corrected export's field missingness and source-grounded hallucination/error rates in the current environment.
 - Any attribution of observed errors to specific model prompts or codebooks.
 - Codebook changes justified by repeatedly observed misclassifications.
 - Before/after measured accuracy improvements and Laskin production validation.
