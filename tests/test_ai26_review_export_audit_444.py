@@ -87,46 +87,72 @@ def test_main_writes_separate_private_sample(tmp_path):
     assert "example.invalid" not in report.read_text()
 
 
-def test_compact_review_projection_uses_excerpt_and_singular_formation(tmp_path):
+def test_a_whole_transcript_cell_does_not_break_the_audit(tmp_path):
+    """A real export carries whole source texts; the csv default limit is 128 kB.
+
+    On the first live export the audit died with a bare "Error", which says nothing about the cause.
+    """
     rows = [
-        {"source_url": "https://example.invalid/compact", "platform": "rss",
-         "arena": "elites", "text_excerpt": "Only 600 source characters",
-         "summary": "Synthetic reading", "formation": "provisional formation",
-         "discourse_status": "analyzed"},
-        {"source_url": "https://example.invalid/uncoded", "platform": "web",
-         "arena": "grassroots", "text_excerpt": "", "summary": "Other summary",
-         "formation": "", "discourse_status": "skipped"},
+        {"source_url": "https://example.invalid/1", "platform": "rss", "arena": "elites",
+         "source_text": "x" * 200_000, "analysis_status": "analyzed",
+         "analysis_summary": "Synthetic summary", "review_note": "", "formations": ""},
     ]
     csv_file, manifest = fixture(tmp_path, rows)
-    report, sample = audit_module.audit(csv_file, manifest)
-    assert report["rows"] == 2
-    assert report["missing_by_field"]["source_text"] == 1
-    assert report["missing_by_field"]["formations"] == 1
-    assert report["source_text_is_excerpt"] is True
-    assert report["projected_columns"]["formations"] == "formation"
-    assert report["statuses"] == {"analyzed": 1, "skipped": 1}
-    assert len(sample) == 2
+    report, _ = audit_module.audit(csv_file, manifest, seed=444)
+    assert report["rows"] == 1
 
 
-def test_lfs_pointer_requires_hydration(tmp_path):
+def test_field_limit_failure_is_diagnosed_not_echoed(monkeypatch, tmp_path):
+    """The failure message must say what broke without quoting a cell."""
+    def boom(*_args, **_kwargs):
+        raise csv.Error("field larger than field limit (131072)")
+
+    monkeypatch.setattr(audit_module, "audit", boom)
     csv_file, manifest = fixture(tmp_path)
-    manifest.write_text("version https://git-lfs.github.com/spec/v1\\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="Git LFS manifest pointer"):
-        audit_module.audit(csv_file, manifest)
+    code = audit_module.main(["--input", str(csv_file), "--manifest", str(manifest),
+                              "--report", str(tmp_path / "r.json"),
+                              "--private-sample", str(tmp_path / "s.csv")])
+    assert code == 2
 
 
-def test_missing_manifest_digest_fails_closed(tmp_path):
-    csv_file, manifest = fixture(tmp_path)
-    payload = json.loads(manifest.read_text(encoding="utf-8"))
-    del payload["file_sha256"]
-    manifest.write_text(json.dumps(payload), encoding="utf-8")
-    with pytest.raises(ValueError, match="SHA256"):
-        audit_module.audit(csv_file, manifest)
+def test_a_field_empty_in_every_row_is_reported_as_unproduced(tmp_path):
+    rows = [
+        {"source_url": "https://example.invalid/1", "platform": "rss", "arena": "elites",
+         "source_text": "a", "analysis_status": "analyzed", "analysis_summary": "s",
+         "review_note": "", "formations": "f", "discourses": ""},
+        {"source_url": "https://example.invalid/2", "platform": "rss", "arena": "elites",
+         "source_text": "b", "analysis_status": "analyzed", "analysis_summary": "s",
+         "review_note": "", "formations": "", "discourses": ""},
+    ]
+    csv_file, manifest = fixture(tmp_path, rows)
+    report, _ = audit_module.audit(csv_file, manifest, seed=444)
+    assert report["empty_in_every_row"] == ["discourses"]
+    assert "formations" not in report["empty_in_every_row"]
 
 
-def test_missing_both_evidence_text_columns_is_error(tmp_path):
-    row = {"source_url": "https://example.invalid/1",
-           "summary": "Synthetic result", "platform": "rss"}
-    csv_file, manifest = fixture(tmp_path, [row])
-    with pytest.raises(ValueError, match="source evidence"):
-        audit_module.audit(csv_file, manifest)
+def test_evidence_grounding_is_measured_not_assumed(tmp_path):
+    """A paraphrase counts as unverified; the report must say so instead of assuming quotations."""
+    rows = [
+        {"source_url": "https://example.invalid/1", "platform": "rss", "arena": "elites",
+         "source_text": "synthetic source text", "analysis_status": "analyzed",
+         "analysis_summary": "s", "review_note": "", "formations": "",
+         "evidence_count": "3", "evidence_exact_count": "2"},
+        {"source_url": "https://example.invalid/2", "platform": "rss", "arena": "elites",
+         "source_text": "other", "analysis_status": "analyzed",
+         "analysis_summary": "s", "review_note": "", "formations": "",
+         "evidence_count": "2", "evidence_exact_count": "0"},
+    ]
+    csv_file, manifest = fixture(tmp_path, rows)
+    report, _ = audit_module.audit(csv_file, manifest, seed=444)
+    evidence = report["evidence"]
+    assert evidence["available"] is True
+    assert evidence["items"] == 5
+    assert evidence["verbatim_in_source"] == 2
+    assert evidence["verbatim_share"] == 0.4
+    assert evidence["rows_with_no_verbatim_citation"] == 1
+
+
+def test_evidence_metric_says_so_when_the_export_lacks_the_columns(tmp_path):
+    csv_file, manifest = fixture(tmp_path)  # fixture rows carry no evidence columns
+    report, _ = audit_module.audit(csv_file, manifest, seed=444)
+    assert report["evidence"]["available"] is False

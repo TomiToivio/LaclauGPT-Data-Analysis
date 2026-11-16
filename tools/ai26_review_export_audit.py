@@ -15,30 +15,71 @@ import sys
 from collections import Counter, defaultdict
 from pathlib import Path
 
-REQUIRED = ("source_url",)
-# Two review projections exist: the richer export has source_text/formations,
-# while the compact human-review projection uses text_excerpt/formation.
-# Missing source evidence and omitted projections must remain distinguishable.
-ALIASES = {
-    "source_text": ("source_text", "text_excerpt"),
-    "analysis_summary": ("analysis_summary", "summary"),
-    "formations": ("formations", "formation"),
-    "analysis_status": ("analysis_status", "discourse_status", "status"),
-}
+REQUIRED = (
+    "source_url", "platform", "arena", "source_text", "analysis_status",
+    "analysis_summary", "review_note",
+)
+#: A source text can hold a whole transcript, and the csv module refuses any cell over 128 kB by
+#: default -- which surfaced as a bare "Error" on the first real export.
+MAX_FIELD_BYTES = 64 * 1024 * 1024
+csv.field_size_limit(MAX_FIELD_BYTES)
+
 INTERPRETATIONS = (
     "formations", "signifiers", "nodal_points", "floating_signifiers",
     "imaginaries", "discourses", "antagonisms",
 )
 
 
-def _column(headers: list[str], logical: str) -> str | None:
-    candidates = ALIASES.get(logical, (logical,))
-    return next((name for name in candidates if name in headers), None)
+def _hint(error: Exception) -> str:
+    """Safe, actionable diagnosis: never the exception text, which can contain cell content."""
+    text = str(error).lower()
+    if isinstance(error, csv.Error) and "field larger than field limit" in text:
+        return (f"a cell exceeds the CSV field limit ({MAX_FIELD_BYTES} bytes); "
+                "the export carries whole source texts")
+    if isinstance(error, FileNotFoundError):
+        return "a required file is missing"
+    if isinstance(error, PermissionError):
+        return "a required file is not readable"
+    if isinstance(error, json.JSONDecodeError):
+        return "the manifest is not valid JSON"
+    if isinstance(error, KeyError):
+        return "the manifest is missing a required field"
+    if isinstance(error, ValueError):
+        return "a contract check failed (schema, digest, row count, columns or identifiers)"
+    return "I/O failure"
 
 
-def _value(row: dict, headers: list[str], logical: str) -> str:
-    column = _column(headers, logical)
-    return (row.get(column) or "").strip() if column else ""
+def _evidence_summary(rows: list[dict]) -> dict:
+    """How much of the model's evidence is actually present in the source it cites.
+
+    Read from the export's `evidence_count` / `evidence_exact_count` columns, which the pipeline fills
+    from its own verbatim check. A paraphrase or an "implied by context" gloss counts as unverified:
+    that is the point of the measure.
+    """
+    if "evidence_count" not in (rows[0] if rows else {}):
+        return {"available": False,
+                "reason": "export has no evidence columns; regenerate it with the current exporter"}
+    total = exact = rows_with_none = rows_with_evidence = 0
+    for row in rows:
+        try:
+            count = int(row.get("evidence_count") or 0)
+            found = int(row.get("evidence_exact_count") or 0)
+        except ValueError:
+            continue
+        total += count
+        exact += found
+        if count:
+            rows_with_evidence += 1
+            if not found:
+                rows_with_none += 1
+    return {
+        "available": True,
+        "items": total,
+        "verbatim_in_source": exact,
+        "verbatim_share": round(exact / total, 4) if total else None,
+        "rows_with_evidence": rows_with_evidence,
+        "rows_with_no_verbatim_citation": rows_with_none,
+    }
 
 
 def audit(csv_path: Path, manifest_path: Path, *, seed: int = 444,
@@ -119,9 +160,10 @@ def audit(csv_path: Path, manifest_path: Path, *, seed: int = 444,
         "arenas": dict(sorted(by_arena.items())),
         "platforms": dict(sorted(by_platform.items())),
         "missing_by_field": dict(sorted(missing.items())),
-        "projected_columns": {name: _column(headers, name) for name in
-                              ("source_text", "analysis_summary", "formations")},
-        "source_text_is_excerpt": _column(headers, "source_text") == "text_excerpt",
+        # A field missing from every row is not "sparse data": nothing produces it. The difference
+        # decides whether a researcher reports a finding or files a pipeline defect.
+        "empty_in_every_row": sorted(field for field, count in missing.items() if count == len(rows)),
+        "evidence": _evidence_summary(rows),
         "accuracy_assessed": False,
         "interpretation": "Structural profiling only; a short source excerpt cannot establish quote fidelity or coding accuracy",
     }
@@ -156,9 +198,9 @@ def main(argv=None) -> int:
         print(f"Audited {report['rows']} rows; private review sample {len(sample)} rows")
         return 0
     except (OSError, ValueError, KeyError, json.JSONDecodeError, csv.Error) as error:
-        # Do not print exception content: it can contain sensitive data/paths.
-        print(f"AI26 audit failed: {type(error).__name__}; check input and manifest",
-              file=sys.stderr)
+        # The message of a csv/OS error can quote a cell or a path, so print a diagnosis rather than
+        # the exception text: a failure that only says "Error" hides a fixable cause.
+        print(f"AI26 audit failed: {type(error).__name__}: {_hint(error)}", file=sys.stderr)
         return 2
 
 

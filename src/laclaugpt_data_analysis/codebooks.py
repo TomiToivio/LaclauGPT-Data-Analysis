@@ -59,6 +59,33 @@ class Codebook(BaseModel):
         }
 
 
+def codebook_layer_snapshot(codebook: Codebook, *, role: str) -> dict[str, Any]:
+    """Identify one input layer of an effective codebook, by role.
+
+    The merged effective codebook cannot say which layers produced a label, so
+    each layer is snapshotted where it is still separable (`role="base"` for the
+    public study codebook, `"overlay"` for a private addition). Issue #459: a
+    reader has to be able to tell a public-only run from a public+overlay run.
+    """
+    return {**codebook.provenance_snapshot(), "role": role}
+
+
+def entries_fingerprint(entries: Iterable[CodebookEntry]) -> str:
+    """Content fingerprint of the entries a prompt actually received.
+
+    ``Codebook.fingerprint()`` identifies a codebook *document* -- it includes the
+    id, version and title -- so it cannot describe the subset that reached one
+    prompt. This hashes exactly the supplied entries in a stable order, which is
+    what lets a stored result say "these were the priors the model saw".
+    """
+    payload = [
+        entry.model_dump(mode="json", exclude_none=False)
+        for entry in sorted(entries, key=lambda item: (item.kind, item.label.casefold().strip()))
+    ]
+    raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
 def stable_codebook_id(entry: CodebookEntry) -> str:
     if entry.kind not in KINDS:
         raise ValueError(f"unsupported memory kind: {entry.kind}")

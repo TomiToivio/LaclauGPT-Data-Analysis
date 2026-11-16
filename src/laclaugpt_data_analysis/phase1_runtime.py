@@ -187,15 +187,23 @@ def run_phase1_text_record(
         ctx = phase1_codebook_context(
             ctx, selected_entries, limit=cfg.codebook_context_limit
         )
-        record.intermediate.stage_outputs["phase1_codebook_context"] = [{
-            "enabled": True,
-            "selection_method": "current_source_label_or_alias_match",
-            "evidence_role": "researcher_context",
-            "selected_entries": [
-                {"kind": entry.kind, "label": entry.label} for entry in selected_entries
-            ],
-            "codebook_context_sha256": ctx.codebook_revision,
-        }]
+    # Record the codebook-context decision in both branches (#459). "This stage never
+    # ran" and "it ran and selected nothing" are different facts, and an absent key
+    # cannot be told from an empty one by a later reader — which is how the AI26 corpus
+    # ended up with no record of whether a codebook was in force at all.
+    record.intermediate.stage_outputs["phase1_codebook_context"] = [{
+        "enabled": cfg.codebook_context_enabled,
+        "selection_method": (
+            "current_source_label_or_alias_match" if cfg.codebook_context_enabled else "disabled"
+        ),
+        "evidence_role": "researcher_context",
+        "selected_entries": [
+            {"kind": entry.kind, "label": entry.label} for entry in selected_entries
+        ],
+        "selection_limit": cfg.codebook_context_limit,
+        "codebook_context_sha256": ctx.codebook_revision if cfg.codebook_context_enabled else "",
+        "codebook_entries_offered": len(entries),
+    }]
 
     # Phase 1 multimodality is capability-driven. The historical EP24 flag is
     # retained in configuration for compatibility, but media presence now decides
