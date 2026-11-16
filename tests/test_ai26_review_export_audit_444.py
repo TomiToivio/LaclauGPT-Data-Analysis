@@ -85,3 +85,48 @@ def test_main_writes_separate_private_sample(tmp_path):
     assert json.loads(report.read_text())["sample_rows"] == 2
     assert "example.invalid" in sample.read_text()
     assert "example.invalid" not in report.read_text()
+
+
+def test_compact_review_projection_uses_excerpt_and_singular_formation(tmp_path):
+    rows = [
+        {"source_url": "https://example.invalid/compact", "platform": "rss",
+         "arena": "elites", "text_excerpt": "Only 600 source characters",
+         "summary": "Synthetic reading", "formation": "provisional formation",
+         "discourse_status": "analyzed"},
+        {"source_url": "https://example.invalid/uncoded", "platform": "web",
+         "arena": "grassroots", "text_excerpt": "", "summary": "Other summary",
+         "formation": "", "discourse_status": "skipped"},
+    ]
+    csv_file, manifest = fixture(tmp_path, rows)
+    report, sample = audit_module.audit(csv_file, manifest)
+    assert report["rows"] == 2
+    assert report["missing_by_field"]["source_text"] == 1
+    assert report["missing_by_field"]["formations"] == 1
+    assert report["source_text_is_excerpt"] is True
+    assert report["projected_columns"]["formations"] == "formation"
+    assert report["statuses"] == {"analyzed": 1, "skipped": 1}
+    assert len(sample) == 2
+
+
+def test_lfs_pointer_requires_hydration(tmp_path):
+    csv_file, manifest = fixture(tmp_path)
+    manifest.write_text("version https://git-lfs.github.com/spec/v1\\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="Git LFS manifest pointer"):
+        audit_module.audit(csv_file, manifest)
+
+
+def test_missing_manifest_digest_fails_closed(tmp_path):
+    csv_file, manifest = fixture(tmp_path)
+    payload = json.loads(manifest.read_text(encoding="utf-8"))
+    del payload["file_sha256"]
+    manifest.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(ValueError, match="SHA256"):
+        audit_module.audit(csv_file, manifest)
+
+
+def test_missing_both_evidence_text_columns_is_error(tmp_path):
+    row = {"source_url": "https://example.invalid/1",
+           "summary": "Synthetic result", "platform": "rss"}
+    csv_file, manifest = fixture(tmp_path, [row])
+    with pytest.raises(ValueError, match="source evidence"):
+        audit_module.audit(csv_file, manifest)
