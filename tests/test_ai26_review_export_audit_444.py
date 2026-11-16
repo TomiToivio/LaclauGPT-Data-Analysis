@@ -85,3 +85,46 @@ def test_main_writes_separate_private_sample(tmp_path):
     assert json.loads(report.read_text())["sample_rows"] == 2
     assert "example.invalid" in sample.read_text()
     assert "example.invalid" not in report.read_text()
+
+
+def test_a_whole_transcript_cell_does_not_break_the_audit(tmp_path):
+    """A real export carries whole source texts; the csv default limit is 128 kB.
+
+    On the first live export the audit died with a bare "Error", which says nothing about the cause.
+    """
+    rows = [
+        {"source_url": "https://example.invalid/1", "platform": "rss", "arena": "elites",
+         "source_text": "x" * 200_000, "analysis_status": "analyzed",
+         "analysis_summary": "Synthetic summary", "review_note": "", "formations": ""},
+    ]
+    csv_file, manifest = fixture(tmp_path, rows)
+    report, _ = audit_module.audit(csv_file, manifest, seed=444)
+    assert report["rows"] == 1
+
+
+def test_field_limit_failure_is_diagnosed_not_echoed(monkeypatch, tmp_path):
+    """The failure message must say what broke without quoting a cell."""
+    def boom(*_args, **_kwargs):
+        raise csv.Error("field larger than field limit (131072)")
+
+    monkeypatch.setattr(audit_module, "audit", boom)
+    csv_file, manifest = fixture(tmp_path)
+    code = audit_module.main(["--input", str(csv_file), "--manifest", str(manifest),
+                              "--report", str(tmp_path / "r.json"),
+                              "--private-sample", str(tmp_path / "s.csv")])
+    assert code == 2
+
+
+def test_a_field_empty_in_every_row_is_reported_as_unproduced(tmp_path):
+    rows = [
+        {"source_url": "https://example.invalid/1", "platform": "rss", "arena": "elites",
+         "source_text": "a", "analysis_status": "analyzed", "analysis_summary": "s",
+         "review_note": "", "formations": "f", "discourses": ""},
+        {"source_url": "https://example.invalid/2", "platform": "rss", "arena": "elites",
+         "source_text": "b", "analysis_status": "analyzed", "analysis_summary": "s",
+         "review_note": "", "formations": "", "discourses": ""},
+    ]
+    csv_file, manifest = fixture(tmp_path, rows)
+    report, _ = audit_module.audit(csv_file, manifest, seed=444)
+    assert report["empty_in_every_row"] == ["discourses"]
+    assert "formations" not in report["empty_in_every_row"]
