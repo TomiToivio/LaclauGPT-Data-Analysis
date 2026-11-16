@@ -32,7 +32,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field
 
 from ..canonical import CanonicalRecord
-from ..codebooks import CodebookEntry
+from ..codebooks import CodebookEntry, entries_fingerprint
 from ..context_envelope import PromptEnvelope, build_prompt_envelope
 from ..llm.base import effective_generation_settings, generation_fingerprint
 from ..llm.structured_output import effective_structured_options
@@ -61,6 +61,11 @@ class PipelineContext(BaseModel):
     provenance: dict[str, list[str]] = Field(default_factory=dict)
     config_revision: str = ""
     codebook_revision: str = ""
+    # Which codebook this run used, as structured provenance rather than a hash
+    # alone: effective id/version/fingerprint plus the public/private layers it was
+    # assembled from. A declared field because PipelineContext drops unknown kwargs,
+    # which is how the codebook identity went unrecorded in the first place (#459).
+    codebook_provenance: dict[str, Any] = Field(default_factory=dict)
     context_revision: str = ""
     project_config_revision: str = ""
     project_config: dict[str, Any] = Field(default_factory=dict)
@@ -300,6 +305,50 @@ def project_config_sha256(context: PipelineContext) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def codebook_context_audit(
+    context: PipelineContext,
+    entries: list[CodebookEntry],
+    *,
+    revision_source: str = "",
+) -> dict[str, Any]:
+    """Describe the codebook a run received, including "nothing was selected".
+
+    ``analysis.codebook_refs`` lists the labels *selected for that item*, so it is
+    empty whenever no per-item selection ran -- which is the canonical Phase 1
+    path, where the whole codebook is supplied as context. An empty list therefore
+    cannot be told from "the codebook stage never ran", which is why the corpus had
+    no record of whether a codebook was in force at all (issue #459).
+
+    ``revision_source`` says which quantity ``codebook_revision`` holds, because two
+    identifiers are legitimate here and they are not comparable: the frozen file's
+    SHA-256 (what the worker records) and the content fingerprint of the entries
+    supplied to the prompt (what a direct caller gets). ``entries_sha256`` is always
+    the second one, so a reader can compare runs even across the two.
+    """
+    payload: dict[str, Any] = {
+        "created_at": now_iso(),
+        "enabled": bool(entries),
+        "selection_method": (
+            "per_item_selection_not_run_whole_codebook_supplied_as_context"
+            if entries
+            else "no_codebook_entries_supplied"
+        ),
+        "evidence_role": "researcher_context",
+        "entry_count": len(entries),
+        "entries_sha256": entries_fingerprint(entries),
+        "selected_entries": [],
+        "codebook_refs_note": (
+            "analysis.codebook_refs holds per-item selections only; "
+            "an empty list here means selection did not run, not that the codebook was absent"
+        ),
+        "codebook_revision": context.codebook_revision,
+        "codebook_revision_source": revision_source,
+    }
+    if context.codebook_provenance:
+        payload["codebook"] = dict(context.codebook_provenance)
+    return payload
+
+
 def model_run_metadata(
     context: PipelineContext,
     response,
@@ -332,6 +381,7 @@ def model_run_metadata(
         "stage": stage,
         "config_revision": context.config_revision,
         "codebook_revision": context.codebook_revision,
+        "codebook_provenance": dict(context.codebook_provenance),
         "context_revision": context.context_revision,
         "project_config_revision": context.project_config_revision,
         "project_config_sha256": project_config_sha256(context),

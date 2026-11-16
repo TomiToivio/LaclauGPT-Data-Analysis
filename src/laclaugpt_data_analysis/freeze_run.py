@@ -30,11 +30,12 @@ import json
 import os
 import subprocess
 import sys
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
 from .canonical import SCHEMA_VERSION
-from .codebooks import load_codebook, merge_codebooks
+from .codebooks import codebook_layer_snapshot, load_codebook, merge_codebooks
 
 DEFAULT_MODEL = "gemma4:12b"
 
@@ -119,6 +120,22 @@ def build_effective_codebook(
     return target
 
 
+def effective_codebook_layers(
+    *, public_codebook: str | Path, private_overlay: str | Path | None = None
+) -> list[dict[str, Any]]:
+    """Snapshot each layer that fed the effective codebook, base first.
+
+    Recorded in the run manifest because the merged file alone cannot say which
+    layers produced a label (issue #459). A public-only run and a public+overlay
+    run are different instruments, and a reader has to be able to tell them apart
+    without re-deriving either from the frozen inputs.
+    """
+    layers = [codebook_layer_snapshot(load_codebook(public_codebook), role="base")]
+    if private_overlay is not None:
+        layers.append(codebook_layer_snapshot(load_codebook(private_overlay), role="overlay"))
+    return layers
+
+
 def write_run_manifest(
     *,
     private_root: str | Path,
@@ -128,6 +145,7 @@ def write_run_manifest(
     run_id: str,
     model: str = DEFAULT_MODEL,
     public_git_sha: str = "",
+    codebook_layers: Iterable[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Write ``run-manifest.json`` binding the frozen private inputs."""
     root = Path(private_root)
@@ -138,12 +156,20 @@ def write_run_manifest(
     if not codebook_path.is_file():
         raise ValueError(f"effective codebook does not exist: {codebook_path}")
 
+    effective = load_codebook(codebook_path)
     manifest = {
         "project_id": project_id,
         "run_id": run_id,
         "schema_version": SCHEMA_VERSION,
         "config_sha256": _sha256_file(config_path),
         "codebook_sha256": _sha256_file(codebook_path),
+        # The file hash proves WHICH frozen file ran; the fingerprint names the
+        # effective codebook the analysis records on every model run, and the layers
+        # say what it was assembled from (issue #459, item 3).
+        "codebook_fingerprint": effective.fingerprint(),
+        "codebook_id": effective.codebook_id,
+        "codebook_version": effective.version,
+        "codebook_layers": [dict(layer) for layer in (codebook_layers or ())],
         "model": model,
         "public_git_sha": resolve_public_git_sha(public_git_sha),
         "source_tree_sha256": source_tree_sha256(),
@@ -199,6 +225,10 @@ def main(argv: list[str] | None = None) -> int:
         run_id=args.run_id,
         model=args.model,
         public_git_sha=args.public_git_sha,
+        codebook_layers=effective_codebook_layers(
+            public_codebook=args.public_codebook,
+            private_overlay=args.private_overlay,
+        ),
     )
     print(json.dumps(manifest, indent=2, sort_keys=True))
     return 0
