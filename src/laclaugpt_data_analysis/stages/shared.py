@@ -305,6 +305,27 @@ def project_config_sha256(context: PipelineContext) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+def codebook_revision_source(context: PipelineContext, entries: list[CodebookEntry]) -> str:
+    """Name the quantity in ``codebook_revision`` so two runs can be compared honestly.
+
+    A frozen run records the manifest's file SHA-256; a direct caller gets the content
+    fingerprint of the supplied entries. Both are legitimate identifiers and they are
+    not interchangeable, so the audit says which one it is holding.
+
+    Lives here rather than in the stage sequence: the runner must stay thin
+    orchestration (issue #303), and naming a provenance quantity is stage logic.
+    """
+    revision = context.codebook_revision
+    if not revision:
+        return "none"
+    frozen = str(context.codebook_provenance.get("frozen_file_sha256") or "")
+    if frozen and revision == frozen:
+        return "run_manifest_file_sha256"
+    if entries and revision == entries_fingerprint(entries):
+        return "entries_content_fingerprint"
+    return "supplied_by_caller"
+
+
 def codebook_context_audit(
     context: PipelineContext,
     entries: list[CodebookEntry],
