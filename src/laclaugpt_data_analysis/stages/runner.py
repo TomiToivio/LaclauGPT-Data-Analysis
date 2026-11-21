@@ -37,6 +37,7 @@ from datetime import UTC, datetime
 
 from ..canonical import CanonicalRecord
 from ..codebooks import CodebookEntry, entries_fingerprint
+from ..evidence_gate import apply_evidence_gate, evidence_gate_enabled
 from ..modality_routing import (
     build_modality_plan,
     ensure_still_image_frames,
@@ -78,8 +79,14 @@ def run_canonical_pipeline(
     project_profile: str = "generic",
     prompt_version: str = "canonical-pipeline-v1",
     allow_cloud_fallback: bool | None = None,
+    require_resolving_evidence: bool | None = None,
 ) -> CanonicalRecord:
-    """Run the complete default Phase 1 pipeline on one canonical record."""
+    """Run the complete default Phase 1 pipeline on one canonical record.
+
+    `require_resolving_evidence` switches the evidence gate (#460): when true, a coded object or
+    relation is stored only if one of its evidence spans resolves in the source text. `None` reads
+    `LACLAUGPT_AI26_REQUIRE_EVIDENCE`, and the gate is off when that is unset.
+    """
     ctx = context or PipelineContext()
     if project_profile.casefold() == "ai26":
         validate_project_analysis_config(ctx)
@@ -225,6 +232,13 @@ def run_canonical_pipeline(
         )
 
     # 6. Project and persist.
+    #    The evidence gate runs before projection so that the graph, the sinks and the stored
+    #    record all see the same set of coded items (#460). It is off unless asked for: turning it
+    #    on changes what the instrument emits, which is a decision recorded in
+    #    docs/AI26_OPEN_DECISIONS.md, not a default.
+    if evidence_gate_enabled(require_resolving_evidence):
+        gate_report = apply_evidence_gate(record)
+        append_stage(record, "evidence_gate", {"created_at": now_iso(), **gate_report})
     graph = build_discourse_graph(record)
     append_stage(record, "discourse_graph", graph)
     if graph_sink:
