@@ -57,29 +57,12 @@ from .shared import (
     VectorSink,
     append_stage,
     codebook_context_audit,
+    codebook_revision_source,
     enabled,
     now_iso,
     validate_project_analysis_config,
 )
 from .summary import summarize_record
-
-
-def _codebook_revision_source(context: PipelineContext, entries: list[CodebookEntry]) -> str:
-    """Name the quantity in ``codebook_revision`` so two runs can be compared honestly.
-
-    A frozen run records the manifest's file SHA-256; a direct caller gets the content
-    fingerprint of the supplied entries. Both are legitimate identifiers and they are
-    not interchangeable, so the audit says which one it is holding.
-    """
-    revision = context.codebook_revision
-    if not revision:
-        return "none"
-    frozen = str(context.codebook_provenance.get("frozen_file_sha256") or "")
-    if frozen and revision == frozen:
-        return "run_manifest_file_sha256"
-    if entries and revision == entries_fingerprint(entries):
-        return "entries_content_fingerprint"
-    return "supplied_by_caller"
 
 
 def run_canonical_pipeline(
@@ -101,7 +84,7 @@ def run_canonical_pipeline(
     if project_profile.casefold() == "ai26":
         validate_project_analysis_config(ctx)
     entries = codebook_entries or []
-    revision_source = _codebook_revision_source(ctx, entries)
+    revision_source = codebook_revision_source(ctx, entries)
     if not ctx.codebook_revision and entries:
         # The worker records the frozen revision; a direct caller does not. Record
         # what the prompt actually received instead of an empty string, so a stored
