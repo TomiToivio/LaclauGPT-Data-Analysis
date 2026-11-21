@@ -47,6 +47,7 @@ from .evidence_gate import abstain_without_source_evidence
 from .frame import analyze_frames
 from .graph import build_discourse_graph
 from .laclau import discourse_analysis
+from .optional_methods import run_optional_methods
 from .postprocess import postprocess_record
 from .preprocess import preprocess_record
 from .proposals import DiscourseProposal
@@ -217,29 +218,16 @@ def run_canonical_pipeline(
     record.legacy["multimodal_compatibility"] = legacy_multimodal_projection(record)
 
     # Phase 2 / experimental methods remain explicit opt-ins and never enter the
-    # Phase 1 default path. They run only after the five canonical Phase 1 stages.
-    if enabled(ctx, "critical_ai", default=False):
-        from ..critical_ai import run_optional_critical_ai
-
-        run_optional_critical_ai(
-            record,
-            provider=provider,
-            context=ctx,
-            codebook_entries=entries,
-            model=model,
-            allow_cloud_fallback=allow_cloud_fallback,
-        )
-    elif enabled(ctx, "dna_statement_coding", default=False):
-        from ..dna_statement_coding import run_optional_dna_statement_coding
-
-        run_optional_dna_statement_coding(
-            record,
-            provider=provider,
-            context=ctx,
-            codebook_entries=entries,
-            model=model,
-            allow_cloud_fallback=allow_cloud_fallback,
-        )
+    # Phase 1 default path. Which one runs is configuration, and the dispatch lives
+    # in its own module so this file stays sequencing (#303).
+    run_optional_methods(
+        record,
+        ctx=ctx,
+        provider=provider,
+        codebook_entries=entries,
+        model=model,
+        allow_cloud_fallback=allow_cloud_fallback,
+    )
 
     # 6. Project and persist.
     graph = build_discourse_graph(record)

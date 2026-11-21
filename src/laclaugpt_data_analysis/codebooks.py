@@ -164,6 +164,35 @@ def merge_codebooks(codebooks: Iterable[Codebook], *, codebook_id: str = "effect
     )
 
 
+def load_effective_codebook(
+    public_path: str | Path,
+    overlay_path: str | Path | None = None,
+    *,
+    codebook_id: str = "ai26-effective",
+) -> tuple[Codebook, dict[str, Any]]:
+    """Load the effective Phase 1 codebook and the provenance that identifies it (#459).
+
+    ``Codebook.fingerprint()`` identifies the merged document, but a hash alone
+    cannot say *which* public/private layers produced it. The returned provenance
+    keeps the layers separable and states the precedence explicitly, so a stored
+    result can answer "public-only or public+overlay" as well as "which hash".
+    """
+    base = load_codebook(public_path)
+    layers = [codebook_layer_snapshot(base, role="base")]
+    books = [base]
+    if overlay_path:
+        overlay = load_codebook(overlay_path)
+        layers.append(codebook_layer_snapshot(overlay, role="overlay"))
+        books.append(overlay)
+    effective = merge_codebooks(books, codebook_id=codebook_id)
+    return effective, {
+        "effective": effective.provenance_snapshot(),
+        "layers": layers,
+        "precedence": ["base", "overlay"] if overlay_path else ["base"],
+        "merged_sha256": effective.fingerprint(),
+    }
+
+
 def select_codebooks(
     paths: Iterable[str | Path], *, project: str | None = None, arena: str | None = None
 ) -> list[Codebook]:

@@ -13,6 +13,7 @@ import json
 import random
 import sys
 from collections import Counter, defaultdict
+from collections.abc import Sequence
 from pathlib import Path
 
 REQUIRED = (
@@ -28,6 +29,37 @@ INTERPRETATIONS = (
     "formations", "signifiers", "nodal_points", "floating_signifiers",
     "imaginaries", "discourses", "antagonisms",
 )
+
+#: Header spellings that have meant the same logical field across exporter versions. The canonical name is
+#: tried first: an alias is used only when it is absent, so renaming a column upstream cannot make this
+#: audit silently measure a different one.
+COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
+    "analysis_summary": ("analysis_summary_md", "summary"),
+    "source_text": ("source_text_excerpt", "text"),
+    "review_note": ("researcher_note",),
+    "formations": ("formation",),
+}
+
+
+def _column(headers: Sequence[str], field: str) -> str:
+    """The header carrying ``field``, or "" when this export has no usable column for it.
+
+    Called during header validation (before any row exists) and again per row, so it works on names only.
+    A missing optional column is reported as absence — never as a KeyError, and never as a zero.
+    """
+    for name in (field, *COLUMN_ALIASES.get(field, ())):
+        if name in headers:
+            return name
+    return ""
+
+
+def _value(row: dict, headers: Sequence[str], field: str) -> str:
+    """The stripped cell for ``field``; a column the export does not carry reads as empty."""
+    name = _column(headers, field)
+    if not name:
+        return ""
+    value = row.get(name)
+    return "" if value is None else str(value).strip()
 
 
 def _hint(error: Exception) -> str:

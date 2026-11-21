@@ -16,7 +16,7 @@ from .canonical_pipeline import (
     postprocess_record,
     summarize_record,
 )
-from .codebooks import CodebookEntry
+from .codebooks import Codebook, CodebookEntry, codebook_layer_snapshot, load_effective_codebook
 from .interchange import from_mongo_document, from_phase0_mongo_document
 from .memory.normalization import apply_accepted_memory
 from .memory.sqlite import SQLiteMemory
@@ -35,6 +35,11 @@ class Phase1TextConfig:
     ep24_frame_analysis_enabled: bool = False
     codebook_context_enabled: bool = False
     codebook_context_limit: int = 12
+    # Where the effective codebook lives. Supplying it does not switch context on:
+    # it only lets the record say *which* codebook the run was carried out under
+    # (#459). Selection still happens only when codebook_context_enabled is set.
+    codebook_path: str = ""
+    codebook_overlay_path: str = ""
     analytical_memory_enabled: bool = False
     model: str = "auto"
     prompt_version: str = "phase1-text-v1"
@@ -60,6 +65,8 @@ class Phase1TextConfig:
             ep24_frame_analysis_enabled=flag("LACLAUGPT_PHASE1_EP24_FRAME_ANALYSIS_ENABLED", False),
             codebook_context_enabled=flag("LACLAUGPT_PHASE1_CODEBOOK_CONTEXT_ENABLED", False),
             codebook_context_limit=codebook_context_limit,
+            codebook_path=os.getenv("LACLAUGPT_PHASE1_CODEBOOK", "").strip(),
+            codebook_overlay_path=os.getenv("LACLAUGPT_PHASE1_CODEBOOK_OVERLAY", "").strip(),
             analytical_memory_enabled=flag("LACLAUGPT_PHASE1_ANALYTICAL_MEMORY_ENABLED", False),
             model=os.getenv("LACLAUGPT_PHASE1_MODEL", "auto"),
             prompt_version=os.getenv("LACLAUGPT_PHASE1_PROMPT_VERSION", "phase1-text-v1"),
@@ -123,7 +130,9 @@ def phase1_codebook_context(
     return context.model_copy(update={
         "source_context": source_context,
         "provenance": provenance,
-        "codebook_revision": context.codebook_revision or fragment.sha256,
+        # Deliberately NOT setting codebook_revision here: the fragment hash proves
+        # what text reached the prompt, not which codebook produced the coding. A
+        # full-book fingerprint is set by the caller when it knows the book (#459).
     })
 
 
@@ -164,6 +173,7 @@ def run_phase1_text_record(
     config: Phase1TextConfig | None = None,
     context: PipelineContext | None = None,
     codebook_entries: list[CodebookEntry] | None = None,
+    codebook: Codebook | None = None,
     analytical_memory: SQLiteMemory | None = None,
 ) -> CanonicalRecord:
     """Run the text-only Phase 1 slice without changing the Phase 0 source document.
@@ -179,15 +189,48 @@ def run_phase1_text_record(
 
     preprocess_shadow_record(record)
     ctx = phase1_context(context)
-    entries = codebook_entries or []
+    # Identify the effective codebook *before* any selection runs (#459). When the
+    # caller supplies it (or names it in configuration) the run records the merged
+    # fingerprint and the base/overlay layers it came from; when it does not, the
+    # record says the revision is unknown instead of substituting a fragment hash.
+    codebook_provenance: dict[str, Any] = {}
+    if codebook is None and cfg.codebook_path:
+        codebook, codebook_provenance = load_effective_codebook(
+            cfg.codebook_path, cfg.codebook_overlay_path or None
+        )
+    if codebook is not None:
+        codebook_provenance = codebook_provenance or {
+            "effective": codebook.provenance_snapshot(),
+            # A caller that hands over an already-merged book cannot tell us which
+            # layers produced it, and guessing "base" would be a false claim.
+            "layers": [codebook_layer_snapshot(codebook, role="effective")],
+            "precedence": ["effective"],
+            "merged_sha256": codebook.fingerprint(),
+        }
+        ctx = ctx.model_copy(
+            update={
+                "codebook_revision": codebook.fingerprint(),
+                "codebook_provenance": codebook_provenance,
+            }
+        )
+    entries = codebook_entries or (codebook.entries if codebook is not None else [])
     selected_entries: list[CodebookEntry] = []
+    context_fragment_sha256 = ""
     if cfg.codebook_context_enabled:
         selected_entries = select_relevant_codebook_entries(
             record, entries, limit=cfg.codebook_context_limit
         )
+        # The hash of the text that actually reached the prompt, kept separate from
+        # the full-book fingerprint below: they answer different questions.
+        context_fragment_sha256 = codebook_context(
+            selected_entries, limit=cfg.codebook_context_limit
+        ).sha256
         ctx = phase1_codebook_context(
             ctx, selected_entries, limit=cfg.codebook_context_limit
         )
+    # The labels actually selected for this item (not the whole book): the field is
+    # meaningful only when selection ran, and empty otherwise (#459).
+    record.analysis.codebook_refs = sorted({entry.label for entry in selected_entries})
     # Record the codebook-context decision in both branches (#459). "This stage never
     # ran" and "it ran and selected nothing" are different facts, and an absent key
     # cannot be told from an empty one by a later reader — which is how the AI26 corpus
@@ -202,8 +245,15 @@ def run_phase1_text_record(
             {"kind": entry.kind, "label": entry.label} for entry in selected_entries
         ],
         "selection_limit": cfg.codebook_context_limit,
-        "codebook_context_sha256": ctx.codebook_revision if cfg.codebook_context_enabled else "",
+        "codebook_context_sha256": context_fragment_sha256,
         "codebook_entries_offered": len(entries),
+        # #459: which codebook was in force, and whether that is actually known. The
+        # fragment hash above answers "what text reached the prompt"; it is not the
+        # merged book's fingerprint, and conflating the two is how every record ended
+        # up claiming a revision it never had.
+        "codebook_revision": ctx.codebook_revision,
+        "full_codebook_revision_known": bool(ctx.codebook_revision),
+        "codebook": dict(codebook_provenance),
     }]
 
     # Phase 1 multimodality is capability-driven. The historical EP24 flag is
