@@ -179,6 +179,12 @@ def run_phase1_text_record(
 
     preprocess_shadow_record(record)
     ctx = phase1_context(context)
+    # Whether the caller named a full-codebook revision is a different fact from the
+    # fingerprint of the entries selected below: phase1_codebook_context() fills
+    # `codebook_revision` with the hash of the selected fragment, which is not a revision
+    # of the full codebook. Capture the caller's value first so the audit cannot overclaim
+    # which of the two it holds (#459).
+    supplied_full_codebook_revision = ctx.codebook_revision
     entries = codebook_entries or []
     selected_entries: list[CodebookEntry] = []
     if cfg.codebook_context_enabled:
@@ -188,6 +194,10 @@ def run_phase1_text_record(
         ctx = phase1_codebook_context(
             ctx, selected_entries, limit=cfg.codebook_context_limit
         )
+        # Selection ran against this item, so the record can name the labels that were in
+        # force for it. The canonical path does the same (pipeline.py); the stage path
+        # leaves this empty because it supplies the whole codebook as context instead.
+        record.analysis.codebook_refs = sorted({entry.label for entry in selected_entries})
     # Record the codebook-context decision in both branches (#459). "This stage never
     # ran" and "it ran and selected nothing" are different facts, and an absent key
     # cannot be told from an empty one by a later reader — which is how the AI26 corpus
@@ -204,6 +214,14 @@ def run_phase1_text_record(
         "selection_limit": cfg.codebook_context_limit,
         "codebook_context_sha256": ctx.codebook_revision if cfg.codebook_context_enabled else "",
         "codebook_entries_offered": len(entries),
+        # False when the run fingerprinted a per-item selection instead of receiving a
+        # named full-codebook revision: the two identifiers are not comparable, so a reader
+        # must not read `codebook_context_sha256` as "the codebook this corpus used".
+        "full_codebook_revision_known": bool(supplied_full_codebook_revision),
+        "codebook_revision_note": (
+            "codebook_context_sha256 fingerprints the entries supplied to this prompt, "
+            "not the revision of the full codebook"
+        ),
     }]
 
     # Phase 1 multimodality is capability-driven. The historical EP24 flag is
