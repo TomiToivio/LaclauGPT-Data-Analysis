@@ -11,8 +11,6 @@ corpus.
 """
 from __future__ import annotations
 
-import pytest
-
 from laclaugpt_data_analysis.canonical import (
     AnalysisSection,
     CanonicalRecord,
