@@ -13,6 +13,7 @@ import json
 import random
 import sys
 from collections import Counter, defaultdict
+from collections.abc import Sequence
 from pathlib import Path
 
 REQUIRED = (
@@ -24,10 +25,32 @@ REQUIRED = (
 MAX_FIELD_BYTES = 64 * 1024 * 1024
 csv.field_size_limit(MAX_FIELD_BYTES)
 
+#: Logical column -> the physical headers that may carry it. The full export and the compact
+#: human-review projection name the same field differently (source_text/text_excerpt,
+#: analysis_summary/summary); missing source evidence and an omitted projection must stay
+#: distinguishable, so both are resolved rather than assumed.
+ALIASES = {
+    "source_text": ("source_text", "text_excerpt"),
+    "analysis_summary": ("analysis_summary", "summary"),
+    "formations": ("formations", "formation"),
+    "analysis_status": ("analysis_status", "discourse_status", "status"),
+}
 INTERPRETATIONS = (
     "formations", "signifiers", "nodal_points", "floating_signifiers",
     "imaginaries", "discourses", "antagonisms",
 )
+
+
+def _column(headers: Sequence[str], logical: str) -> str | None:
+    """The physical header carrying `logical`, or None when this export omits it."""
+    candidates = ALIASES.get(logical, (logical,))
+    return next((name for name in candidates if name in headers), None)
+
+
+def _value(row: dict, headers: Sequence[str], logical: str) -> str:
+    """The stripped value of a logical field, or "" when the export does not carry it."""
+    column = _column(headers, logical)
+    return (row.get(column) or "").strip() if column else ""
 
 
 def _hint(error: Exception) -> str:
