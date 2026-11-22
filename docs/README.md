@@ -1,9 +1,9 @@
 # Documentation index
 
-Every document under `docs/` (including subdirectories), grouped by what it is for.
-84 files; this page is
-generated from each file's own title, so it cannot drift from what the files say about
-themselves. Start with [ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the repository.
+Every document in `docs/`, grouped by what it is for. 84 files, including the
+`methods/`, `design/` and `legacy_ep24_prompts/` subdirectories; each entry is the file's own
+title, so it cannot drift from what the file says about itself. Start with
+[ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the repository.
 
 ## AI26 operations and runtime
 
@@ -88,21 +88,27 @@ themselves. Start with [ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the 
 - [Porting applicable fixes from Multimodal-Analysis into AI26 (#372)](PORT_FROM_MULTIMODAL.md)
 - [Restricted-project reprocessing on CSC Roihu](RESTRICTED_ROIHU_REPROCESSING.md)
 - [VASAMA-OSINT reuse audit for Data Analysis](VASAMA_REUSE_AUDIT.md)
-- [Issue #372 — upstream port inventory (Multimodal → AI26 Data-Analysis)](design/ISSUE_372_UPSTREAM_PORT_INVENTORY.md)
 - [EP24 Finland/Poland Phase 1 reprocessing on CSC Roihu](ep24-reprocessing.md)
 - [Issue #300: exhausted structured-output budget](issue-300-remediation.md)
 
-## Cross-cutting notes
+## Research methods
 
-- [Architecture: where things are](ARCHITECTURE.md)
-- [LaclauGPT Coding Style](CODING_STYLE.md)
-- [Repository navigation for human maintainers](REPOSITORY_GUIDE.md)
-- [Repository map](REPOSITORY_MAP.md)
+- [Phase 1 researcher guide: from source to reviewed interpretation](methods/phase1_researcher_guide.md)
+- [Research method guide — from one record to a reviewed claim](methods/RESEARCH_METHOD_GUIDE.md)
+- [Critical AI Studies analysis](methods/critical_ai_studies.md)
+- [DNA-compatible statement coding](methods/dna_compatibility.md)
+
+## Design records and frozen reference material
+
+- [Issue #372 — upstream port inventory (Multimodal → AI26 Data-Analysis)](design/ISSUE_372_UPSTREAM_PORT_INVENTORY.md)
 - [Legacy `puhti_frame.py` prompts](legacy_ep24_prompts/puhti_frame_prompt.md)
 - [Legacy `puhti_populism.py` prompt](legacy_ep24_prompts/puhti_populism_prompt.md)
 - [Legacy `puhti_postprocess.py` prompt](legacy_ep24_prompts/puhti_postprocess_prompt.md)
 - [Legacy `puhti_summary.py` prompts](legacy_ep24_prompts/puhti_summary_prompt.md)
-- [Research method guide — from one record to a reviewed claim](methods/RESEARCH_METHOD_GUIDE.md)
-- [Critical AI Studies analysis](methods/critical_ai_studies.md)
-- [DNA-compatible statement coding](methods/dna_compatibility.md)
-- [Phase 1 researcher guide: from source to reviewed interpretation](methods/phase1_researcher_guide.md)
+
+## Cross-cutting notes
+
+- [Repository map: paths and responsibilities](REPOSITORY_MAP.md)
+- [Repository navigation for human maintainers](REPOSITORY_GUIDE.md)
+
+- [LaclauGPT Coding Style](CODING_STYLE.md)
