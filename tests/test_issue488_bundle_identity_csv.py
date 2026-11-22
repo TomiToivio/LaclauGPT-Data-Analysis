@@ -4,10 +4,10 @@ import json
 
 import pytest
 
+from laclaugpt_data_analysis import phase1_laskin_report as report
 from laclaugpt_data_analysis.bundle_audit import audit_research_bundle
 from laclaugpt_data_analysis.canonical import CanonicalRecord
 from laclaugpt_data_analysis.exporters import write_research_bundle
-from laclaugpt_data_analysis import phase1_laskin_report as report
 from laclaugpt_data_analysis.phase1_laskin_report import _decode_result
 
 
