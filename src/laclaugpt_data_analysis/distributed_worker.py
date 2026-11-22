@@ -1203,6 +1203,7 @@ def _write_ai26_progress(counts: dict[str, int], phase: str) -> None:
                 "pid": os.getpid(),
                 "claims": counts.get("claims", 0),
                 "completed": counts.get("completed", 0),
+                "duplicate": counts.get("duplicate", 0),
                 "retry": counts.get("retry", 0),
                 "dead_letter": counts.get("dead-letter", 0),
             }, stream, sort_keys=True)
