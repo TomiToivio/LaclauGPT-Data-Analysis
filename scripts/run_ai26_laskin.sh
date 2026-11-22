@@ -67,6 +67,8 @@ DEBUG_FLAG=0
 # Issue #506: persist an outcome even if preflight rejects before a worker starts.
 # This journal is private and never contains env variables, input records or prompts.
 TICK_STAGE="preflight"
+TICK_DETAIL=""
+TICK_OUTCOME=""
 WORKER_STATUS=""
 REPORT_STATUS=""
 record_tick_on_exit() {
@@ -76,13 +78,21 @@ record_tick_on_exit() {
   if [[ -n "$telemetry_dir" && -d "$telemetry_dir" ]]; then
     local args=(--path "$telemetry_dir/logs/ai26-analysis-ticks.jsonl"
                 --stage "$TICK_STAGE" --exit-code "$code"
-                --worker-status "$WORKER_STATUS" --report-status "$REPORT_STATUS")
+                --worker-status "$WORKER_STATUS" --report-status "$REPORT_STATUS"
+                --escalate-after "${LACLAUGPT_TICK_ESCALATE_AFTER:-3}"
+                --reject-after "${LACLAUGPT_TICK_REJECT_AFTER:-2}")
+    [[ -z "$TICK_DETAIL" ]] || args+=(--detail "$TICK_DETAIL")
+    [[ -z "$TICK_OUTCOME" ]] || args+=(--outcome "$TICK_OUTCOME")
     (( CHECK_ONLY )) && args+=(--check-only)
     local sha=""
     sha=$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null) || true
     [[ -z "$sha" ]] || args+=(--git-sha "$sha")
-    python3 "$ROOT_DIR/src/laclaugpt_data_analysis/ai26_tick_telemetry.py" "${args[@]}" ||
-      printf '[%s] WARNING: unable to persist AI26 tick telemetry\\n' "$(date -Is)" >&2
+    # #516: the writer must run on the venv interpreter. Invoked as bare `python3` it hit the
+    # host's 3.10 and the import of datetime.UTC failed on every tick.
+    local writer=("$ROOT_DIR/.venv/bin/python")
+    [[ -x "${writer[0]}" ]] || writer=(python3)
+    "${writer[@]}" "$ROOT_DIR/src/laclaugpt_data_analysis/ai26_tick_telemetry.py" "${args[@]}" ||
+      printf '[%s] WARNING: unable to persist AI26 tick telemetry (no journal row for this tick)\n' "$(date -Is)" >&2
   else
     printf '[%s] WARNING: private telemetry directory unavailable; no tick JSONL written\\n' "$(date -Is)" >&2
   fi
@@ -109,17 +119,11 @@ log() { printf '[%s] %s\n' "$(date -Is)" "$*"; }
 # #506: one persistent, structured record per tick. A monitor must be able to tell a successful cycle from a
 # configuration rejection and from a lock-held skip without reading the log; cron's exit status alone cannot
 # express the difference between "did the work" and "declined to start". Telemetry never fails a cycle.
-tick_status() {
-  local outcome="$1" code="$2" detail="${3:-}" interpreter="$ROOT_DIR/.venv/bin/python"
-  [[ -x "$interpreter" ]] || return 0
-  "$interpreter" -m laclaugpt_data_analysis.tick_status record \
-    --outcome "$outcome" --exit-code "$code" --detail "$detail" \
-    --head "$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || printf '')" >/dev/null 2>&1 || true
-}
-
 fail() {
   printf '[%s] ERROR: %s\n' "$(date -Is)" "$*" >&2
-  tick_status preflight_rejected 2 "$*"
+  # The EXIT trap writes this tick's row; a second writer here wrote it twice (#506 dedup).
+  TICK_STAGE="preflight"
+  TICK_DETAIL="$*"
   exit 2
 }
 
@@ -229,8 +233,21 @@ mkdir -p "$(dirname "$LOCK_FILE")" "$PRIVATE_CONFIG_DIR/logs"
 TICK_STAGE="lock"
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
+  TICK_STAGE="lock"
+  # #512: exit 3 is right either way, but a busy worker and a hung one must not look alike.
+  # The heartbeat is refreshed every minute by the cycle that holds the lock; a stale one means
+  # no later tick will ever clear it on its own.
+  STALE_AFTER_MIN="${LACLAUGPT_STALE_LOCK_MINUTES:-20}"
+  SNAPSHOT_TS=$(stat -c %Y "${HEARTBEAT_FILE:-$LOCK_FILE}" 2>/dev/null || printf '0')
+  LOCK_AGE_MIN=$(( ( $(date +%s) - SNAPSHOT_TS ) / 60 ))
+  if (( LOCK_AGE_MIN >= STALE_AFTER_MIN )); then
+    TICK_OUTCOME="stale_lock"
+    TICK_DETAIL="stale: no heartbeat for ${LOCK_AGE_MIN}m (threshold ${STALE_AFTER_MIN}m)"
+    log "ALERT: ${TICK_DETAIL}; the lock holder is not making progress. Inspect: pgrep -af laclaugpt-analysis-worker (#512)"
+  else
+    TICK_DETAIL="lock held by a running cycle (${LOCK_AGE_MIN}m since last progress)"
+  fi
   log "AI26 Laskin analysis skipped: lock held; status=already_running exit_code=3"
-  tick_status already_running 3 "lock held by a running cycle"
   exit 3
 fi
 
@@ -284,6 +301,22 @@ if [[ "$MANIFEST_TREE" != "$RUNTIME_TREE" || "$MANIFEST_GIT" != "$RUNTIME_GIT" ]
   log "AI26 manifest re-frozen for scheduled analysis git=$RUNTIME_GIT tree=$RUNTIME_TREE"
 fi
 
+# #512: one-minute heartbeat while the worker runs, so the next tick can tell a productive
+# lock holder from a wedged one. Private file, never decides this cycle's outcome.
+HEARTBEAT_FILE="${HEARTBEAT_FILE:-$PRIVATE_CONFIG_DIR/run/ai26-analysis-heartbeat}"
+HEARTBEAT_PID=""
+start_heartbeat() {
+  mkdir -p "$(dirname "$HEARTBEAT_FILE")"
+  date +%s > "$HEARTBEAT_FILE" 2>/dev/null || true
+  ( while :; do sleep 60; date +%s > "$HEARTBEAT_FILE" 2>/dev/null || exit 0; done ) &
+  HEARTBEAT_PID=$!
+}
+stop_heartbeat() {
+  [[ -n "$HEARTBEAT_PID" ]] || return 0
+  kill "$HEARTBEAT_PID" 2>/dev/null || true
+  HEARTBEAT_PID=""
+}
+
 TICK_STAGE="worker"
 log "AI26 Laskin analysis start run=$LACLAUGPT_RUN_ID max_tasks=$MAX_TASKS cycle_max_seconds=$CYCLE_MAX_SECONDS mode=$RUN_MODE debug=${LACLAUGPT_DEBUG:-0}"
 
@@ -298,6 +331,7 @@ log "AI26 Laskin analysis start run=$LACLAUGPT_RUN_ID max_tasks=$MAX_TASKS cycle
 # from a task failure. A timeout is recorded as worker_status=124 and flows
 # into the existing non-zero exit path.
 set +e
+start_heartbeat
 timeout --signal=TERM --kill-after="${CYCLE_KILL_GRACE_SECONDS}s" "${CYCLE_MAX_SECONDS}s" \
   "$ROOT_DIR/.venv/bin/laclaugpt-analysis-worker" \
   --run-manifest "$RUN_MANIFEST" \
@@ -309,6 +343,7 @@ timeout --signal=TERM --kill-after="${CYCLE_KILL_GRACE_SECONDS}s" "${CYCLE_MAX_S
   --max-tasks "$MAX_TASKS"
 WORKER_STATUS=$?
 set -e
+stop_heartbeat
 if [[ "$WORKER_STATUS" -eq 124 ]]; then
   log "AI26 Laskin analysis CYCLE CEILING exceeded after ${CYCLE_MAX_SECONDS}s; worker terminated by TERM (then KILL after ${CYCLE_KILL_GRACE_SECONDS}s). Pending tasks are left for safe reclaim on a later cycle; see issue #332."
 elif [[ "$WORKER_STATUS" -eq 137 ]]; then
@@ -360,10 +395,7 @@ elif [[ "${LACLAUGPT_PERIODIC_REPORTS:-1}" == "0" ]]; then
 fi
 
 TICK_STAGE="complete"
+TICK_DETAIL="worker_status=$WORKER_STATUS report_status=$REPORT_STATUS"
 log "AI26 Laskin analysis end worker_status=$WORKER_STATUS report_status=$REPORT_STATUS status=$FINAL_STATUS"
-case "$FINAL_STATUS" in
-  0) tick_status success 0 "worker_status=$WORKER_STATUS report_status=$REPORT_STATUS" ;;
-  4) tick_status report_failed 4 "worker_status=$WORKER_STATUS report_status=$REPORT_STATUS" ;;
-  *) tick_status cycle_failed "$FINAL_STATUS" "worker_status=$WORKER_STATUS report_status=$REPORT_STATUS" ;;
-esac
+# The EXIT trap records this tick; one writer means one row per tick.
 exit "$FINAL_STATUS"

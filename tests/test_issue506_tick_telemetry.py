@@ -13,7 +13,9 @@ def test_all_exit_classes_are_distinct_and_sanitized(tmp_path):
         ("lock", 3, False, "already_running"),
         ("check", 0, True, "check_ok"),
         ("complete", 0, False, "cycle_completed"),
-        ("complete", 4, False, "cycle_failed"),
+        # exit 4 is the wrapper's documented report-stage failure: the worker finished, the
+        # report did not. Keeping it as cycle_failed hid which half of the cycle broke (#514).
+        ("complete", 4, False, "report_failed"),
         ("worker", 124, False, "cycle_failed"),
     ]
     for stage, status, check, expected in cases:

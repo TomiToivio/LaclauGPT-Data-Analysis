@@ -733,6 +733,7 @@ class AI26TaskWorker(TaskWorker):
         if not hasattr(self, "_infrastructure_refunds"):
             self._infrastructure_refunds = {}
         self.last_failure_class: str | None = None
+        self.last_failure_message: str | None = None
         self.last_resume_invalidated = 0
         quarantine_before = int(getattr(self.queue, "quarantined_count", 0))
         self.last_quarantined = 0
@@ -795,7 +796,10 @@ class AI26TaskWorker(TaskWorker):
             return "completed" if inserted else "duplicate"
         except Exception as exc:
             self.last_failure_class = type(exc).__name__
-            error = f"{self.last_failure_class}: {exc}"
+            # #515: the class alone ("WriteError: 1") sent the operator nowhere. Keep the message
+            # so the bounded cycle can print it once per class instead of only counting it.
+            self.last_failure_message = f"{self.last_failure_class}: {exc}"[:600]
+            error = self.last_failure_message
             infrastructure = is_infrastructure_failure(exc)
             # A second length stop has already exhausted the structured call's
             # escalation. Replaying the same immutable task cannot help; require
@@ -1190,6 +1194,14 @@ def _run_bounded_cycle(
         counts["resume_invalidated"] += int(getattr(worker, "last_resume_invalidated", 0))
         failure_class = getattr(worker, "last_failure_class", None)
         if failure_class:
+            if failure_class not in failure_classes:
+                # #515: one message per class per cycle. A count alone ("WriteError: 1") said a
+                # completed analysis was discarded and gave no way to find out why.
+                logger.warning(
+                    "AI26 task failure %s: %s",
+                    failure_class,
+                    getattr(worker, "last_failure_message", failure_class),
+                )
             failure_classes[failure_class] = failure_classes.get(failure_class, 0) + 1
         if outcome == "idle":
             break
