@@ -4,7 +4,7 @@ Project manifests, source identifiers, codebooks, credentials and paths stay pri
 The public engine supplies orchestration, Allas/S3 staging, checkpointing, durable state,
 Redis best-effort leases and canonical-pipeline integration.
 """
-from __future__ import annotations
+from __future__ import annotations  # noqa: I001
 
 import argparse
 import csv
