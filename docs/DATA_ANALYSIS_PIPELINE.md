@@ -256,7 +256,7 @@ Outside the scientific stages, at the ends:
 - the **runner** offers the finished graph to an optional graph sink and the
   record text to an optional vector sink;
 - **persistence, queuing and database access** live in the worker and storage
-  modules (`distributed_worker.py`, `storage.py`, `task_queue.py`), which call
+  modules (`distributed_worker.py`, `storage.py`, `task_queue/`), which call
   `run_canonical_pipeline` as a library.
 
 A stage file shows research logic; an engineer follows imports into those modules
