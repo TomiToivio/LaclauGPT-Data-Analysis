@@ -1,9 +1,8 @@
 import json
 
-import pytest
-
 import laclaugpt_process
 import laclaugpt_summary
+import pytest
 
 
 class FakeOllama:

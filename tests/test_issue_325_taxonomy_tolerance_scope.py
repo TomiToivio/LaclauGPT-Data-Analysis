@@ -21,10 +21,10 @@ from laclaugpt_data_analysis.dna_statement_coding import (
     DNAStatementCandidate,
 )
 from laclaugpt_data_analysis.social_semiotic import (
-    drain_taxonomy_substitutions,
     CompositionObservation,
     StrictMethodModel,
     TaxonomyToleranceMixin,
+    drain_taxonomy_substitutions,
 )
 
 

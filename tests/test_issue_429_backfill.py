@@ -1,8 +1,6 @@
 """Regression coverage for #429: bounded old-tail backfill without widening Phase 1."""
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
 from laclaugpt_data_analysis.distributed_worker import (
