@@ -18,7 +18,7 @@ title, so it cannot drift from what the file says about itself. Start with
 - [AI26 multimodal method](AI26_MULTIMODAL_METHOD.md)
 - [AI26 analysis on NooPunk](AI26_NOOPUNK_ANALYSIS.md)
 - [AI26: the open decisions, with the numbers that make them decidable](AI26_OPEN_DECISIONS.md)
-- [Reading an AI26 record as social-science evidence](AI26_PHASE1_METHOD.md)
+- [Phase 1 research method: source evidence to human review](AI26_PHASE1_METHOD.md)
 - [AI26 prompt budget: the decision (#425)](AI26_PROMPT_BUDGET_425.md)
 - [AI26 quality-review template for a bounded batch](AI26_QUALITY_REVIEW_TEMPLATE.md)
 - [AI26 analysis reference case](AI26_REFERENCE_CASE.md)
