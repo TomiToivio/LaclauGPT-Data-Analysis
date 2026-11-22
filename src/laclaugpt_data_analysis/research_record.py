@@ -320,7 +320,6 @@ def render_human_readable(record: CanonicalRecord) -> HumanReadableSection:
         "nodal_points": _semicolon(_labels(record.analysis.nodal_points)),
         "floating_signifiers": _semicolon(_labels(record.analysis.floating_signifiers)),
         "empty_signifier_candidates": _semicolon(_labels(record.analysis.empty_signifier_candidates)),
-        "discourses": _semicolon(_labels(record.analysis.discourses)),
         "imaginaries": _semicolon(_labels(record.analysis.imaginaries)),
         "equivalence_chains": _chains(record.analysis.equivalence_chains),
         "difference_chains": _chains(record.analysis.difference_chains),
@@ -361,7 +360,6 @@ def render_human_readable(record: CanonicalRecord) -> HumanReadableSection:
         f"Nodal points: {sections['nodal_points'] or 'n/a'}\n\n"
         f"Floating signifiers: {sections['floating_signifiers'] or 'n/a'}\n\n"
         f"Empty-signifier candidates: {sections['empty_signifier_candidates'] or 'n/a'}\n\n"
-        f"Discourses: {sections['discourses'] or 'n/a'}\n\n"
         f"Imaginaries: {sections['imaginaries'] or 'n/a'}\n\n"
         f"## Relational discourse structure\nEquivalence chains: {sections['equivalence_chains'] or 'n/a'}\n\n"
         f"Difference chains: {sections['difference_chains'] or 'n/a'}\n\n"
