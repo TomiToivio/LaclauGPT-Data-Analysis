@@ -6,10 +6,10 @@ and three merged fixes were silently not in effect - every measurement taken fro
 that day described pre-fix behaviour.
 
 This module makes that visible from the place it matters: the wrapper's own preflight. It is
-deliberately **read-only and warning-only**:
+read-only, with warning-only default and an opt-in strict deployment gate:
 
 * it runs ``git fetch`` and ``git rev-list``, nothing else;
-* it never writes, never touches the working tree, and never refuses to run;
+* it never changes tracked files; only --strict can refuse to run;
 * a stale runtime is a risk, not an emergency, and refusing would stall the corpus;
 * any failure (no git, no network, not a repository) reports ``unknown`` rather than raising.
 
@@ -159,7 +159,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="python -m laclaugpt_data_analysis.deploy_drift",
         description=(
             "Report how far the deployed checkouts have drifted from their upstream. "
-            "Read-only and warning-only: it never writes and never refuses to run."
+            "Default warning-only; --strict rejects unsafe checkout states. "
+            "Use --strict --path PATH to gate the active service only."
         ),
     )
     parser.add_argument(
@@ -199,7 +200,14 @@ def main(argv: list[str] | None = None) -> int:
                 report["detail"] = "could not verify clean working tree" if code else "working tree has local changes"
             if report["state"] != CURRENT or report["branch"] != "main" or report["detail"]:
                 flagged.append(report)
-                print(f"deployment rejected: {report['name']} branch={report['branch']} state={report['state']} {report['detail']}", file=sys.stderr)
+                print(
+                    f"deployment rejected: path={path} branch={report['branch']} "
+                    f"expected_branch=main state={report['state']} "
+                    f"detail={report['detail'] or 'checkout differs from origin/main'}; "
+                    "remedy: inspect git status, fetch origin/main, and only "
+                    "fast-forward when no cron job is active",
+                    file=sys.stderr,
+                )
 
     if args.json:
         print(
