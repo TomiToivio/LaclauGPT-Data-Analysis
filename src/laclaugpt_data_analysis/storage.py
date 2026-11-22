@@ -87,6 +87,11 @@ class SqliteStore:
             connection.commit()
 
 
+
+def mongo_set_payload(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Remove immutable top-level _id from a MongoDB $set update."""
+    return {key: value for key, value in row.items() if key != "_id"}
+
 class MongoStore:
     def __init__(
         self,
@@ -136,7 +141,7 @@ class MongoStore:
             # "the (immutable) field '_id' was found to have been altered", and the caller's completed
             # analysis was discarded. The store is the boundary that must not attempt it: ``read()``
             # already strips ``_id``, so ``write()`` strips it symmetrically.
-            payload = {key: value for key, value in dict(row).items() if key != "_id"}
+            payload = mongo_set_payload(row)
             payload["project_id"] = self.project_id
             source_url = str(payload.get("source_url") or "")
             if source_url:
