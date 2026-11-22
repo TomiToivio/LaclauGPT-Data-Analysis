@@ -38,7 +38,6 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-
 from ep24_cli import configure_step_cli
 from ep24_dna import (
     DNA_COLUMNS,
