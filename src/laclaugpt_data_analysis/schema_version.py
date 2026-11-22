@@ -1,3 +1,5 @@
+"""Adapt historical records and shared fixtures to the current canonical schema."""
+
 from __future__ import annotations
 
 import json
@@ -15,7 +17,7 @@ from .canonical import (
 
 
 class UnsupportedSchemaVersion(ValueError):
-    pass
+    """Raised when a record declares an unsupported schema version."""
 
 
 def _adapt_shared_parity_fixture(data: dict[str, Any]) -> dict[str, Any]:
@@ -31,30 +33,17 @@ def _adapt_shared_parity_fixture(data: dict[str, Any]) -> dict[str, Any]:
     review = dict(data.get("review") or {})
     legacy = dict(data.get("legacy") or {})
 
-    transcripts = []
-    for index, item in enumerate(content.get("transcripts") or [], start=1):
-        value = dict(item)
-        value.setdefault("id", f"transcript_{index}")
-        transcripts.append(value)
-    content["transcripts"] = transcripts
-
-    ocr = []
-    for index, item in enumerate(content.get("ocr") or [], start=1):
-        value = dict(item)
-        value.setdefault("id", f"ocr_{index}")
-        if "frame_timestamp_seconds" in value and "timestamp_seconds" not in value:
-            value["timestamp_seconds"] = value.pop("frame_timestamp_seconds")
-        ocr.append(value)
-    content["ocr"] = ocr
-
-    frames = []
-    for index, item in enumerate(content.get("frames") or [], start=1):
-        value = dict(item)
-        value.setdefault("id", f"frame_{index}")
-        if "frame_timestamp_seconds" in value and "timestamp_seconds" not in value:
-            value["timestamp_seconds"] = value.pop("frame_timestamp_seconds")
-        frames.append(value)
-    content["frames"] = frames
+    for field, prefix in (("transcripts", "transcript"), ("ocr", "ocr"), ("frames", "frame")):
+        items = []
+        for index, item in enumerate(content.get(field) or [], start=1):
+            value = dict(item)
+            value.setdefault("id", f"{prefix}_{index}")
+            # Only frame-derived evidence used the historical timestamp alias.
+            if field in {"ocr", "frames"} and "timestamp_seconds" not in value:
+                if "frame_timestamp_seconds" in value:
+                    value["timestamp_seconds"] = value.pop("frame_timestamp_seconds")
+            items.append(value)
+        content[field] = items
 
     media = []
     for item in content.get("media_references") or []:

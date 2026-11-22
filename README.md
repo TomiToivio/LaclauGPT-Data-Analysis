@@ -1,5 +1,23 @@
 # LaclauGPT Data Analysis
 
+## Find and run the analysis
+
+| Research or development task | Start here |
+| --- | --- |
+| Follow an AI26 item from preprocessing through discourse and network analysis | [Seven numbered steps and their inputs](laclaugpt/HUMAN_PIPELINE.md) |
+| Inspect the study design and public coding guidance | [AI26 reference case](docs/AI26_REFERENCE_CASE.md) and [public codebooks](codebooks/public/) |
+| Trace source identity, evidence and provenance through storage | [Canonical record contract](docs/CANONICAL_RECORD.md) and [Python model](src/laclaugpt_data_analysis/canonical.py) |
+| Find the implementation behind an installed command | Read `[project.scripts]` in [pyproject.toml](pyproject.toml), then open the named module under [src/laclaugpt_data_analysis](src/laclaugpt_data_analysis/) |
+| Inspect deployment or reproduce a regression | [Deployment files](deployment/), [operator scripts](scripts/) and [synthetic fixtures](tests/fixtures/) |
+
+From the repository root, use Python 3.11 or later in a virtual environment:
+
+```bash
+python -m pip install -e '.[dev]'
+laclaugpt-analysis --help
+python -m pytest tests/test_cross_module_parity_fixture.py
+```
+
 [Reading an AI26 record as social-science evidence](docs/AI26_PHASE1_METHOD.md) maps the Phase 1 paper to the code and follows one quoted claim through human review.
 
 > [!IMPORTANT]
@@ -18,9 +36,34 @@
 
 **Researcher-facing Phase 1 guide:** [Follow source evidence through provisional discourse codes and human review](docs/methods/phase1_researcher_guide.md). It maps the six operations in the [locked Phase 1 paper](https://github.com/TomiToivio/LaclauGPT/blob/main/paper/PHASE_1_PAPER.md) to code, includes a synthetic attribution example, and distinguishes implementation from proposed validation.
 
+**New to the codebase?** Start with the [repository navigation guide](docs/REPOSITORY_GUIDE.md) and the [architecture map](docs/ARCHITECTURE.md).
+
+## Find and run the analysis
+
+| Task | Start here |
+| --- | --- |
+| Understand seven protected scientific steps | [Human pipeline](laclaugpt/HUMAN_PIPELINE.md) |
+| Find package modules and installed commands | [Repository guide](docs/REPOSITORY_GUIDE.md) and [pyproject.toml](pyproject.toml) |
+| Trace evidence and source identity | [Canonical record contract](docs/CANONICAL_RECORD.md) |
+| Run deployment and inspect tests | [Deployment](deployment/), [scripts](scripts/) and [tests](tests/) |
+
+Run the development checks with Python 3.11+:
+
+```bash
+python -m pip install -e '.[dev]'
+python -m pytest
+python -m ruff check src tests
+```
+
 **New to the codebase?** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) maps the tree, the
 pipelines and where each feature lives; [docs/README.md](docs/README.md) indexes every topical
 document in `docs/`.
+
+**Researcher?** Start with **[docs/methods/RESEARCH_METHOD_GUIDE.md](docs/methods/RESEARCH_METHOD_GUIDE.md)**.
+It follows one record from retained source, through the model's provisional interpretation, to the human
+review decision: it maps each stage of the Phase 1 paper's six-stage workflow (§3.4) to the code that
+implements it, states what a quotation match does and does not prove, and records where the implementation
+is narrower than the paper's design.
 
 **LaclauGPT** is an open social-science research framework for **LLM-assisted computational discourse analysis** of large textual and multimodal corpora. It combines computational methods with interpretive political research while keeping model outputs traceable to source evidence, uncertainty, provenance and human review.
 

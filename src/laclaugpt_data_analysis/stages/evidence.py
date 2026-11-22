@@ -41,6 +41,14 @@ def locate_quote(source_text: str, quote: str) -> tuple[int | None, int | None]:
     reject genuine quotations. The normalised index maps each normalised
     character back to its offset in the ORIGINAL text, so the returned span still
     slices the source as written.
+
+    **What a hit establishes, and what it does not.** Finding the span proves the
+    quotation is *textually present* in the retained representation. It says
+    nothing about who is speaking, whether the speaker endorses the statement, or
+    whether the statement is evidence of a theoretical claim such as a shared
+    imaginary or a populist frontier. Those remain interpretive acts for the
+    researcher; see `docs/methods/RESEARCH_METHOD_GUIDE.md` §3 and Phase 1 paper
+    §3.4.
     """
     if not source_text or not quote:
         return None, None
