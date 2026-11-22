@@ -95,7 +95,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.run_id or not args.output_root:
         parser.error("--run-id and --output-root are required unless --list-runs is given")
 
-    records = load_analysis_records(settings, run_id=args.run_id)
+    records = load_analysis_records(settings, run_id=args.run_id, strict_identity=True)
     completed = [r for r in records if getattr(r.analysis, "status", "") == COMPLETED]
     if not completed:
         print(json.dumps({"run_id": args.run_id, "status": "no_completed_records",
