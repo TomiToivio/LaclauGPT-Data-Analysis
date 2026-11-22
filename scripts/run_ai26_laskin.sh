@@ -64,6 +64,31 @@ RUN_MODE="once"
 CHECK_ONLY=0
 DEBUG_FLAG=0
 
+# Issue #506: persist an outcome even if preflight rejects before a worker starts.
+# This journal is private and never contains env variables, input records or prompts.
+TICK_STAGE="preflight"
+WORKER_STATUS=""
+REPORT_STATUS=""
+record_tick_on_exit() {
+  local code=$?
+  trap - EXIT
+  local telemetry_dir="${PRIVATE_CONFIG_DIR:-${PRIVATE_ROOT:+$PRIVATE_ROOT/analysis/ai26}}"
+  if [[ -n "$telemetry_dir" && -d "$telemetry_dir" ]]; then
+    local args=(--path "$telemetry_dir/logs/ai26-analysis-ticks.jsonl"
+                --stage "$TICK_STAGE" --exit-code "$code"
+                --worker-status "$WORKER_STATUS" --report-status "$REPORT_STATUS")
+    (( CHECK_ONLY )) && args+=(--check-only)
+    local sha=""
+    sha=$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null) || true
+    [[ -z "$sha" ]] || args+=(--git-sha "$sha")
+    python3 "$ROOT_DIR/src/laclaugpt_data_analysis/ai26_tick_telemetry.py" "${args[@]}" ||
+      printf '[%s] WARNING: unable to persist AI26 tick telemetry\\n' "$(date -Is)" >&2
+  else
+    printf '[%s] WARNING: private telemetry directory unavailable; no tick JSONL written\\n' "$(date -Is)" >&2
+  fi
+}
+trap record_tick_on_exit EXIT
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --once)   RUN_MODE="once" ;;
@@ -170,6 +195,7 @@ fi
 "$PY" -m laclaugpt_data_analysis.deploy_drift --quiet || log "WARNING: sibling drift reporting failed"
 
 if (( CHECK_ONLY )); then
+  TICK_STAGE="check"
   log "preflight complete (--check); no tasks claimed"
   exit 0
 fi
@@ -184,6 +210,7 @@ done
 
 mkdir -p "$(dirname "$LOCK_FILE")" "$PRIVATE_CONFIG_DIR/logs"
 
+TICK_STAGE="lock"
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
   log "AI26 Laskin analysis skipped: lock held; status=already_running exit_code=3"
@@ -240,6 +267,7 @@ if [[ "$MANIFEST_TREE" != "$RUNTIME_TREE" || "$MANIFEST_GIT" != "$RUNTIME_GIT" ]
   log "AI26 manifest re-frozen for scheduled analysis git=$RUNTIME_GIT tree=$RUNTIME_TREE"
 fi
 
+TICK_STAGE="worker"
 log "AI26 Laskin analysis start run=$LACLAUGPT_RUN_ID max_tasks=$MAX_TASKS cycle_max_seconds=$CYCLE_MAX_SECONDS mode=$RUN_MODE debug=${LACLAUGPT_DEBUG:-0}"
 
 # Wall-clock ceiling (issue #332). ``timeout`` runs the worker in its own
@@ -314,5 +342,6 @@ elif [[ "${LACLAUGPT_PERIODIC_REPORTS:-1}" == "0" ]]; then
   REPORT_STATUS="disabled"
 fi
 
+TICK_STAGE="complete"
 log "AI26 Laskin analysis end worker_status=$WORKER_STATUS report_status=$REPORT_STATUS status=$FINAL_STATUS"
 exit "$FINAL_STATUS"
