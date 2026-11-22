@@ -34,6 +34,7 @@ SCHEMA_VERSION = "1.2.0"
 #: * ``CANONICAL`` — the version downstream analysis should use.
 #: * ``SUPERSEDED`` — replaced by a later object; kept so the disagreement and its history survive rather
 #:   than being overwritten.
+#: A review status records a decision, not the researcher's reasoning or a complete audit trail.
 ReviewStatus = Literal[
     "PROVISIONAL", "ACCEPTED", "REJECTED", "REVISED", "CANONICAL", "SUPERSEDED"
 ]
