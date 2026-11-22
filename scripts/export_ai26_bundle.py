@@ -61,6 +61,33 @@ def list_runs(settings) -> list[dict[str, object]]:
     ]
 
 
+
+def dedupe_by_source_url(records):
+    """Collapse only identical repeated records, never distinct analyses (#488).
+
+    The Mongo query has no stable ordering: choosing the 'first' of two
+    different analyses would discard research data nondeterministically.
+    """
+    seen: dict[str, object] = {}
+    kept: list[object] = []
+    collapsed = 0
+    no_native_id = 0
+    for record in records:
+        key = (getattr(record, "source_url", "") or "").strip()
+        if not key:
+            raise ValueError("bundle source identity missing")
+        if key in seen:
+            if seen[key] != record:
+                raise ValueError("conflicting analyses share a source identity; refuse arbitrary deduplication")
+            collapsed += 1
+            continue
+        seen[key] = record
+        if not (getattr(record, "source_native_ids", None) or {}).get("document_id"):
+            no_native_id += 1
+        kept.append(record)
+    return kept, collapsed, no_native_id
+
+
 def _deployed_sha() -> str:
     try:
         return subprocess.run(
@@ -101,6 +128,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"run_id": args.run_id, "status": "no_completed_records",
                           "records_seen": len(records)}, indent=2))
         return 2
+    completed, collapsed, no_native_id = dedupe_by_source_url(completed)
     if args.limit:
         completed = completed[: args.limit]
 
@@ -116,6 +144,8 @@ def main(argv: list[str] | None = None) -> int:
         "exported_at_utc": datetime.now(UTC).isoformat(timespec="seconds"),
         "deployed_sha": _deployed_sha(),
         "records_exported": len(completed),
+        "duplicates_collapsed": collapsed,
+        "records_without_native_id": no_native_id,
         "records_seen_in_run": len(records),
         "output_root": str(args.output_root),
         "artifacts": artifacts,
