@@ -1,4 +1,9 @@
 import importlib
+
+import pytest
+
+pytest.importorskip("pandas", reason="vendored EP24 steps import pandas; it is an optional extra in CI")
+
 import sys
 from pathlib import Path
 from unittest.mock import Mock

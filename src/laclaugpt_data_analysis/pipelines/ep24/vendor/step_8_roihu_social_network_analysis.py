@@ -17,16 +17,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
-
 from ep24_cli import configure_step_cli
 from ep24_entities import fold_key, resolution_lookup
 from ep24_models import ollama_model, ollama_model_source
-from ep24_prompt_contract import effective_prompt_fingerprint
 from ep24_pipeline import (
     load_cumulative_csv,
-    metadata_context,
     write_cumulative_csv,
 )
+from ep24_prompt_contract import effective_prompt_fingerprint
 from ep24_sna import (
     SNA_SCHEMA_VERSION,
     apply_reconciliation_metrics,
