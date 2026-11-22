@@ -80,7 +80,23 @@ while [[ $# -gt 0 ]]; do
 done
 
 log() { printf '[%s] %s\n' "$(date -Is)" "$*"; }
-fail() { printf '[%s] ERROR: %s\n' "$(date -Is)" "$*" >&2; exit 2; }
+
+# #506: one persistent, structured record per tick. A monitor must be able to tell a successful cycle from a
+# configuration rejection and from a lock-held skip without reading the log; cron's exit status alone cannot
+# express the difference between "did the work" and "declined to start". Telemetry never fails a cycle.
+tick_status() {
+  local outcome="$1" code="$2" detail="${3:-}" interpreter="$ROOT_DIR/.venv/bin/python"
+  [[ -x "$interpreter" ]] || return 0
+  "$interpreter" -m laclaugpt_data_analysis.tick_status record \
+    --outcome "$outcome" --exit-code "$code" --detail "$detail" \
+    --head "$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || printf '')" >/dev/null 2>&1 || true
+}
+
+fail() {
+  printf '[%s] ERROR: %s\n' "$(date -Is)" "$*" >&2
+  tick_status preflight_rejected 2 "$*"
+  exit 2
+}
 
 # ---------------------------------------------------------------- preflight --
 [[ -d "$ROOT_DIR" ]] || fail "repository root not found: $ROOT_DIR"
@@ -187,6 +203,7 @@ mkdir -p "$(dirname "$LOCK_FILE")" "$PRIVATE_CONFIG_DIR/logs"
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
   log "AI26 Laskin analysis skipped: lock held; status=already_running exit_code=3"
+  tick_status already_running 3 "lock held by a running cycle"
   exit 3
 fi
 
@@ -315,4 +332,9 @@ elif [[ "${LACLAUGPT_PERIODIC_REPORTS:-1}" == "0" ]]; then
 fi
 
 log "AI26 Laskin analysis end worker_status=$WORKER_STATUS report_status=$REPORT_STATUS status=$FINAL_STATUS"
+case "$FINAL_STATUS" in
+  0) tick_status success 0 "worker_status=$WORKER_STATUS report_status=$REPORT_STATUS" ;;
+  4) tick_status report_failed 4 "worker_status=$WORKER_STATUS report_status=$REPORT_STATUS" ;;
+  *) tick_status cycle_failed "$FINAL_STATUS" "worker_status=$WORKER_STATUS report_status=$REPORT_STATUS" ;;
+esac
 exit "$FINAL_STATUS"
