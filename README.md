@@ -14,6 +14,8 @@
 >
 > **Project map:** [LaclauGPT / paper + meta-repo](https://github.com/TomiToivio/LaclauGPT) → [Data Collection](https://github.com/TomiToivio/LaclauGPT-Data-Collection) → **Data Analysis (you are here)** → [Data Visualization](https://github.com/TomiToivio/LaclauGPT-Data-Visualization)
 
+**Researcher-facing Phase 1 guide:** [Follow source evidence through provisional discourse codes and human review](docs/methods/phase1_researcher_guide.md). It maps the six operations in the [locked Phase 1 paper](https://github.com/TomiToivio/LaclauGPT/blob/main/paper/PHASE_1_PAPER.md) to code, includes a synthetic attribution example, and distinguishes implementation from proposed validation.
+
 **New to the codebase?** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) maps the tree, the
 pipelines and where each feature lives; [docs/README.md](docs/README.md) indexes every topical
 document in `docs/`.

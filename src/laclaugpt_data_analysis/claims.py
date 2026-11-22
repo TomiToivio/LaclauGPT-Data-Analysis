@@ -44,6 +44,9 @@ def claim_from_canonical(
     proposal to canonical source identity/evidence so downstream DNA/framing/MCA joins
     cannot lose provenance. Unsupported proposals should set `abstained=True`.
     """
+    # This binds a *proposed* actor to source evidence; it cannot independently
+    # verify speaker identity or journalistic endorsement. See paper §3.4 and
+    # docs/methods/phase1_researcher_guide.md.
     actor_id = str(proposal.get("actor_id") or "").strip()
     actor_name = str(proposal.get("actor_name") or actor_id).strip()
     concept_id = str(proposal.get("concept_id") or "").strip()

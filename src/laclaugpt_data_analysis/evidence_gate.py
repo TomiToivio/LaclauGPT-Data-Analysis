@@ -77,6 +77,9 @@ def apply_evidence_gate(
 
     `dry_run=True` returns the same report and mutates nothing.
     """
+    # Exact evidence is a necessary mechanical check, not proof of antagonism,
+    # hegemony, signifier roles or the speaker's endorsement (paper §§3.1, 3.4).
+    # See docs/methods/phase1_researcher_guide.md.
     resolving = _resolving_ids(record)
     report: dict[str, Any] = {
         "enabled": True,
