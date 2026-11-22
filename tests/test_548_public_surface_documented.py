@@ -31,7 +31,7 @@ def public_nodes(tree: ast.Module) -> list[ast.ClassDef | ast.FunctionDef]:
     return [
         node
         for node in tree.body
-        if isinstance(node, (ast.ClassDef, ast.FunctionDef)) and not node.name.startswith("_")
+        if isinstance(node, ast.ClassDef | ast.FunctionDef) and not node.name.startswith("_")
     ]
 
 
