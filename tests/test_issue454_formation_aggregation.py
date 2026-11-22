@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 from laclaugpt_data_analysis.formation_vocabulary import is_countable_formation
 from laclaugpt_data_analysis.periodic_summary import SummaryScope, record_matches_scope
-from laclaugpt_data_analysis.reporting import build_daily_report
 from laclaugpt_data_analysis.prompt_library import load_prompt
+from laclaugpt_data_analysis.reporting import build_daily_report
 from laclaugpt_data_analysis.stages.prompt_map import prompt_ids_for_stage
 
 
