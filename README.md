@@ -18,6 +18,8 @@ laclaugpt-analysis --help
 python -m pytest tests/test_cross_module_parity_fixture.py
 ```
 
+[Reading an AI26 record as social-science evidence](docs/AI26_PHASE1_METHOD.md) maps the Phase 1 paper to the code and follows one quoted claim through human review.
+
 > [!IMPORTANT]
 > **Continuous software development; research phases apply to papers only.** This repository's `main` branch maintains the current AI26 implementation. AI26 is the default and only project developed here. EP24, Hungary26 and Brazil26 are moving to separate project repositories. Historical compatibility code may remain, but it is dormant and must not drive new architecture or defaults. Human-readable/project-publication versions belong in the legacy EP24 or other project-specific repositories; this repository currently prioritizes machine-readable canonical data, reproducibility and live AI26 operations over human-readable reports or legacy dashboards.
 
