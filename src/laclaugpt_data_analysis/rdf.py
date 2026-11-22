@@ -219,7 +219,6 @@ def materialize_record(
         # Phase 1 analytical objects (issue #144). These are produced by the
         # default pipeline's discourse/postprocess stages and were previously
         # dropped from the RDF projection.
-        (record.analysis.discourses, ns.Discourse),
         (record.analysis.imaginaries, ns.SociotechnicalImaginary),
         # Phase 1 codes collective subjects (#452). The legacy `us`/`them` pair is
         # still projected when a historical record carries it, but new records do
