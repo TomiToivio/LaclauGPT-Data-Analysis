@@ -61,6 +61,34 @@ def list_runs(settings) -> list[dict[str, object]]:
     ]
 
 
+
+def select_bundleable(records):
+    """Keep records that can be bundled; return (kept, collapsed, skipped_no_identity).
+
+    `write_research_bundle` refuses a bundle with missing or duplicate source identities
+    (#492), and it is right to: a research artifact is keyed by source identity. So the
+    operator path has to do the choosing that the guard forbids the writer to guess at --
+    drop exact duplicates (keeping the first) and skip records with no identity at all,
+    reporting both counts rather than silently exporting a smaller corpus.
+    """
+    seen: dict[str, object] = {}
+    kept: list[object] = []
+    collapsed = 0
+    skipped = 0
+    for record in records:
+        url = (getattr(record, "source_url", "") or "").strip()
+        document_id = (getattr(record, "source_native_ids", None) or {}).get("document_id")
+        if not url or not document_id:
+            skipped += 1
+            continue
+        if url in seen:
+            collapsed += 1
+            continue
+        seen[url] = record
+        kept.append(record)
+    return kept, collapsed, skipped
+
+
 def _deployed_sha() -> str:
     try:
         return subprocess.run(
@@ -95,11 +123,20 @@ def main(argv: list[str] | None = None) -> int:
     if not args.run_id or not args.output_root:
         parser.error("--run-id and --output-root are required unless --list-runs is given")
 
-    records = load_analysis_records(settings, run_id=args.run_id, strict_identity=True)
+    # strict_identity=False lets the loader skip identity-invalid rows (it raises with True),
+    # so this path can dedupe and report instead of dying on the first bad row. The writer
+    # still refuses a bundle with missing or duplicate identities (#492), which is the guard
+    # that matters; this only decides which records are offered to it.
+    records = load_analysis_records(settings, run_id=args.run_id, strict_identity=False)
     completed = [r for r in records if getattr(r.analysis, "status", "") == COMPLETED]
     if not completed:
         print(json.dumps({"run_id": args.run_id, "status": "no_completed_records",
                           "records_seen": len(records)}, indent=2))
+        return 2
+    completed, collapsed, skipped = select_bundleable(completed)
+    if not completed:
+        print(json.dumps({"run_id": args.run_id, "status": "no_bundleable_records",
+                          "collapsed": collapsed, "skipped_no_identity": skipped}, indent=2))
         return 2
     if args.limit:
         completed = completed[: args.limit]
@@ -116,6 +153,8 @@ def main(argv: list[str] | None = None) -> int:
         "exported_at_utc": datetime.now(UTC).isoformat(timespec="seconds"),
         "deployed_sha": _deployed_sha(),
         "records_exported": len(completed),
+        "duplicates_collapsed": collapsed,
+        "skipped_no_identity": skipped,
         "records_seen_in_run": len(records),
         "output_root": str(args.output_root),
         "artifacts": artifacts,

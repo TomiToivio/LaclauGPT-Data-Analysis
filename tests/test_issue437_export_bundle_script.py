@@ -62,9 +62,10 @@ def test_export_reports_counts_paths_and_checksums_without_source_text(monkeypat
 
     monkeypatch.setattr(export, "load_settings", lambda: SimpleNamespace())
     monkeypatch.setattr(export, "load_analysis_records", lambda settings, run_id, strict_identity=False: [
-        SimpleNamespace(analysis=SimpleNamespace(status="analyzed")),
+        SimpleNamespace(source_url="https://a.invalid/1", source_native_ids={"document_id": "d1"},
+                        analysis=SimpleNamespace(status="analyzed")),
     ])
-    monkeypatch.setattr(export, "write_research_bundle", lambda records, root, stem: {"jsonl": artifact})
+    monkeypatch.setattr(export, "write_research_bundle", lambda records, root, stem, **kw: {"jsonl": artifact})
 
     code = export.main(["--run-id", "r1", "--output-root", str(tmp_path / "bundle")])
     assert code == 0
@@ -73,6 +74,7 @@ def test_export_reports_counts_paths_and_checksums_without_source_text(monkeypat
     assert payload["artifacts"]["analysis.jsonl"]["sha256"] == hashlib.sha256(artifact.read_bytes()).hexdigest()
     assert set(payload) == {
         "run_id", "exported_at_utc", "deployed_sha", "records_exported",
+        "duplicates_collapsed", "skipped_no_identity",
         "records_seen_in_run", "output_root", "artifacts",
     }, "the summary is the privacy boundary: counts and paths only, never record content"
 
@@ -81,7 +83,9 @@ def test_limit_caps_the_export(monkeypatch, tmp_path, capsys):
     seen = {}
     monkeypatch.setattr(export, "load_settings", lambda: SimpleNamespace())
     monkeypatch.setattr(export, "load_analysis_records", lambda settings, run_id, strict_identity=False: [
-        SimpleNamespace(analysis=SimpleNamespace(status="analyzed")) for _ in range(5)
+        SimpleNamespace(source_url=f"https://a.invalid/{i}", source_native_ids={"document_id": f"d{i}"},
+                        analysis=SimpleNamespace(status="analyzed"))
+        for i in range(5)
     ])
 
     def fake_write(records, root, stem):
@@ -91,3 +95,26 @@ def test_limit_caps_the_export(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(export, "write_research_bundle", fake_write)
     assert export.main(["--run-id", "r1", "--output-root", str(tmp_path), "--limit", "2"]) == 0
     assert seen["n"] == 2
+
+
+def test_records_without_identity_are_skipped_and_counted():
+    """#492 makes the writer refuse; the operator path must choose instead of guessing."""
+    kept, collapsed, skipped = export.select_bundleable([
+        SimpleNamespace(source_url="https://a.invalid/1", source_native_ids={"document_id": "d1"}),
+        SimpleNamespace(source_url="https://a.invalid/1", source_native_ids={"document_id": "d1"}),
+        SimpleNamespace(source_url="https://a.invalid/2", source_native_ids={}),
+        SimpleNamespace(source_url="", source_native_ids={"document_id": "d3"}),
+    ])
+    assert [r.source_url for r in kept] == ["https://a.invalid/1"]
+    assert collapsed == 1 and skipped == 2
+
+
+def test_a_run_with_only_unbundleable_records_writes_nothing(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(export, "load_settings", lambda: SimpleNamespace())
+    monkeypatch.setattr(export, "load_analysis_records", lambda settings, run_id, **kw: [
+        SimpleNamespace(source_url="", source_native_ids={}, analysis=SimpleNamespace(status="analyzed")),
+    ])
+    called = []
+    monkeypatch.setattr(export, "write_research_bundle", lambda *args, **kwargs: called.append(1) or {})
+    assert export.main(["--run-id", "r1", "--output-root", str(tmp_path)]) == 2
+    assert not called
