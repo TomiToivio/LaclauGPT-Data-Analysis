@@ -5,6 +5,7 @@ The adapter keeps the public ``RetrievalBackend`` contract independent of Mongo 
 syntax, supports native ``$vectorSearch`` when available, and degrades to bounded
 client-side cosine search when the connected deployment has no vector index.
 """
+from laclaugpt_data_analysis.storage import mongo_set_payload
 from __future__ import annotations
 
 import hashlib
@@ -153,7 +154,7 @@ class MongoRetrievalBackend:
                 "topics": [item.label for item in record.analysis.topics],
             }
             self.records.update_one(
-                {"canonical_id": record.source_url}, {"$set": document}, upsert=True
+                {"canonical_id": record.source_url}, {"$set": mongo_set_payload(document)}, upsert=True
             )
             self.edges.delete_many({"source_record": record.source_url, "rag_managed": True})
             edges: list[dict[str, Any]] = []
