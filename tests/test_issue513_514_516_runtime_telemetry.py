@@ -48,3 +48,17 @@ def test_wrapper_uses_one_exit_trap_and_venv(tmp_path):
     assert 'local interpreter="$ROOT_DIR/.venv/bin/python"' in wrapper
     assert 'tick_status already_running' not in wrapper
     assert 'TICK_STAGE="check"' in wrapper
+
+
+def test_lock_skip_includes_last_progress_checkpoint(tmp_path):
+    progress = tmp_path / "progress.json"
+    progress.write_text(json.dumps({
+        "timestamp_utc": "2026-11-22T14:00:00+00:00",
+        "phase": "running_task", "claims": 2, "completed": 1, "retry": 0
+    }))
+    event = append_tick(tmp_path / "ticks.jsonl", stage="lock", exit_code=3,
+                        check_only=False, progress_path=progress)
+    assert event["progress_phase"] == "running_task"
+    assert event["progress_claims"] == 2
+    assert event["progress_completed"] == 1
+    assert event["progress_age_seconds"] >= 0
