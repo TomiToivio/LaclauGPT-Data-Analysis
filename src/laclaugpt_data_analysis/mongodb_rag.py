@@ -5,8 +5,9 @@ The adapter keeps the public ``RetrievalBackend`` contract independent of Mongo 
 syntax, supports native ``$vectorSearch`` when available, and degrades to bounded
 client-side cosine search when the connected deployment has no vector index.
 """
-from laclaugpt_data_analysis.storage import mongo_set_payload
 from __future__ import annotations
+
+from laclaugpt_data_analysis.storage import mongo_set_payload
 
 import hashlib
 import math
