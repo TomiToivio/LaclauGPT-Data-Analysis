@@ -4,8 +4,8 @@ from laclaugpt_data_analysis.canonical import CanonicalRecord, ContentSection, S
 from laclaugpt_data_analysis.canonical_pipeline import (
     DiscourseProposal,
     MultimodalSummaryProposal,
-    SummaryProposal,
     PipelineContext,
+    SummaryProposal,
     _effective_stage_set,
     _validate_project_analysis_config,
     postprocess_record,

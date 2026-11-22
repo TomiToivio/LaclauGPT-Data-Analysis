@@ -7,7 +7,12 @@ from laclaugpt_data_analysis.analysis.acdt_compat import (
     WordFrequencyPlugin,
 )
 from laclaugpt_data_analysis.canonical import CanonicalRecord, ContentSection, SourceSection
-from laclaugpt_data_analysis.plugin_pipeline import AnalysisPipeline, PluginContext, PluginRegistry, PluginSelection
+from laclaugpt_data_analysis.plugin_pipeline import (
+    AnalysisPipeline,
+    PluginContext,
+    PluginRegistry,
+    PluginSelection,
+)
 
 
 def _record(record_id: str, text: str, *, day: int, hashtags=(), author="a") -> CanonicalRecord:

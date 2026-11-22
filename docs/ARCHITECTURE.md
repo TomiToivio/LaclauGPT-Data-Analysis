@@ -121,3 +121,19 @@ CI runs the same three, with ruff limited to newly introduced violations. A chan
 the record model, an adapter or backend selection must run `verify_contracts.py`; a change to a
 shell wrapper has no suite, so verify its refusal paths explicitly (`bash -n`, then the exit
 codes) and say so when reporting.
+
+### Code-health baseline (measured 2026-11-22, #548)
+
+```bash
+ruff check src tests    # 113 findings: all under pipelines/ep24* (the vendored snapshot)
+                        # 0 findings in the maintained package and in tests/
+```
+
+- **Every non-vendored module has a module docstring.**
+- **Public names: 437 of 808 documented (54 %).** The analytical-core modules are complete —
+  `dna_statement_coding`, `social_semiotic`, `distributed`, `phase1_laskin`, `memory/models`,
+  `knowledge_graph`. The remaining modules are ordered in #548.
+- The vendored snapshot's 113 findings are excluded on purpose: those files must stay byte-identical
+  to `docs/EP24_SOURCE_INVENTORY.json`. Do not "fix" them; re-vendor instead.
+- Docstring style: PEP 257 one-liners for classes and small functions; a short paragraph only where
+  the *why* is not visible from the signature. Do not translate the code into English.

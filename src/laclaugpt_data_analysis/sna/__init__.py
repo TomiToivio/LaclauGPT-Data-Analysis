@@ -4,9 +4,16 @@ NetworkX is the reference compatibility layer. The module computes conventional
 network-science measures and deliberately does not rename them as theoretical
 constructs such as "network power".
 """
-from .graph import CommunicatorType, CommunicationMode, SNAEdge, SNANode, build_graph, temporal_slices
+from .graph import (
+    CommunicationMode,
+    CommunicatorType,
+    SNAEdge,
+    SNANode,
+    build_graph,
+    temporal_slices,
+)
+from .import_export import read_gexf, read_graphml, write_gexf, write_graphml
 from .metrics import community_assignments, graph_metrics
-from .import_export import read_graphml, read_gexf, write_graphml, write_gexf
 
 __all__ = [
     "CommunicatorType",

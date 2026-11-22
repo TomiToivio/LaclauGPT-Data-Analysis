@@ -4,7 +4,6 @@ import ast
 import pathlib
 import tomllib
 
-
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "laclaugpt_data_analysis"
 AUDIT = ROOT / "docs" / "LEGACY_PHASE1_AUDIT.md"
