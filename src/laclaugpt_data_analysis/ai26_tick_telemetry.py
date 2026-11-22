@@ -9,7 +9,7 @@ import argparse
 import fcntl
 import json
 import os
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -27,7 +27,7 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
     else:
         outcome = "cycle_failed"
     event = {
-        "timestamp_utc": datetime.now(UTC).isoformat(),
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "outcome": outcome,
         "stage": stage,
         "exit_code": exit_code,
