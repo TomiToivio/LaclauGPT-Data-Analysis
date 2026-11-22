@@ -59,7 +59,9 @@ def test_every_source_field_it_mentions_exists(guide):
 
 
 def test_every_path_it_cites_exists(guide):
-    paths = set(re.findall(r"`((?:src|tests|tools|laclaugpt|docs)/[A-Za-z0-9_./-]+\.(?:py|md))`", guide))
+    paths = set(
+        re.findall(r"`((?:src|tests|tools|laclaugpt|docs)/[A-Za-z0-9_./-]+\.(?:py|md))`", guide)
+    )
     assert paths, "the guide should point at code, not only describe it"
     missing = sorted(p for p in paths if not (ROOT / p).exists())
     assert not missing, f"the guide cites paths that do not exist: {missing}"
@@ -69,7 +71,14 @@ def test_the_retired_and_unproduced_fields_are_reported_as_such(guide):
     """The guide's §7 is a list of mismatches; if a mismatch is fixed the list must change too."""
     from laclaugpt_data_analysis.field_contract import UNPRODUCED_FIELDS
 
-    for field in ("embeddings", "entity_mentions", "representations", "us", "them", "topic_assignments"):
+    for field in (
+        "embeddings",
+        "entity_mentions",
+        "representations",
+        "us",
+        "them",
+        "topic_assignments",
+    ):
         assert field in UNPRODUCED_FIELDS, f"{field} is no longer registered as unproduced — update §7"
         assert field in guide, f"§7 should report the unproduced field {field}"
 
@@ -79,15 +88,26 @@ def test_it_does_not_claim_an_accuracy_result(guide):
     # The guide's own wording for this is "not demonstrated here" / "should be reported as completed
     # validation"; any of those phrasings counts, so the test tracks the claim rather than one sentence.
     lowered = guide.lower()
-    assert any(phrase in lowered for phrase in (
-        "not demonstrated", "not be reported as **completed validation**",
-        "completed, independently adjudicated evaluation is **not",
-    )), "the guide must say the evaluation is not done, not imply it is"
+    assert any(
+        phrase in lowered
+        for phrase in (
+            "not demonstrated",
+            "not be reported as **completed validation**",
+            "completed, independently adjudicated evaluation is **not",
+        )
+    ), "the guide must say the evaluation is not done, not imply it is"
     for forbidden in ("we measured an accuracy of", "inter-coder agreement of", "koppas alpha"):
         assert forbidden not in lowered
 
 
 def test_the_worked_example_uses_real_field_names(guide):
-    for field in ("review_status", "evidence_ids", "start_offset", "end_offset", "formula_of_populism",
-                  "empty_signifier_candidates", "uncertainty"):
+    for field in (
+        "review_status",
+        "evidence_ids",
+        "start_offset",
+        "end_offset",
+        "formula_of_populism",
+        "empty_signifier_candidates",
+        "uncertainty",
+    ):
         assert field in guide, field
