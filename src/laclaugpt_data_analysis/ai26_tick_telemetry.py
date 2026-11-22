@@ -18,8 +18,8 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
     """Write exactly one atomic JSONL event per invocation, including skipped ticks."""
     if exit_code == 3:
         outcome = "already_running"
-    elif exit_code == 2:
-        outcome = "preflight_rejected" if stage == "preflight" else "configuration_rejected"
+    elif exit_code != 0 and stage == "preflight":
+        outcome = "preflight_rejected"
     elif check_only and exit_code == 0:
         outcome = "check_ok"
     elif exit_code == 0:
