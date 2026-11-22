@@ -189,3 +189,15 @@ def seed_memory(codebook: Codebook, store) -> list[str]:
             store.add_alias(obj_id, alias)
         ids.append(obj_id)
     return ids
+
+
+def format_codebook_context(entries: list[CodebookEntry]) -> str:
+    """Render ordered codebook labels and aliases for the analysis prompt."""
+    rows = []
+    for entry in entries:
+        row = f"- {entry.kind}: {entry.label}"
+        aliases = ", ".join(entry.aliases)
+        if aliases:
+            row += f" (aliases: {aliases})"
+        rows.append(row)
+    return "\n".join(rows)

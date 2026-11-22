@@ -25,7 +25,6 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import subprocess
@@ -34,18 +33,11 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
+from .checksums import sha256_file as _sha256_file
 from .canonical import SCHEMA_VERSION
 from .codebooks import codebook_layer_snapshot, load_codebook, merge_codebooks
 
 DEFAULT_MODEL = "gemma4:12b"
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _repo_root() -> Path:
