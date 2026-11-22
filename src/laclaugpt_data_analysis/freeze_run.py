@@ -33,8 +33,8 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
 
-from .checksums import sha256_file as _sha256_file
 from .canonical import SCHEMA_VERSION
+from .checksums import sha256_file as _sha256_file
 from .codebooks import codebook_layer_snapshot, load_codebook, merge_codebooks
 
 DEFAULT_MODEL = "gemma4:12b"
