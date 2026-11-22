@@ -56,6 +56,7 @@ themselves. Start with [ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the 
 
 - [CSC Allas S3 write verification](ALLAS_S3_WRITE_VERIFICATION.md)
 - [Research method guide: from one record to a reviewed claim (methods/)](methods/RESEARCH_METHOD_GUIDE.md)
+- [Phase 1 researcher guide: from source to reviewed interpretation (methods/)](methods/phase1_researcher_guide.md)
 - [Canonical analysis record](CANONICAL_RECORD.md)
 - [Distributed project storage](DISTRIBUTED_PROJECT_STORAGE.md)
 - [Four-layer research record in Data Analysis](FOUR_LAYER_RESEARCH_RECORD.md)
