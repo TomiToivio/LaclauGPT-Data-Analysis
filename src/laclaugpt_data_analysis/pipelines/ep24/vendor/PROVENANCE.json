@@ -1,0 +1,11 @@
+{
+  "step7_step8_synced_from": {
+    "repository": "TomiToivio/LaclauGPT-Multimodal-Analysis",
+    "commit": "26d1c7cb14e163309b2111e47c21a4c357ed0f65",
+    "synced_at": "2026-11-16",
+    "files": [
+      "step_7_roihu_discourse_network_analysis.py",
+      "step_8_roihu_social_network_analysis.py"
+    ]
+  }
+}
