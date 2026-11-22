@@ -154,7 +154,13 @@ class MongoTaskStore:
             "created_at": now_utc(),
         }
         try:
-            self.results.insert_one(document)
+            # `dict(document)` is not cosmetic: pymongo adds `_id` to the caller's dict while
+            # encoding the insert, and it does so *before* the server rejects a duplicate. If the
+            # same dict were handed to `replace_one`, it would carry a freshly generated `_id`
+            # that differs from the stored document's, and MongoDB refuses the replacement with
+            # code 66 ("the (immutable) field '_id' was found to have been altered") — discarding
+            # a finished analysis. Observed live on Laskin 2026-11-22 at 19:10 and 19:16.
+            self.results.insert_one(dict(document))
             return True
         except DuplicateKeyError:
             query = {
@@ -165,7 +171,10 @@ class MongoTaskStore:
             stored = self.results.find_one(query, {"_id": 0, "generation_fingerprint": 1})
             if not result_supersedes_fingerprint(stored, fingerprint):
                 return False
-            self.results.replace_one(query, document)
+            # Keep the existing document's identity: a replacement may not carry `_id` at all.
+            self.results.replace_one(
+                query, {key: value for key, value in document.items() if key != "_id"}
+            )
             return True
 
     def write_failure(
