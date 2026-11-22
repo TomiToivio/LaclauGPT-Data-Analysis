@@ -117,3 +117,61 @@ __all__ = [
     "is_abstention",
     "verify_quotes",
 ]
+
+
+def proposal_quotes(proposal: object) -> list[str]:
+    """Every distinct `evidence` quote carried by a proposal's coded objects.
+
+    Generic over field names on purpose: the discourse proposal grows new candidate lists
+    as the codebook changes, and a per-field list here would silently stop covering them.
+    """
+    quotes: list[str] = []
+    for name in type(proposal).model_fields:
+        value = getattr(proposal, name, None)
+        if isinstance(value, list):
+            for item in value:
+                quotes.extend(getattr(item, "evidence", None) or [])
+    seen: dict[str, None] = {}
+    for quote in quotes:
+        text = quote.strip()
+        if text and not is_abstention(text):
+            seen.setdefault(text, None)
+    return list(seen)
+
+
+def build_correction_prompt(source_text: str, unlocatable: list[str]) -> str:
+    """Ask once, for verbatim spans only -- no new analysis, no new categories."""
+    listed = "\n".join(f"{index}. {quote}" for index, quote in enumerate(unlocatable, start=1))
+    return (
+        "These quoted spans from your previous answer do not occur in the source item:\n\n"
+        f"{listed}\n\n"
+        "For each one, return the exact contiguous span from the source item that supports the "
+        "same claim, copied character for character. Do not paraphrase, translate, summarise or "
+        "merge passages. If no such span exists, return an empty `verbatim` for that item.\n\n"
+        "SOURCE ITEM:\n"
+        f"{source_text}"
+    )
+
+
+def apply_corrections(proposal: object, replacements: dict[str, str]) -> tuple[object, int]:
+    """Rewrite only the quotes that were replaced; return the proposal and a count."""
+    if not replacements:
+        return proposal, 0
+    updated = 0
+    for name in type(proposal).model_fields:
+        value = getattr(proposal, name, None)
+        if not isinstance(value, list):
+            continue
+        changed = False
+        items = []
+        for item in value:
+            evidence = getattr(item, "evidence", None)
+            if isinstance(evidence, list) and any(q.strip() in replacements for q in evidence):
+                items.append(item.model_copy(update={"evidence": [replacements.get(q.strip(), q) for q in evidence]}))
+                updated += sum(1 for q in evidence if q.strip() in replacements)
+                changed = True
+            else:
+                items.append(item)
+        if changed:
+            proposal = proposal.model_copy(update={name: items})
+    return proposal, updated

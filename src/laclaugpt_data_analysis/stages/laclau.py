@@ -35,12 +35,20 @@ Outputs
 """
 from __future__ import annotations
 
+from typing import Any
+
 from ..canonical import CanonicalRecord
 from ..codebooks import CodebookEntry
 from ..llm.structured_output import chat_structured
 from ..prompt_library import load_prompt, prompt_provenance
+from .evidence_policy import (
+    apply_corrections,
+    apply_verbatim_policy,
+    build_correction_prompt,
+    proposal_quotes,
+)
 from .prompt_map import prompt_ids_for_stage
-from .proposals import DiscourseProposal
+from .proposals import DiscourseProposal, EvidenceCorrectionProposal
 from .shared import (
     PipelineContext,
     append_stage,
@@ -88,6 +96,35 @@ def discourse_analysis(
         user_prompt=user_prompt,
         allow_cloud_fallback=allow_cloud_fallback,
     )
+    # #458 / D6: verify the evidence the model claims, allow ONE evidence-only correction and
+    # then abstain. Best effort by design: a provider that cannot answer the correction must
+    # not fail the stage, but the failure is recorded rather than hidden.
+    text = record.content.text or ""
+    correction: dict[str, Any] = {"attempted": False}
+    try:
+        verdict = apply_verbatim_policy(text, proposal_quotes(proposal))
+        if verdict.unlocatable:
+            correction["attempted"] = True
+            corrected, _ = chat_structured(
+                provider,
+                EvidenceCorrectionProposal,
+                model=model,
+                system_prompt=system_resource.text,
+                user_prompt=build_correction_prompt(text, verdict.unlocatable),
+                allow_cloud_fallback=allow_cloud_fallback,
+            )
+            replacements = {
+                pair.original.strip(): pair.verbatim
+                for pair in corrected.corrections
+                if pair.original.strip() and pair.verbatim.strip()
+            }
+            proposal, replaced = apply_corrections(proposal, replacements)
+            after = apply_verbatim_policy(text, proposal_quotes(proposal))
+            correction.update({"replaced": replaced, "unresolved": len(after.unlocatable)})
+        else:
+            correction["unresolved"] = 0
+    except Exception as exc:  # noqa: BLE001 - telemetry must survive any provider failure
+        correction["error"] = f"{type(exc).__name__}: {exc}"[:200]
     prompt_meta = prompt_provenance(system_resource, task_resource, rendered=rendered_task)
     run_meta = model_run_metadata(
         context,
@@ -106,6 +143,7 @@ def discourse_analysis(
             **prompt_meta,
             "context_provenance": envelope.provenance_snapshot(),
             "prompt_budget": prompt_report,
+            "evidence_correction": correction,
             "proposal": proposal.model_dump(mode="json"),
             "model_run": run_meta,
         },
