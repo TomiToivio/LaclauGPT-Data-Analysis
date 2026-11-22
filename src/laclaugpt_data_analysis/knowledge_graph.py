@@ -207,7 +207,6 @@ def project_laclau_record(
         "nodal-point": record.analysis.nodal_points,
         "floating-signifier": record.analysis.floating_signifiers,
         "empty-signifier": record.analysis.empty_signifier_candidates,
-        "discourse": record.analysis.discourses,
         "imaginary": record.analysis.imaginaries,
         "collective-subject": record.analysis.collective_subjects,
         # Legacy view of the same objects, for records analysed before #452.
