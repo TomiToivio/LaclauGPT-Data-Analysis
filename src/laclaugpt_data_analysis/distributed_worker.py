@@ -785,12 +785,26 @@ class AI26TaskWorker(TaskWorker):
                 return "duplicate"
         try:
             result = self.handler(task)
-            inserted = self.durable_store.write_result(
-                task,
-                result,
-                self.provenance,
-                fingerprint=self.generation_fingerprint,
-            )
+            try:
+                inserted = self.durable_store.write_result(
+                    task,
+                    result,
+                    self.provenance,
+                    fingerprint=self.generation_fingerprint,
+                )
+            except Exception as write_exc:
+                # #515: report safe MongoDB diagnostic metadata; exception strings can
+                # contain private source text or complete documents, so never print them.
+                mongo_details = getattr(write_exc, "details", None)
+                mongo_code = getattr(write_exc, "code", None)
+                if isinstance(mongo_details, dict):
+                    mongo_code = mongo_code or mongo_details.get("code")
+                logger.error(
+                    "AI26 result persistence failed: exception=%s mongo_code=%s "
+                    "operation=write_result; task remains retryable",
+                    type(write_exc).__name__, mongo_code,
+                )
+                raise
             self.queue.ack(claimed.message_id)
             return "completed" if inserted else "duplicate"
         except Exception as exc:
