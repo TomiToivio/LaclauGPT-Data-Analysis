@@ -10,6 +10,7 @@
 #   scripts/run_ai26_laskin.sh --once            one bounded cycle
 #   scripts/run_ai26_laskin.sh --debug --once    verbose diagnostics on stdout
 #   scripts/run_ai26_laskin.sh --check           preflight only, no work
+#   scripts/run_ai26_laskin.sh --force-unlock    clear a lock left by a killed wrapper (#554)
 #
 # Gate only the executed Analysis checkout; warn about sibling drift.
 # LACLAUGPT_CYCLE_MAX_SECONDS (default 9000) bounds the worker; LACLAUGPT_REPORT_MAX_SECONDS
@@ -63,15 +64,31 @@ fi
 RUN_MODE="once"
 CHECK_ONLY=0
 DEBUG_FLAG=0
+FORCE_UNLOCK=0
 
 # Issue #506: persist an outcome even if preflight rejects before a worker starts.
 # This journal is private and never contains env variables, input records or prompts.
 TICK_STAGE="preflight"
 WORKER_STATUS=""
 REPORT_STATUS=""
+# #554: `timeout` is not a process-group leader by default, so killing the wrapper left the
+# worker alive and holding the inherited flock. The worker is now started with `setsid`
+# (its own process group) and this function terminates that whole group on any exit path.
+WORKER_GROUP_PID=""
+LOCK_PID_FILE=""
+kill_worker_group() {
+  [[ -n "$WORKER_GROUP_PID" ]] || return 0
+  if kill -0 "$WORKER_GROUP_PID" 2>/dev/null; then
+    printf '[%s] WARNING: wrapper exiting while the worker group is alive; terminating pgid=%s\n' \
+      "$(date -Is)" "$WORKER_GROUP_PID" >&2
+    terminate_group "$WORKER_GROUP_PID" 5
+  fi
+  [[ -z "$LOCK_PID_FILE" ]] || rm -f "$LOCK_PID_FILE"
+}
 record_tick_on_exit() {
   local code=$?
   trap - EXIT
+  kill_worker_group
   local telemetry_dir="${PRIVATE_CONFIG_DIR:-${PRIVATE_ROOT:+$PRIVATE_ROOT/analysis/ai26}}"
   if [[ -n "$telemetry_dir" && -d "$telemetry_dir" ]]; then
     local args=(--path "$telemetry_dir/logs/ai26-analysis-ticks.jsonl"
@@ -79,7 +96,8 @@ record_tick_on_exit() {
                 --progress-path "$telemetry_dir/logs/ai26-worker-progress.json"
                 --worker-status "$WORKER_STATUS" --report-status "$REPORT_STATUS"
                 --skip-threshold "${LACLAUGPT_AI26_SKIP_ALERT_THRESHOLD:-3}"
-                --reject-threshold "${LACLAUGPT_AI26_REJECT_ALERT_THRESHOLD:-2}")
+                --reject-threshold "${LACLAUGPT_AI26_REJECT_ALERT_THRESHOLD:-2}"
+                --stall-threshold "${LACLAUGPT_AI26_STALL_ALERT_THRESHOLD:-3}")
     (( CHECK_ONLY )) && args+=(--check-only)
     local sha=""
     sha=$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null) || true
@@ -94,12 +112,19 @@ record_tick_on_exit() {
   fi
 }
 trap record_tick_on_exit EXIT
+# #554: a plain `kill <wrapper>` must not leave the worker group behind. Converting the
+# signal into a normal exit runs the EXIT trap, which terminates the group and releases
+# the lock. SIGKILL cannot be caught; `9>&-` on the worker keeps even that case recoverable
+# by `--force-unlock`.
+trap 'exit 143' TERM
+trap 'exit 130' INT
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --once)   RUN_MODE="once" ;;
     --debug)  DEBUG_FLAG=1 ;;
     --check)  CHECK_ONLY=1 ;;
+    --force-unlock) FORCE_UNLOCK=1 ;;
     -h|--help)
       sed -n '2,20p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
       exit 0 ;;
@@ -124,6 +149,83 @@ fi
 if [[ -z "$LOCK_FILE" ]]; then
   LOCK_FILE="$PRIVATE_CONFIG_DIR/run/ai26-laskin-analysis.lock"
 fi
+# #554: a lock path containing a shell glob once produced a literal `*.lock` file, because
+# the path was quoted at the redirect and therefore never expanded. Fail loudly instead of
+# creating a file nobody expects.
+case "$LOCK_FILE" in
+  *'*'*|*'?'*|*'['*) fail "lock path contains a shell glob and would be created literally: $LOCK_FILE" ;;
+esac
+LOCK_PID_FILE="${LOCK_FILE}.pid"
+
+# ------------------------------------------------------------- force-unlock --
+# Recovering from a killed wrapper must be one documented command (#554). The flock is
+# held by whichever process inherited fd 9 — historically an orphaned `timeout` and its
+# worker, left behind when the wrapper itself was killed. This helper refuses while the
+# wrapper is alive, refuses to signal a PID that is not an AI26 worker, and only clears
+# the lock once no live holder remains.
+lock_is_free() {
+  # The 2>/dev/null must apply to this group, not to the shell: `exec 8>>file 2>/dev/null`
+  # would permanently point the script's own stderr at /dev/null and silence the refusal
+  # message that makes this command usable.
+  if ! { exec 8>>"$LOCK_FILE"; } 2>/dev/null; then
+    return 1
+  fi
+  if flock -n 8; then
+    flock -u 8
+    exec 8>&-
+    return 0
+  fi
+  exec 8>&-
+  return 1
+}
+
+terminate_group() {
+  local pid="$1" grace="$2" i
+  kill -TERM -- "-$pid" 2>/dev/null || kill -TERM "$pid" 2>/dev/null || true
+  for ((i = 0; i < grace * 2; i++)); do
+    kill -0 "$pid" 2>/dev/null || return 0
+    sleep 0.5
+  done
+  kill -KILL -- "-$pid" 2>/dev/null || kill -KILL "$pid" 2>/dev/null || true
+  sleep 1
+}
+
+force_unlock() {
+  [[ -e "$LOCK_FILE" ]] || { log "no lock file at $LOCK_FILE; nothing to unlock"; return 0; }
+  local worker_pid="" wrapper_pid="" cmd
+  if [[ -f "$LOCK_PID_FILE" ]]; then
+    read -r worker_pid wrapper_pid < "$LOCK_PID_FILE" || true
+  fi
+  if [[ -n "$wrapper_pid" ]] && kill -0 "$wrapper_pid" 2>/dev/null; then
+    printf 'refusing to unlock: wrapper pid %s is alive and owns the cycle\n' "$wrapper_pid" >&2
+    return 2
+  fi
+  if [[ -n "$worker_pid" ]] && kill -0 "$worker_pid" 2>/dev/null; then
+    cmd=$(tr '\0' ' ' < "/proc/$worker_pid/cmdline" 2>/dev/null || true)
+    case "$cmd" in
+      *laclaugpt-analysis-worker*) ;;
+      *)
+        printf 'refusing to unlock: pid %s is not an AI26 worker (%s)\n' "$worker_pid" "${cmd:-unknown}" >&2
+        return 2
+        ;;
+    esac
+    log "orphaned worker pid=$worker_pid (wrapper gone); terminating its process group"
+    terminate_group "$worker_pid" 10
+  fi
+  if lock_is_free; then
+    rm -f "$LOCK_PID_FILE"
+    log "lock cleared: no live holder for $LOCK_FILE"
+    return 0
+  fi
+  printf 'refusing to unlock: the lock is still held; inspect with: fuser -v %s\n' "$LOCK_FILE" >&2
+  return 2
+}
+
+if (( FORCE_UNLOCK )); then
+  force_unlock
+  exit $?
+fi
+
 ENV_FILE=${LACLAUGPT_ENV_FILE:-"$PRIVATE_CONFIG_DIR/laskin.env"}
 [[ -f "$ENV_FILE" ]] || fail "missing private environment file: $ENV_FILE"
 
@@ -289,7 +391,11 @@ log "AI26 Laskin analysis start run=$LACLAUGPT_RUN_ID max_tasks=$MAX_TASKS cycle
 # from a task failure. A timeout is recorded as worker_status=124 and flows
 # into the existing non-zero exit path.
 set +e
-timeout --signal=TERM --kill-after="${CYCLE_KILL_GRACE_SECONDS}s" "${CYCLE_MAX_SECONDS}s" \
+# `setsid` gives the worker its own process group, so a wrapper that is killed can still
+# take the whole group down (`kill -- -PGID`). `9>&-` closes the inherited flock descriptor
+# in the child: without it, an orphaned worker keeps the advisory lock forever, which is
+# exactly the state #554 describes. Both are belt and braces; either alone would have prevented it.
+setsid timeout --signal=TERM --kill-after="${CYCLE_KILL_GRACE_SECONDS}s" "${CYCLE_MAX_SECONDS}s" \
   "$ROOT_DIR/.venv/bin/laclaugpt-analysis-worker" \
   --run-manifest "$RUN_MANIFEST" \
   --private-config "$PRIVATE_CONFIG" \
@@ -297,8 +403,14 @@ timeout --signal=TERM --kill-after="${CYCLE_KILL_GRACE_SECONDS}s" "${CYCLE_MAX_S
   --worker-id "laskin-cron-${HOSTNAME:-unknown}" \
   --seed-ready \
   --reclaim-idle-ms "$RECLAIM_IDLE_MS" \
-  --max-tasks "$MAX_TASKS"
+  --max-tasks "$MAX_TASKS" 9>&- &
+WORKER_GROUP_PID=$!
+# The pid file is what `--force-unlock` verifies before signalling anything.
+printf '%s %s\n' "$WORKER_GROUP_PID" "$$" > "$LOCK_PID_FILE"
+wait "$WORKER_GROUP_PID"
 WORKER_STATUS=$?
+WORKER_GROUP_PID=""
+rm -f "$LOCK_PID_FILE"
 set -e
 if [[ "$WORKER_STATUS" -eq 124 ]]; then
   log "AI26 Laskin analysis CYCLE CEILING exceeded after ${CYCLE_MAX_SECONDS}s; worker terminated by TERM (then KILL after ${CYCLE_KILL_GRACE_SECONDS}s). Pending tasks are left for safe reclaim on a later cycle; see issue #332."
@@ -322,7 +434,7 @@ if [[ "$WORKER_STATUS" -eq 0 && "${LACLAUGPT_PERIODIC_REPORTS:-1}" != "0" ]]; th
     # while blocked in a syscall. A breach is a report failure, not a worker one.
     set +e
     timeout --signal=TERM --kill-after="${CYCLE_KILL_GRACE_SECONDS}s" "${REPORT_MAX_SECONDS}s" \
-      "$REPORT_BIN" --run-id "$LACLAUGPT_RUN_ID"
+      "$REPORT_BIN" --run-id "$LACLAUGPT_RUN_ID" 9>&-
     REPORT_STATUS=$?
     set -e
     if [[ "$REPORT_STATUS" -eq 124 ]]; then
