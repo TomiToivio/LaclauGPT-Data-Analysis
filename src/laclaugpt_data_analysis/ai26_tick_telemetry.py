@@ -9,8 +9,37 @@ import argparse
 import fcntl
 import json
 import os
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
+
+#: Outcomes that mean a tick did something. Everything else is a tick that did not.
+PRODUCTIVE_OUTCOMES = ("cycle_completed", "check_ok")
+
+
+def consecutive_non_productive(rows: list[dict]) -> int:
+    """How many trailing ticks neither completed a cycle nor ran a verification."""
+    streak = 0
+    for row in reversed(rows):
+        if row.get("outcome") in PRODUCTIVE_OUTCOMES:
+            break
+        streak += 1
+    return streak
+
+
+def recent_ticks(path: Path, limit: int = 50) -> list[dict]:
+    if not path.exists():
+        return []
+    rows: list[dict] = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines()[-limit:]:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rows.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return rows
 
 
 def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
@@ -60,10 +89,23 @@ def main() -> None:
     parser.add_argument("--worker-status", default="")
     parser.add_argument("--report-status", default="")
     parser.add_argument("--git-sha", default="")
+    parser.add_argument("--escalate-after", type=int, default=3,
+                        help="consecutive unproductive ticks before escalation (#514)")
     args = parser.parse_args()
-    append_tick(args.path, stage=args.stage, exit_code=args.exit_code,
-                check_only=args.check_only, worker_status=args.worker_status,
-                report_status=args.report_status, git_sha=args.git_sha)
+    event = append_tick(args.path, stage=args.stage, exit_code=args.exit_code,
+                        check_only=args.check_only, worker_status=args.worker_status,
+                        report_status=args.report_status, git_sha=args.git_sha)
+    # #514: a journal nobody reads is not monitoring. Escalation is reported on stderr so the
+    # wrapper's log carries it, and the threshold is an operator setting rather than a constant
+    # baked into the writer.
+    streak = consecutive_non_productive(recent_ticks(args.path))
+    if args.escalate_after > 0 and streak >= args.escalate_after:
+        print(
+            f"ESCALATION: {streak} consecutive AI26 ticks did not complete a cycle "
+            f"(threshold {args.escalate_after}); last outcome={event['outcome']} "
+            f"exit_code={event['exit_code']} stage={event['stage']}",
+            file=sys.stderr,
+        )
 
 
 if __name__ == "__main__":
