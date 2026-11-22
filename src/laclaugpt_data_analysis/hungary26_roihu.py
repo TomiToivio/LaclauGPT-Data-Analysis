@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from .checksums import sha256_file
 from .hungary26 import WorkbookRecord, deterministic_pilot, load_hungary26_workbook
 from .hungary26_phase2 import run_phase2
 from .staging import MediaStager, StagingPolicy
@@ -36,14 +37,6 @@ def stable_json(value: Any) -> str:
 
 def sha256_text(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
-
-
-def sha256_file(path: str | Path) -> str:
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def runtime_fingerprint(*, record: WorkbookRecord, model: str, prompt_version: str,
