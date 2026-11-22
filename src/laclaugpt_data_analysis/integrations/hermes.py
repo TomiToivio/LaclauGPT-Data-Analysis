@@ -3,10 +3,10 @@ from __future__ import annotations
 
 import json
 import subprocess
-from urllib.parse import urlparse
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
+from urllib.parse import urlparse
 
 from ..canonical import CanonicalRecord
 from ..deployment import DeploymentProfile

@@ -9,7 +9,6 @@ from typing import Any
 from .canonical import CanonicalRecord
 from .canonical_pipeline import build_discourse_graph
 
-
 HANDOFF_SCHEMA = "laclaugpt-analysis-visualization-v1"
 
 

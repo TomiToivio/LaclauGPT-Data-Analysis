@@ -1,5 +1,5 @@
-from pathlib import Path
 import sqlite3
+from pathlib import Path
 
 from laclaugpt_data_analysis.discourse_network import DiscourseStatement, EvidenceSpan
 from laclaugpt_data_analysis.interoperability.dna import (

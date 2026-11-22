@@ -6,7 +6,7 @@ LACLAUGPT_DIR = ROOT / "laclaugpt"
 if str(LACLAUGPT_DIR) not in sys.path:
     sys.path.insert(0, str(LACLAUGPT_DIR))
 
-import laclaugpt_mongo
+import laclaugpt_mongo  # noqa: E402 - must follow the sys.path insert above
 
 
 class FakeCursor:

@@ -37,6 +37,7 @@ _MODULES = {"collection", "analysis", "visualization", "storage", "simulation"}
 
 
 def validate_project_id(project_id: str) -> str:
+    """Validate and return a project id, raising ValueError when it cannot serve as a namespace segment."""
     if not _PROJECT_ID.fullmatch(project_id):
         raise ValueError(
             "project_id must match ^[a-z0-9][a-z0-9_-]{1,63}$; "
@@ -54,6 +55,7 @@ def _segment(value: str, *, label: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class ProjectNamespace:
+    """The Redis, MongoDB and object-store naming scheme for one project. Every derived name starts here so two projects cannot collide."""
     project_id: str
     redis_prefix: str = "laclaugpt"
     mongo_database: str = "laclaugpt"

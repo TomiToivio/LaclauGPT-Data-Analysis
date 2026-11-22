@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from .canonical import CanonicalRecord
-from .codebooks import CodebookEntry, format_codebook_context
+from .codebooks import CodebookEntry
 from .context_envelope import PromptEnvelope, build_prompt_envelope
 from .discourse_network.models import DiscourseStatement, EvidenceSpan, Stance, ValidationStatus
 from .llm.structured_output import chat_structured
@@ -35,11 +35,13 @@ DuplicatePolicy = Literal["preserve", "collapse_document_actor_concept_agreement
 
 
 class DNAEntityCandidate(BaseModel):
+    """An actor as the coder proposes it: a canonical id when one matched, otherwise only the surface label."""
     id: str | None = None
     label: str | None = None
 
 
 class DNAConceptCandidate(BaseModel):
+    """A concept as the coder proposes it, including the original surface text and whether the mapping to the canonical vocabulary is provisional."""
     id: str | None = None
     label: str
     original_text: str | None = None
@@ -48,6 +50,7 @@ class DNAConceptCandidate(BaseModel):
 
 
 class DNAStatementCandidate(TaxonomyToleranceMixin):
+    """One actor-concept-agreement statement: the unit Discourse Network Analysis counts, with the evidence span that supports it."""
     person: DNAEntityCandidate | None = None
     organization: DNAEntityCandidate | None = None
     concept: DNAConceptCandidate
@@ -76,6 +79,7 @@ class DNAStatementCandidate(TaxonomyToleranceMixin):
 
 
 class DNAStatementBatch(BaseModel):
+    """The coding output of one document: statements plus the reasons the coder abstained, tagged with the batch schema version."""
     schema_version: str = "dna-statement-coding-v1"
     statements: list[DNAStatementCandidate] = Field(default_factory=list)
     abstentions: list[str] = Field(default_factory=list)
@@ -99,6 +103,7 @@ class DNAStatementCodingConfig(BaseModel):
 def dna_statement_coding_config(
     project_config: dict[str, Any] | None,
 ) -> DNAStatementCodingConfig:
+    """Read DNA statement-coding configuration from a project config, accepting both ``analysis.dna_statement_coding`` and the older top-level key."""
     root = project_config or {}
     analysis = root.get("analysis") if isinstance(root.get("analysis"), dict) else {}
     raw = (
@@ -112,7 +117,16 @@ def dna_statement_coding_config(
 
 
 def dna_statement_coding_enabled(project_config: dict[str, Any] | None) -> bool:
+    """Whether the project config enables DNA statement coding. Absent configuration means disabled."""
     return dna_statement_coding_config(project_config).enabled
+
+
+def _memory_text(entries: list[CodebookEntry]) -> str:
+    rows: list[str] = []
+    for entry in entries:
+        aliases = ", ".join(entry.aliases)
+        rows.append(f"- {entry.kind}: {entry.label}" + (f" (aliases: {aliases})" if aliases else ""))
+    return "\n".join(rows)
 
 
 def _filtered_previous_analysis(record: CanonicalRecord) -> str:
@@ -158,7 +172,7 @@ def _build_envelope(
         source_context=context.source_context,
         situational_context=(context.situational_context if config.include_periodic_context else ""),
         memory_context="\n".join(
-            part for part in (context.memory_context, format_codebook_context(entries)) if part
+            part for part in (context.memory_context, _memory_text(entries)) if part
         ),
         rag_context=(context.rag_context if config.include_rag else ""),
         context_provenance=context.provenance,

@@ -1,8 +1,7 @@
 import sys
 
-import pytest
-
 import laclaugpt_collect_rss
+import pytest
 
 
 def test_collector_cli_exits_zero_when_all_sources_succeed(monkeypatch, capsys):

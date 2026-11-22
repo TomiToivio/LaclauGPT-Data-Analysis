@@ -1,6 +1,6 @@
+from laclaugpt_data_analysis import contextual_entrypoints
 from laclaugpt_data_analysis.canonical import CanonicalRecord
 from laclaugpt_data_analysis.canonical_pipeline import PipelineContext
-from laclaugpt_data_analysis import contextual_entrypoints
 
 
 def test_contextual_entrypoint_preserves_optional_stage_project_config(monkeypatch) -> None:

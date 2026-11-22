@@ -28,6 +28,7 @@ Layer = Literal["source", "laclau", "dna", "sna", "cross-layer"]
 
 
 class GraphProvenance(Model):
+    """Where a graph element came from: source, run, method, model, codebook and evidence references."""
     source_id: str
     source_url: str | None = None
     run_id: str | None = None
@@ -41,6 +42,7 @@ class GraphProvenance(Model):
 
 
 class GraphNode(Model):
+    """One node of the analytical graph: a stable URI, a layer, and the provenance that justifies it."""
     id: str
     uri: str
     kind: str
@@ -55,6 +57,7 @@ class GraphNode(Model):
 
 
 class GraphEdge(Model):
+    """One relation between two nodes, carrying its layer, whether it is directed, and its provenance."""
     id: str
     uri: str
     source: str
@@ -72,6 +75,7 @@ class GraphEdge(Model):
 
 
 class AnalyticalGraph(Model):
+    """A project's knowledge graph - nodes, edges and metadata - whose references must resolve inside the graph."""
     schema_version: str = KG_SCHEMA_VERSION
     project_id: str
     base_uri: str
@@ -89,6 +93,7 @@ class AnalyticalGraph(Model):
 
 
 class SNARelation(Model):
+    """One social-network tie observed in the corpus: its two actors, relation type and supporting evidence."""
     relation_id: str
     source_actor_id: str
     target_actor_id: str
@@ -106,6 +111,7 @@ class SNARelation(Model):
 
 
 class SNADerivedResult(Model):
+    """A metric computed over relations - centrality, component, community, role or position - with its method and time window."""
     result_id: str
     actor_id: str | None = None
     community_id: str | None = None
@@ -130,6 +136,7 @@ def canonical_actor_uri(base_uri: str, project_id: str, actor_id: str) -> str:
 
 
 def canonical_concept_uri(base_uri: str, project_id: str, concept_id: str) -> str:
+    """Stable URI for a concept in a project's graph; the same concept always yields the same URI."""
     return stable_uri(base_uri, project_id, "concept", concept_id)
 
 
@@ -677,6 +684,7 @@ def project_sna(
 
 
 def merge_graphs(*graphs: AnalyticalGraph) -> AnalyticalGraph:
+    """Merge graphs belonging to one project, rejecting conflicting semantic identities instead of overwriting them."""
     if not graphs:
         raise ValueError("At least one graph is required")
     project_id, base_uri = graphs[0].project_id, graphs[0].base_uri
@@ -708,6 +716,7 @@ def merge_graphs(*graphs: AnalyticalGraph) -> AnalyticalGraph:
 
 
 class GraphStore(Protocol):
+    """Storage protocol a graph backend implements: write an analytical graph, read it back by project id."""
     def write(self, graph: AnalyticalGraph) -> dict[str, Any]: ...
 
     def read(self, project_id: str) -> AnalyticalGraph: ...
@@ -732,6 +741,7 @@ def _edge_row(edge: GraphEdge) -> dict[str, Any]:
 
 
 class CSVGraphStore:
+    """GraphStore that writes ``nodes.csv`` and ``edges.csv`` so the graph is inspectable and round-trips losslessly."""
     def __init__(self, directory: str | Path):
         self.directory = Path(directory)
 
@@ -793,6 +803,7 @@ class CSVGraphStore:
 
 
 class SQLiteGraphStore:
+    """GraphStore that persists the graph in SQLite for local querying without a server."""
     def __init__(self, path: str | Path):
         self.path = Path(path)
 
@@ -1023,6 +1034,7 @@ def graph_to_rdf(graph: AnalyticalGraph):
 
 
 def serialize_graph_rdf(graph: AnalyticalGraph, format_name: str = "json-ld") -> str:
+    """Serialize an analytical graph as RDF in the requested format (``json-ld``, ``turtle``, ``nquads``, ``trig``)."""
     dataset = graph_to_rdf(graph)
     normalized = {"jsonld": "json-ld", "ttl": "turtle", "nq": "nquads"}.get(
         format_name.casefold(), format_name.casefold()
