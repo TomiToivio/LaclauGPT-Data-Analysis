@@ -6,10 +6,10 @@ An advisory lock prevents concurrent cron ticks from interleaving JSON writes.
 from __future__ import annotations
 
 import argparse
-from collections import deque
 import fcntl
 import json
 import os
+from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -60,7 +60,7 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
         raise ValueError("thresholds must be >= 0 (zero disables escalation)")
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     # A single O_APPEND write under flock; do not replace a shared inode.
-    fd = os.open(path, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600)
+    fd = os.open(path, os.O_CREAT | os.O_APPEND | os.O_RDWR, 0o600)
     try:
         with os.fdopen(fd, "a+", encoding="utf-8") as stream:
             fcntl.flock(stream, fcntl.LOCK_EX)
