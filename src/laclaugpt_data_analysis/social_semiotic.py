@@ -225,10 +225,12 @@ class TaxonomyToleranceMixin(BaseModel):
 
 
 class StrictMethodModel(TaxonomyToleranceMixin):
+    """Base model for method observations. Unknown fields are rejected so a model cannot invent observation categories."""
     model_config = ConfigDict(extra="forbid")
 
 
 class EvidencePointer(StrictMethodModel):
+    """A pointer to the exact evidence a claim rests on: modality, source reference, text or frame, time span and confidence."""
     evidence_id: str
     modality: Mode
     source_ref: str = ""
@@ -281,6 +283,7 @@ class EventCandidate(StrictMethodModel):
 
 
 class SemioticResource(StrictMethodModel):
+    """A modal resource used in the text and the affordance it was observed to carry."""
     mode: Mode
     description: str
     affordance_observed: str = ""
@@ -289,6 +292,7 @@ class SemioticResource(StrictMethodModel):
 
 
 class ParticipantObservation(StrictMethodModel):
+    """A participant (person, group, institution) observed in the text and how it is represented."""
     participant_id: str
     description: str
     participant_type: str = ""
@@ -297,6 +301,7 @@ class ParticipantObservation(StrictMethodModel):
 
 
 class ProcessObservation(StrictMethodModel):
+    """A process - what is happening - classified by the process type it realises."""
     process_id: str
     description: str
     process_type: Literal[
@@ -309,6 +314,7 @@ class ProcessObservation(StrictMethodModel):
 
 
 class CircumstanceObservation(StrictMethodModel):
+    """A circumstance of a process: time, place, manner, cause, role and similar."""
     circumstance_id: str
     description: str
     circumstance_type: Literal[
@@ -319,6 +325,7 @@ class CircumstanceObservation(StrictMethodModel):
 
 
 class CompositionObservation(StrictMethodModel):
+    """A compositional feature of the text: layout, salience, vectors, reading order and related."""
     feature: Literal[
         "layout", "salience", "foreground_background", "centre_periphery",
         "size_scale", "vector", "reading_viewing_order", "temporal_sequence",
@@ -331,6 +338,7 @@ class CompositionObservation(StrictMethodModel):
 
 
 class SignObservation(StrictMethodModel):
+    """A sign observed in the text: its source form, the modes it uses, and why it is salient."""
     sign_id: str
     source_form: str
     description: str = ""
@@ -341,6 +349,7 @@ class SignObservation(StrictMethodModel):
 
 
 class SignRelation(StrictMethodModel):
+    """A relation between two signs, such as contrast, repetition, sequence or part-whole."""
     relation_type: Literal[
         "contrast", "opposition", "pairing", "repetition", "cooccurrence",
         "sequence", "label", "part_whole", "spatial_proximity", "other",
@@ -353,6 +362,7 @@ class SignRelation(StrictMethodModel):
 
 
 class IntermodalRelation(StrictMethodModel):
+    """How two modalities relate in meaning: redundancy, extension, elaboration, anchoring, conflict and similar."""
     relation_type: Literal[
         "redundancy", "repetition", "extension", "complementarity",
         "elaboration", "anchoring", "contrast", "conflict", "ambiguity", "other",
@@ -364,6 +374,7 @@ class IntermodalRelation(StrictMethodModel):
 
 
 class ConnotationObservation(StrictMethodModel):
+    """A connotative reading, with the basis for it and the alternatives considered."""
     description: str
     basis: str
     alternatives: list[str] = Field(default_factory=list)
@@ -372,6 +383,7 @@ class ConnotationObservation(StrictMethodModel):
 
 
 class UncertaintyObservation(StrictMethodModel):
+    """A recorded source of uncertainty (OCR, ASR, translation, model and similar) and the evidence it affects."""
     category: Literal[
         "ocr", "asr", "translation", "visual", "audio", "speaker", "temporal",
         "missing_modality", "source_context", "model", "other",
@@ -477,13 +489,7 @@ PROHIBITED_PREANALYSIS_KEYS = frozenset({
 
 
 def assert_preanalysis_boundary(payload: dict) -> None:
-    """Fail closed if a caller tries to persist downstream classifications.
-
-    Pre-analysis describes observations rather than assigning downstream discourse-theoretical
-    labels. Those classifications require evidence, uncertainty and human review under the
-    Phase 1 method; violating the boundary is rejected rather than silently ignored.
-    See docs/methods/phase1_researcher_guide.md.
-    """
+    """Fail closed if a caller tries to persist downstream classifications."""
     stack: list[object] = [payload]
     while stack:
         value = stack.pop()

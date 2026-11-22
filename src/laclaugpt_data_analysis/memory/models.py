@@ -71,6 +71,7 @@ NER_TYPES_DESCRIPTION = {
 
 
 def now_iso() -> str:
+    """Current UTC time as ``YYYY-MM-DDTHH:MM:SSZ``, the timestamp format stored in research memory."""
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
