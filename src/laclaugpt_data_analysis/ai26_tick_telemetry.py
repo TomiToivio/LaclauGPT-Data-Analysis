@@ -67,6 +67,9 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
             fcntl.flock(stream, fcntl.LOCK_EX)
             stream.seek(0)
             previous = deque(stream, maxlen=100)
+            # Count sustained no-progress ticks even when the cause alternates
+            # between deployment rejection and an inherited worker lock (#554).
+            stalled_streak = 0
             skip_streak = reject_streak = 0
             for raw in reversed(previous):
                 try:
@@ -76,17 +79,24 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
                 state = prior.get("outcome")
                 if state == "check_ok":
                     continue
-                if state == "already_running" and reject_streak == 0:
-                    skip_streak += 1
-                elif state == "preflight_rejected" and skip_streak == 0:
-                    reject_streak += 1
-                else:
+                if state not in {"already_running", "preflight_rejected"}:
                     break
-            event["skip_streak"] = skip_streak + 1 if outcome == "already_running" else 0
-            event["reject_streak"] = reject_streak + 1 if outcome == "preflight_rejected" else 0
+                stalled_streak += 1
+                if state == "already_running":
+                    skip_streak += 1
+                else:
+                    reject_streak += 1
+            is_stalled = outcome in {"already_running", "preflight_rejected"}
+            event["skip_streak"] = skip_streak + (outcome == "already_running") if is_stalled else 0
+            event["reject_streak"] = reject_streak + (outcome == "preflight_rejected") if is_stalled else 0
+            event["stalled_streak"] = stalled_streak + 1 if is_stalled else 0
             event["escalation"] = (
-                "skipped" if skip_threshold and event["skip_streak"] >= skip_threshold
-                else "rejected" if reject_threshold and event["reject_streak"] >= reject_threshold
+                "rejected" if reject_threshold and event["reject_streak"] >= reject_threshold
+                else "skipped" if skip_threshold and event["skip_streak"] >= skip_threshold
+                else "stalled" if (skip_threshold or reject_threshold)
+                and event["stalled_streak"] >= min(
+                    threshold for threshold in (skip_threshold, reject_threshold) if threshold
+                )
                 else None
             )
             if event["escalation"]:
@@ -108,7 +118,7 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
                 with temporary.open("w", encoding="utf-8") as status:
                     os.chmod(temporary, 0o600)
                     json.dump({k: event[k] for k in ("timestamp_utc", "outcome",
-                              "skip_streak", "reject_streak", "escalation")}, status)
+                              "skip_streak", "reject_streak", "stalled_streak", "escalation")}, status)
                     status.write("\n")
                 os.replace(temporary, status_path)
             finally:
