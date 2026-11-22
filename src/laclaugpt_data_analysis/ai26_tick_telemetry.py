@@ -18,6 +18,7 @@ from pathlib import Path
 def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
                 worker_status: str = "", report_status: str = "", git_sha: str = "",
                 skip_threshold: int = 0, reject_threshold: int = 0,
+                stall_threshold: int = 0,
                 progress_path: Path | None = None) -> dict:
     """Write exactly one atomic JSONL event per invocation, including skipped ticks."""
     if exit_code == 3:
@@ -67,7 +68,20 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
             fcntl.flock(stream, fcntl.LOCK_EX)
             stream.seek(0)
             previous = deque(stream, maxlen=100)
-            skip_streak = reject_streak = 0
+            # Trailing runs are counted *independently* (#554). The previous loop broke as
+            # soon as the reason changed, so a pipeline that alternated
+            # already_running (the flock held by an orphan) with preflight_rejected
+            # (a stale checkout) never reached either threshold: each tick reset the
+            # other streak. A locked pipeline could therefore suppress the alarm about
+            # the very reason it was locked.
+            trailing_skip = trailing_reject = 0
+            in_skip = in_reject = True
+            # A stall is "no successful cycle", whatever the reason. It is the signal an
+            # operator actually cares about, and it is the one that is unambiguous when
+            # the reasons alternate.
+            stall_streak = 0
+            stall_reasons: dict[str, int] = {}
+            last_success = ""
             for raw in reversed(previous):
                 try:
                     prior = json.loads(raw)
@@ -75,25 +89,45 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
                     continue
                 state = prior.get("outcome")
                 if state == "check_ok":
+                    # A manual preflight is not a cycle: it neither advances nor resets a run.
                     continue
-                if state == "already_running" and reject_streak == 0:
-                    skip_streak += 1
-                elif state == "preflight_rejected" and skip_streak == 0:
-                    reject_streak += 1
-                else:
+                if state == "cycle_completed":
+                    last_success = str(prior.get("timestamp_utc") or "")
                     break
-            event["skip_streak"] = skip_streak + 1 if outcome == "already_running" else 0
-            event["reject_streak"] = reject_streak + 1 if outcome == "preflight_rejected" else 0
+                if state == "already_running" and in_skip:
+                    trailing_skip += 1
+                else:
+                    in_skip = False
+                if state == "preflight_rejected" and in_reject:
+                    trailing_reject += 1
+                else:
+                    in_reject = False
+                stall_streak += 1
+                if state in ("already_running", "preflight_rejected", "cycle_failed"):
+                    stall_reasons[str(state)] = stall_reasons.get(str(state), 0) + 1
+            if outcome in ("already_running", "preflight_rejected", "cycle_failed"):
+                stall_streak += 1
+                stall_reasons[outcome] = stall_reasons.get(outcome, 0) + 1
+            event["skip_streak"] = trailing_skip + 1 if outcome == "already_running" else 0
+            event["reject_streak"] = trailing_reject + 1 if outcome == "preflight_rejected" else 0
+            event["stall_streak"] = stall_streak
+            event["stall_reasons"] = dict(sorted(stall_reasons.items()))
+            event["last_success_utc"] = last_success or None
             event["escalation"] = (
-                "skipped" if skip_threshold and event["skip_streak"] >= skip_threshold
+                "stalled" if stall_threshold and stall_streak >= stall_threshold
+                else "skipped" if skip_threshold and event["skip_streak"] >= skip_threshold
                 else "rejected" if reject_threshold and event["reject_streak"] >= reject_threshold
                 else None
             )
             if event["escalation"]:
                 # #514: the status file is for a watcher; this line is for the operator reading
                 # cron's log. Three hours of silence was possible because only one of them existed.
+                # #554: name the reason mix and the last successful cycle, so the alert says why.
+                reasons = ",".join(f"{name}x{count}" for name, count in event["stall_reasons"].items())
                 print(
                     f"ALERT: AI26 analysis is not completing ({event['escalation']}): "
+                    f"stall_streak={event['stall_streak']} reasons={reasons or 'none'} "
+                    f"last_success={event['last_success_utc'] or 'never in journal'} "
                     f"skip_streak={event['skip_streak']} reject_streak={event['reject_streak']}",
                     file=sys.stderr,
                 )
@@ -108,7 +142,8 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
                 with temporary.open("w", encoding="utf-8") as status:
                     os.chmod(temporary, 0o600)
                     json.dump({k: event[k] for k in ("timestamp_utc", "outcome",
-                              "skip_streak", "reject_streak", "escalation")}, status)
+                              "skip_streak", "reject_streak", "stall_streak",
+                              "stall_reasons", "last_success_utc", "escalation")}, status)
                     status.write("\n")
                 os.replace(temporary, status_path)
             finally:
@@ -133,11 +168,18 @@ def main() -> None:
     parser.add_argument("--progress-path", type=Path, default=None)
     parser.add_argument("--skip-threshold", type=int, default=0)
     parser.add_argument("--reject-threshold", type=int, default=0)
+    parser.add_argument(
+        "--stall-threshold",
+        type=int,
+        default=0,
+        help="alert when this many consecutive ticks complete no cycle, whatever the reason",
+    )
     args = parser.parse_args()
     append_tick(args.path, stage=args.stage, exit_code=args.exit_code,
                 check_only=args.check_only, worker_status=args.worker_status,
                 report_status=args.report_status, git_sha=args.git_sha,
                 skip_threshold=args.skip_threshold, reject_threshold=args.reject_threshold,
+                stall_threshold=args.stall_threshold,
                 progress_path=args.progress_path)
 
 
