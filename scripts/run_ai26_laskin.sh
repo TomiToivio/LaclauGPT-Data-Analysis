@@ -225,6 +225,32 @@ if ! flock -n 9; then
   exit 3
 fi
 
+# #554: holding the lock means any worker the progress file still reports as alive was orphaned
+# by a wrapper that died. It used to be unrecoverable: the worker inherited this fd, so the flock
+# survived the wrapper and every later tick answered "already_running" forever. The worker is now
+# started with fd 9 closed, so the lock frees with the wrapper and this reaps the survivor instead
+# of letting a second worker share the queue.
+reap_orphaned_worker() {
+  local pid
+  pid=$("$PY" - "$LACLAUGPT_AI26_PROGRESS_PATH" <<'PY' 2>/dev/null || true
+import json, pathlib, sys
+try:
+    print(json.loads(pathlib.Path(sys.argv[1]).read_text()).get("pid") or "")
+except Exception:
+    print("")
+PY
+)
+  [[ -n "$pid" ]] || return 0
+  kill -0 "$pid" 2>/dev/null || return 0
+  grep -qa laclaugpt-analysis-worker "/proc/$pid/cmdline" 2>/dev/null || return 0
+  log "AI26 reaping orphaned worker pid=$pid (wrapper died and released the lock; worker did not)"
+  kill -TERM "$pid" 2>/dev/null || true
+  local waited=0
+  while kill -0 "$pid" 2>/dev/null && [[ $waited -lt 10 ]]; do sleep 1; waited=$((waited + 1)); done
+  kill -KILL "$pid" 2>/dev/null || true
+}
+reap_orphaned_worker
+
 cd "$ROOT_DIR"
 
 # The frozen manifest is a provenance boundary, not a permanent deployment pin.
@@ -278,11 +304,15 @@ fi
 TICK_STAGE="worker"
 log "AI26 Laskin analysis start run=$LACLAUGPT_RUN_ID max_tasks=$MAX_TASKS cycle_max_seconds=$CYCLE_MAX_SECONDS mode=$RUN_MODE debug=${LACLAUGPT_DEBUG:-0}"
 
-# Wall-clock ceiling (issue #332). ``timeout`` runs the worker in its own
-# process group and signals the WHOLE group, so a worker's threads and any
-# subprocess it spawned die with it — a bare SIGTERM to the worker can leave a
-# grandchild holding the lock. --kill-after guarantees termination even if the
-# worker ignores SIGTERM while blocked in a syscall.
+# Wall-clock ceiling (issue #332). ``timeout`` signals the worker's whole
+# process group, so the worker's threads and any subprocess it spawned die with
+# it. --kill-after guarantees termination even if the worker ignores SIGTERM
+# while blocked in a syscall.
+#
+# #554: ``9>&-`` closes the lock fd for the worker. It used to inherit fd 9, so
+# a worker orphaned by a killed wrapper kept the flock for ever and cron could
+# never recover on its own. The wrapper alone holds the lock now, and
+# reap_orphaned_worker above clears the worker it left behind.
 #
 # Exit codes: 124 = the ceiling elapsed, 137 = SIGKILL fallback. Both are
 # distinct from the worker's own statuses, so monitoring can tell a timeout
@@ -297,7 +327,7 @@ timeout --signal=TERM --kill-after="${CYCLE_KILL_GRACE_SECONDS}s" "${CYCLE_MAX_S
   --worker-id "laskin-cron-${HOSTNAME:-unknown}" \
   --seed-ready \
   --reclaim-idle-ms "$RECLAIM_IDLE_MS" \
-  --max-tasks "$MAX_TASKS"
+  --max-tasks "$MAX_TASKS" 9>&-
 WORKER_STATUS=$?
 set -e
 if [[ "$WORKER_STATUS" -eq 124 ]]; then

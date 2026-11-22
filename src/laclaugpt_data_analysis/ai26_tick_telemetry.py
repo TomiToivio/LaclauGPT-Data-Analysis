@@ -76,17 +76,30 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
                 state = prior.get("outcome")
                 if state == "check_ok":
                     continue
-                if state == "already_running" and reject_streak == 0:
+                # #554: a locked tick is not evidence about deployability, so it neither starts
+                # nor ends a rejection streak -- it is counted and the scan continues.
+                if state == "already_running":
                     skip_streak += 1
-                elif state == "preflight_rejected" and skip_streak == 0:
+                    continue
+                if state == "preflight_rejected":
                     reject_streak += 1
-                else:
-                    break
+                    continue
+                break
             event["skip_streak"] = skip_streak + 1 if outcome == "already_running" else 0
-            event["reject_streak"] = reject_streak + 1 if outcome == "preflight_rejected" else 0
+            # #554: an `already_running` outcome used to reset this to 0, which is how a stale
+            # checkout stayed invisible: the preflight rejection streak never reached its
+            # threshold because a worker started before the drift kept answering "locked".
+            event["reject_streak"] = (
+                reject_streak if outcome == "already_running"
+                else reject_streak + 1 if outcome == "preflight_rejected"
+                else 0
+            )
+            # #554: the rejection is the cause and the lock is its consequence, so a deploy
+            # problem must win the escalation. Reporting "skipped" there described the symptom
+            # and hid the reason the pipeline had stopped.
             event["escalation"] = (
-                "skipped" if skip_threshold and event["skip_streak"] >= skip_threshold
-                else "rejected" if reject_threshold and event["reject_streak"] >= reject_threshold
+                "rejected" if reject_threshold and event["reject_streak"] >= reject_threshold
+                else "skipped" if skip_threshold and event["skip_streak"] >= skip_threshold
                 else None
             )
             if event["escalation"]:
