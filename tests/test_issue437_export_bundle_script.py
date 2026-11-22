@@ -45,7 +45,7 @@ def test_missing_run_id_and_output_root_is_a_usage_error(monkeypatch):
 def test_a_run_without_completed_records_refuses_to_write_a_bundle(monkeypatch, tmp_path, capsys):
     """The operator decision is explicit: no synthetic or empty export passed off as real."""
     monkeypatch.setattr(export, "load_settings", lambda: SimpleNamespace())
-    monkeypatch.setattr(export, "load_analysis_records", lambda settings, run_id: [
+    monkeypatch.setattr(export, "load_analysis_records", lambda settings, run_id, strict_identity=False: [
         SimpleNamespace(analysis=SimpleNamespace(status="collection-only")),
     ])
     code = export.main(["--run-id", "r1", "--output-root", str(tmp_path / "bundle")])
@@ -61,7 +61,7 @@ def test_export_reports_counts_paths_and_checksums_without_source_text(monkeypat
     artifact.write_text('{"x": 1}\n', encoding="utf-8")
 
     monkeypatch.setattr(export, "load_settings", lambda: SimpleNamespace())
-    monkeypatch.setattr(export, "load_analysis_records", lambda settings, run_id: [
+    monkeypatch.setattr(export, "load_analysis_records", lambda settings, run_id, strict_identity=False: [
         SimpleNamespace(analysis=SimpleNamespace(status="analyzed")),
     ])
     monkeypatch.setattr(export, "write_research_bundle", lambda records, root, stem: {"jsonl": artifact})
@@ -80,7 +80,7 @@ def test_export_reports_counts_paths_and_checksums_without_source_text(monkeypat
 def test_limit_caps_the_export(monkeypatch, tmp_path, capsys):
     seen = {}
     monkeypatch.setattr(export, "load_settings", lambda: SimpleNamespace())
-    monkeypatch.setattr(export, "load_analysis_records", lambda settings, run_id: [
+    monkeypatch.setattr(export, "load_analysis_records", lambda settings, run_id, strict_identity=False: [
         SimpleNamespace(analysis=SimpleNamespace(status="analyzed")) for _ in range(5)
     ])
 
