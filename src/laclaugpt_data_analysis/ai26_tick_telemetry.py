@@ -113,12 +113,19 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
                 stall_streak += 1
                 if state in ("already_running", "preflight_rejected", "cycle_failed"):
                     stall_reasons[str(state)] = stall_reasons.get(str(state), 0) + 1
-            if outcome in ("already_running", "preflight_rejected", "cycle_failed"):
+            if outcome == "cycle_completed":
+                # The success that ends a stall must read as zero on its own event, and it is
+                # the most recent success for anyone reading `last_success_utc`.
+                stall_streak = 0
+                stall_reasons = {}
+                last_success = str(event["timestamp_utc"])
+            elif outcome in ("already_running", "preflight_rejected", "cycle_failed"):
                 # A cycle that moved work is progress even if the worker exited 1 for one
                 # retried task; only a tick that moved nothing advances the stall.
                 if stage == "complete" and progress_units > 0:
                     stall_streak = 0
                     stall_reasons = {}
+                    last_success = str(event["timestamp_utc"])
                 else:
                     stall_streak += 1
                     stall_reasons[outcome] = stall_reasons.get(outcome, 0) + 1

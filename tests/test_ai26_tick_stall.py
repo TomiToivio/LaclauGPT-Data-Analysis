@@ -189,3 +189,25 @@ def test_a_cycle_that_moved_nothing_still_counts(tmp_path: Path) -> None:
 
     assert event["stall_streak"] == 2
     assert event["escalation"] == "stalled"
+
+
+def test_the_cycle_that_ends_a_stall_reads_as_zero(tmp_path: Path) -> None:
+    """A dashboard reading the newest event must not see the stall it just cleared."""
+    journal = tmp_path / "logs" / "ticks.jsonl"
+    write_journal(journal, ["cycle_completed", "cycle_failed", "cycle_failed"])
+    progress = tmp_path / "logs" / "progress.json"
+    write_progress(progress, completed=1, duplicate=0)
+
+    event = append_tick(
+        journal,
+        stage="complete",
+        exit_code=0,
+        check_only=False,
+        stall_threshold=2,
+        progress_path=progress,
+    )
+
+    assert event["outcome"] == "cycle_completed"
+    assert event["stall_streak"] == 0
+    assert event["stall_reasons"] == {}
+    assert event["last_success_utc"] == event["timestamp_utc"]
