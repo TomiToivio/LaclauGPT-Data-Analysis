@@ -11,7 +11,7 @@ import email.utils
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 
 from .models import (
     ClassificationResult,
@@ -261,7 +261,6 @@ class AnalysisSection(Model):
     nodal_points: list[DiscourseObject] = Field(default_factory=list)
     floating_signifiers: list[DiscourseObject] = Field(default_factory=list)
     empty_signifier_candidates: list[DiscourseObject] = Field(default_factory=list)
-    discourses: list[DiscourseObject] = Field(default_factory=list)
     imaginaries: list[DiscourseObject] = Field(default_factory=list)
     relations: list[Relation] = Field(default_factory=list)
     equivalence_chains: list[RelationChain] = Field(default_factory=list)
@@ -319,6 +318,23 @@ class CanonicalRecord(Model):
     provenance: list[Provenance] = Field(default_factory=list)
     review: ReviewSection = Field(default_factory=ReviewSection)
     legacy: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def preserve_retired_discourses(cls, value: Any) -> Any:
+        if not isinstance(value, dict) or not isinstance(value.get("analysis"), dict):
+            return value
+        if "discourses" not in value["analysis"]:
+            return value
+        analysis = dict(value["analysis"])
+        retired = analysis.pop("discourses")
+        result = {**value, "analysis": analysis}
+        if retired:
+            legacy = dict(value.get("legacy") or {})
+            if "analysis.discourses" in legacy and legacy["analysis.discourses"] != retired:
+                raise ValueError("conflicting archived analysis.discourses")
+            result["legacy"] = {**legacy, "analysis.discourses": retired}
+        return result
 
     @field_validator("source_url")
     @classmethod
