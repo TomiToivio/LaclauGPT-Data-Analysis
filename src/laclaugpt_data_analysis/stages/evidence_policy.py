@@ -62,7 +62,12 @@ class EvidenceVerification:
 
 
 def verify_quotes(source_text: str, quotes: list[str]) -> tuple[list[str], list[str]]:
-    """Split quotes into ``(locatable, unlocatable)``; abstentions go to neither."""
+    """Split quotes into ``(locatable, unlocatable)``; abstentions go to neither.
+
+    A locatable quotation establishes textual presence, not speaker attribution,
+    endorsement, or interpretive relevance. These remain for contextual human review
+    under Phase 1; see docs/methods/phase1_researcher_guide.md.
+    """
     locatable: list[str] = []
     unlocatable: list[str] = []
     for quote in quotes:

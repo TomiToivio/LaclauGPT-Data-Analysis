@@ -477,7 +477,13 @@ PROHIBITED_PREANALYSIS_KEYS = frozenset({
 
 
 def assert_preanalysis_boundary(payload: dict) -> None:
-    """Fail closed if a caller tries to persist downstream classifications."""
+    """Fail closed if a caller tries to persist downstream classifications.
+
+    Pre-analysis describes observations rather than assigning downstream discourse-theoretical
+    labels. Those classifications require evidence, uncertainty and human review under the
+    Phase 1 method; violating the boundary is rejected rather than silently ignored.
+    See docs/methods/phase1_researcher_guide.md.
+    """
     stack: list[object] = [payload]
     while stack:
         value = stack.pop()
