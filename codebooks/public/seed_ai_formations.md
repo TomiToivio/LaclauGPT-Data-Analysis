@@ -45,6 +45,52 @@ reasoning, alignment, Critical AI Studies, labour resistance, artist/creator
 opposition, environmental resistance and opposition to particular deployments
 must not be collapsed automatically into one formation without evidence.
 
+## Formation label collapse decision (#454; 2026-11-22)
+
+The six canonical formation IDs above are the **closed output vocabulary** for
+new AI26 formation candidates; the vocabulary revision is
+`ai26-formations-2026-11-22`. This constrains *representation*, not theory:
+new formations can be argued for in analysis and proposed for human codebook
+revision, but free-form prose must not be issued as a canonical formation ID.
+`other` and `unknown` are explicit **non-formation** fallback states, not
+additional ideologies. Abstention and multi-label evidence are permitted.
+
+Inclusion/exclusion boundaries for the existing six labels:
+
+| Label | Include when source evidence supports | Do not infer merely from |
+| --- | --- | --- |
+| `existential_risk` | AI is articulated as threatening humanity's survival or analogous catastrophic future | Ordinary safety, reliability, regulation or incident reporting |
+| `accelerationist` | Faster AI/technological development is advocated as politically or socially desirable | A favorable view of AI, product news or technical progress alone |
+| `left_accelerationist` | Technology-positive development is tied to egalitarian, redistributive or postcapitalist transformation | Left politics alone, or generic innovation rhetoric |
+| `ai_safety` | Alignment, evaluation, mitigation, pacing or governance of AI risks is substantively advocated | Passing reference to a safety rule or uncertainty alone |
+| `critical_ai` | Structural AI power, labour, inequality, surveillance, ownership, discrimination or extraction is critically articulated | Every negative opinion of a model or single product failure |
+| `anti_ai` | Opposition to AI broadly or a concretely specified AI deployment is directly expressed | Regulation, safety advocacy or dissatisfaction alone |
+
+**Boundary cases requiring evidence:** (1) A company advocating independent
+model evaluations while aggressively releasing products is not automatically
+`existential_risk` or `accelerationist`; assess the explicitly articulated
+claims. (2) An artist opposing unauthorized training may support a specific
+`anti_ai` deployment opposition and/or `critical_ai` only if the text gives
+the relevant claims; don't infer both from source identity.
+
+**Counterexample:** A neutral article reporting that an AI company launched a
+model, with no expressed ideological demand, must receive no formation label.
+
+The prior audit found one label occupying about a quarter of the sample, but
+its identity and evidence boundary cannot be validated from aggregate counts
+alone. Agents must audit a stratified sample of that dominant label against
+the above criteria, report false-positive/false-negative rates and **not**
+claim the concentration problem has been solved by relabeling into `unknown`.
+
+New-run postprocess stores the original phrase in
+`metadata.original_formation_label`. An unrecognized phrase receives
+`label=unknown`, `description=<original phrase>` and
+`metadata.requires_label_review=true`; this is unresolved, not an inferred
+ideology. All objects remain `PROVISIONAL` with
+`corpus_validation_required=true`. Historical records are not silently
+rewritten. Any corpus backfill requires a separately reviewed migration
+and fixed-sample before/after assessment.
+
 ## Core signifier seeds (kind=signifier, PROVISIONAL)
 
 Each seed carries the neutral candidate definition:
