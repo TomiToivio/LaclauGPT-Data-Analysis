@@ -7,6 +7,7 @@ import pytest
 from laclaugpt_data_analysis.bundle_audit import audit_research_bundle
 from laclaugpt_data_analysis.canonical import CanonicalRecord
 from laclaugpt_data_analysis.exporters import write_research_bundle
+from laclaugpt_data_analysis import phase1_laskin_report as report
 from laclaugpt_data_analysis.phase1_laskin_report import _decode_result
 
 
@@ -59,3 +60,31 @@ def test_duplicate_source_urls_are_rejected_before_artifacts(tmp_path):
             CanonicalRecord(source_url=_source(1)),
         ], tmp_path)
     assert not (tmp_path / "analysis.jsonl").exists()
+
+
+def test_strict_export_loading_rejects_missing_identity(monkeypatch):
+    class FakeCollection:
+        def find(self, query, projection):
+            return [{"result": {"analysis": {"status": "analyzed"}}}]
+
+    class FakeDB:
+        def __getitem__(self, name):
+            return FakeCollection()
+
+    class FakeClient:
+        def __getitem__(self, name):
+            return FakeDB()
+
+    class FakeNamespace:
+        def mongo_collection(self, name):
+            return name
+
+    from types import SimpleNamespace
+
+    settings = SimpleNamespace(
+        project_id="ai26", mongo_database="test",
+        distributed_namespace=FakeNamespace(),
+    )
+    monkeypatch.setattr(report, "_mongo_client", lambda _: FakeClient())
+    with pytest.raises(ValueError, match="source identity"):
+        report.load_analysis_records(settings, run_id="synthetic-run", strict_identity=True)
