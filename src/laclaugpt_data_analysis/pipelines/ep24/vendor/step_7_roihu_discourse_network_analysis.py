@@ -53,7 +53,7 @@ from ep24_schema import stable_source_id
 
 LOG = logging.getLogger("ep24.step7")
 
-PROMPT_VERSION = "ep24-dna-leifeld-v3-polarity-evidence-gate"
+PROMPT_VERSION = "ep24-dna-leifeld-v4-selective-bounded-structured-retry"
 DEFAULT_MAX_CONTEXT_CHARS = 28000
 DEFAULT_NUM_CTX = 16384
 DEFAULT_NUM_PREDICT = 4096
@@ -267,14 +267,32 @@ def build_prompt_context(row: pd.Series, *, max_chars: int | None = None) -> tup
     return packet.text, packet.any_truncation
 
 
+def _extraction_system_prompt(attempt: int) -> str:
+    """Return exact system instructions for the initial or retry call."""
+    text = SYSTEM_PROMPT + "\nLimit analysis_markdown to 600 characters. Return one statement per evidenced position."
+    if attempt:
+        text += (
+            "\n\nRETRY: The previous JSON was invalid or exceeded the output "
+            "budget. Return COMPLETE, MINIMAL JSON. Keep analysis_markdown below "
+            "250 characters; omit repetitive commentary and repeated claims. "
+            "Use the shortest verbatim evidence quotes. Preserve all distinct "
+            "supported claims; never add claims or return empty merely to fit. "
+            "Close every JSON string, array and object."
+        )
+    return text
+
+
 def _prompt_hash(context: str) -> str:
     from ep24_prompt_contract import effective_prompt_fingerprint
 
     metadata = _model_metadata()
     return effective_prompt_fingerprint(
-        SYSTEM_PROMPT, f"{PROMPT_VERSION}\n{context}", metadata["model"],
+        _extraction_system_prompt(0),
+        f"{PROMPT_VERSION}\n{context}\nretry_system={_extraction_system_prompt(1)}",
+        metadata["model"],
         {"temperature": metadata["temperature"], "num_ctx": metadata["num_ctx"],
-         "num_predict": metadata["num_predict"]},
+         "num_predict": [min(16384, max(1, metadata["num_predict"]) * 2**i) for i in range(3)],
+         "think": False},
     )
 
 
@@ -302,19 +320,10 @@ def analyze_context(context: str) -> tuple[str, Any]:
     raw = ""
     for attempt in range(max_attempts):
         num_predict = min(16384, max(1, metadata["num_predict"]) * (2 ** attempt))
-        retry_instruction = (
-            "" if attempt == 0 else
-            "\n\nRETRY: The previous JSON was invalid or exceeded the output "
-            "budget. Return COMPLETE, MINIMAL JSON. Keep analysis_markdown below "
-            "250 characters; omit repetitive commentary and repeated claims. "
-            "Use the shortest verbatim evidence quotes. Preserve all distinct "
-            "supported claims; never add claims or return empty merely to fit. "
-            "Close every JSON string, array and object."
-        )
         response = ollama.chat(
             model=metadata["model"],
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT + "\nLimit analysis_markdown to 600 characters. Return one statement per evidenced position." + retry_instruction},
+                {"role": "system", "content": _extraction_system_prompt(attempt)},
                 {"role": "user", "content": context},
             ],
             format=DNAResult.model_json_schema(),
