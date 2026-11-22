@@ -89,9 +89,16 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
             event["skip_streak"] = sum(state == "already_running" for state in adverse)
             event["reject_streak"] = sum(state == "preflight_rejected" for state in adverse)
             event["stall_streak"] = len(adverse)
+            # Preserve the existing alert API for homogeneous streaks.
+            # Mixed skips/rejections are escalated as one stalled incident.
             event["escalation"] = (
-                "stalled" if (skip_threshold or reject_threshold) and
-                len(adverse) >= min(t for t in (skip_threshold, reject_threshold) if t > 0)
+                "skipped" if skip_threshold and event["skip_streak"] >= skip_threshold
+                and event["reject_streak"] == 0
+                else "rejected" if reject_threshold and event["reject_streak"] >= reject_threshold
+                and event["skip_streak"] == 0
+                else "stalled" if event["skip_streak"] and event["reject_streak"]
+                and (skip_threshold or reject_threshold)
+                and len(adverse) >= min(t for t in (skip_threshold, reject_threshold) if t > 0)
                 else None
             )
             if event["escalation"]:
