@@ -60,7 +60,10 @@ def test_every_source_field_it_mentions_exists(guide):
 
 def test_every_path_it_cites_exists(guide):
     paths = set(
-        re.findall(r"`((?:src|tests|tools|laclaugpt|docs)/[A-Za-z0-9_./-]+\.(?:py|md))`", guide)
+        re.findall(
+            r"`((?:src|tests|tools|laclaugpt|docs)/[A-Za-z0-9_./-]+\.(?:py|md))`",
+            guide,
+        )
     )
     assert paths, "the guide should point at code, not only describe it"
     missing = sorted(p for p in paths if not (ROOT / p).exists())
@@ -96,7 +99,11 @@ def test_it_does_not_claim_an_accuracy_result(guide):
             "completed, independently adjudicated evaluation is **not",
         )
     ), "the guide must say the evaluation is not done, not imply it is"
-    for forbidden in ("we measured an accuracy of", "inter-coder agreement of", "koppas alpha"):
+    for forbidden in (
+        "we measured an accuracy of",
+        "inter-coder agreement of",
+        "koppas alpha",
+    ):
         assert forbidden not in lowered
 
 
