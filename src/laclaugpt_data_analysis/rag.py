@@ -15,6 +15,9 @@ Backends are interchangeable behind :class:`RetrievalBackend`: an embedded store
 optional Neo4j graph, or a null backend when RAG is switched off. The index version travels with
 every audit so results from different index builds are not compared as if they were one corpus.
 """
+# Existing compact one-line adapters predate this documentation-only change.
+# Keep their formatting debt scoped until a dedicated behavior-preserving cleanup.
+# ruff: noqa: E701, E702
 from __future__ import annotations
 
 import json
