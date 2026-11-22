@@ -89,6 +89,26 @@ collections.
   and provenance handling, or output contracts.
 - **Secrets.** Configuration inspection is redacted; credentials live outside the repository.
 
+### What looks dead but is not
+
+Measured on 2026-11-22 for #523, over the non-vendored package (852 public top-level
+functions and classes):
+
+- **39 public names have zero references anywhere** in `src/`, `tests/`, `scripts/` or `tools/`.
+  They are not dead: they are the protocol and plugin surface — `analysis/__init__.py` backend
+  protocols, the multimodal provider protocols, and the ACDT / graph-store plugin classes that
+  `pipelines/registry.py` and the backend selection resolve **by name**. A grep count cannot see a
+  string lookup, so "no textual reference" is not evidence of death here.
+- **18 identical function bodies cross module boundaries, and all 18 are the
+  `pipelines/ep24_legacy/{src,vendor}` pairs** of the EP24 snapshot. That duplication is the
+  snapshot preserving both import layouts; it is deliberate and must not be collapsed.
+- **Exactly one statically provable dead helper existed** — `phase1_laskin._flag`, superseded by
+  `Phase1TextConfig.from_env()` — and it was removed. That is the whole removal surface this audit
+  could justify.
+
+Before deleting anything on the strength of a zero-reference count, check the registry and the
+string-keyed backend selection. If the name is resolved dynamically, document it here instead.
+
 ## Verify before you claim a change works
 
 ```bash
