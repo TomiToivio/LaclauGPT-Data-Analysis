@@ -80,12 +80,41 @@ while [[ $# -gt 0 ]]; do
 done
 
 log() { printf '[%s] %s\n' "$(date -Is)" "$*"; }
-fail() { printf '[%s] ERROR: %s\n' "$(date -Is)" "$*" >&2; exit 2; }
+fail() {
+  printf '[%s] ERROR: %s\n' "$(date -Is)" "$*" >&2
+  # #506: a rejected tick is an outcome, not just an exit code -- a monitor must be able to
+  # separate "the configuration is wrong" from "the previous tick still held the lock".
+  record_tick preflight_rejected 2 "$*" || true
+  exit 2
+}
+
+# ------------------------------------------------------------- tick telemetry --
+# #506: one sanitized record per tick (outcome, exit code, deployed commit, streak) so a
+# monitor can tell success from a rejected configuration from a lock-held skip. Never fails
+# the cycle: telemetry that can stop collection is worse than no telemetry.
+TICK_DIR="${TICK_DIR:-}"
+TICK_ESCALATION_THRESHOLD="${LACLAUGPT_TICK_ESCALATION_THRESHOLD:-3}"
+LACLAUGPT_DEPLOYED_SHA="$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || true)"
+export LACLAUGPT_DEPLOYED_SHA
+
+record_tick() {
+  local outcome="$1" code="$2" detail="${3:-}" payload alarm
+  [[ -n "$TICK_DIR" ]] || return 0
+  payload="$("${PY:-python3}" -m laclaugpt_data_analysis.tick_status \
+      --directory "$TICK_DIR" --outcome "$outcome" --exit-code "$code" \
+      --deployed-sha "$LACLAUGPT_DEPLOYED_SHA" --detail "$detail" \
+      --threshold "$TICK_ESCALATION_THRESHOLD" 2>/dev/null)" || return 0
+  alarm="$(printf '%s' "$payload" | "${PY:-python3}" -c \
+      'import json,sys; print(json.load(sys.stdin).get("escalation") or "")' 2>/dev/null || true)"
+  [[ -n "$alarm" ]] && printf '[%s] ALERT: %s\n' "$(date -Is)" "$alarm" >&2
+  return 0
+}
 
 # ---------------------------------------------------------------- preflight --
 [[ -d "$ROOT_DIR" ]] || fail "repository root not found: $ROOT_DIR"
 [[ -n "$PRIVATE_ROOT" ]] || fail "LACLAUGPT_PRIVATE_ROOT is required (machine-specific private root; never committed)"
 [[ -d "$PRIVATE_ROOT" ]] || fail "private root not found: $PRIVATE_ROOT"
+TICK_DIR="$PRIVATE_ROOT/runtime/ai26/analysis/ticks"
 if [[ -z "$PRIVATE_CONFIG_DIR" ]]; then
   PRIVATE_CONFIG_DIR="$PRIVATE_ROOT/analysis/ai26"
 fi
@@ -187,6 +216,7 @@ mkdir -p "$(dirname "$LOCK_FILE")" "$PRIVATE_CONFIG_DIR/logs"
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
   log "AI26 Laskin analysis skipped: lock held; status=already_running exit_code=3"
+  record_tick lock_held 3 "lock=$LOCK_FILE"
   exit 3
 fi
 
@@ -315,4 +345,9 @@ elif [[ "${LACLAUGPT_PERIODIC_REPORTS:-1}" == "0" ]]; then
 fi
 
 log "AI26 Laskin analysis end worker_status=$WORKER_STATUS report_status=$REPORT_STATUS status=$FINAL_STATUS"
+case "$FINAL_STATUS" in
+  0) record_tick ok 0 "worker=$WORKER_STATUS report=$REPORT_STATUS" ;;
+  124|137) record_tick failed "$FINAL_STATUS" "cycle ceiling exceeded; see #332" ;;
+  *) record_tick failed "$FINAL_STATUS" "worker=$WORKER_STATUS report=$REPORT_STATUS" ;;
+esac
 exit "$FINAL_STATUS"
