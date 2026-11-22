@@ -7,6 +7,7 @@ instead, and the failure names the field.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import textwrap
@@ -51,8 +52,14 @@ class TestTheRealContract:
             assert name in fc.UNPRODUCED_FIELDS, name
 
     def test_the_report_runs_and_names_the_registered_fields(self):
+        # The child is a fresh interpreter: pytest's `pythonpath = ["src"]` only reaches this
+        # process, so without passing it on the child cannot import the package at all and the
+        # test fails for an environment reason rather than the contract it exists to check.
+        env = {**os.environ,
+               "PYTHONPATH": os.pathsep.join(filter(None, [str(ROOT / "src"),
+                                                           os.environ.get("PYTHONPATH")]))}
         result = subprocess.run([sys.executable, "-m", "laclaugpt_data_analysis.field_contract"],
-                                capture_output=True, text=True, timeout=120, cwd=ROOT)
+                                capture_output=True, text=True, timeout=120, cwd=ROOT, env=env)
         assert result.returncode == 0, result.stdout + result.stderr
         for name in fc.UNPRODUCED_FIELDS:
             assert name in result.stdout
