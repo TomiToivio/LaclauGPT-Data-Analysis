@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .canonical import SCHEMA_VERSION, CanonicalRecord
+from .checksums import sha256_file
 from .canonical_pipeline import PipelineContext, run_canonical_pipeline
 from .codebooks import load_codebook
 from .config import Settings, load_settings
@@ -88,11 +89,11 @@ def ai26_generation_fingerprint(
 
 
 def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+    """Hash a frozen input file with the repository's shared checksum helper.
+
+    Preserve this worker-local entry point for existing manifest-validation callers.
+    """
+    return sha256_file(path)
 
 
 def _load_project_config(path: Path) -> dict[str, Any]:
