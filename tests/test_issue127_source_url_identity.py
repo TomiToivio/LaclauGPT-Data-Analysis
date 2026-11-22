@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import types
+from datetime import datetime
 
 from laclaugpt_data_analysis.task_queue import MongoTaskStore, TaskEnvelope
 
@@ -88,7 +89,8 @@ def test_mongo_result_persists_source_url(monkeypatch):
     assert store.write_result(task, {"source_url": task.record_ref}, {"worker": "test"})
 
     row = store.results.documents[0]
-    assert row["source_url"] == task.record_ref
+    assert isinstance(row["created_at"], datetime)
+    assert row["created_at"].tzinfo is not None
     assert row["result"]["source_url"] == task.record_ref
 
 
@@ -101,4 +103,6 @@ def test_mongo_failure_persists_source_url_once(monkeypatch):
     row = store.failures.documents[0]
     assert row["source_url"] == task.record_ref
     assert row["error"] == "boom"
+    assert isinstance(row["created_at"], datetime)
+    assert row["created_at"].tzinfo is not None
     assert list(row).count("source_url") == 1
