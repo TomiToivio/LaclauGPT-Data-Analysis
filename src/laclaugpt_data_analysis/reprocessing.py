@@ -21,10 +21,10 @@ from typing import Any, Callable
 import yaml
 from pydantic import BaseModel, Field
 
+from .checksums import sha256_file
 from .canonical import CanonicalRecord
 from .canonical_pipeline import PipelineContext, run_canonical_pipeline
 from .codebooks import load_codebook
-from .checksums import sha256_file
 from .config import Settings, load_settings
 from .llm.ollama import OllamaProvider
 from .storage import artifact_store, cache, record_store
