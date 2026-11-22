@@ -91,4 +91,6 @@ themselves. Start with [ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the 
 
 ## Cross-cutting notes
 
+- [Repository map: paths and responsibilities](REPOSITORY_MAP.md)
+
 - [LaclauGPT Coding Style](CODING_STYLE.md)
