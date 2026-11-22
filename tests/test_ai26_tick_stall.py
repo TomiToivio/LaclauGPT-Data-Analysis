@@ -132,3 +132,60 @@ def test_the_status_file_carries_the_stall_fields(tmp_path: Path) -> None:
     assert status["stall_streak"] == 2
     assert status["stall_reasons"] == {"preflight_rejected": 2}
     assert status["last_success_utc"] is None
+
+
+def write_progress(path: Path, *, completed: int, duplicate: int) -> None:
+    path.write_text(
+        json.dumps(
+            {
+                "timestamp_utc": "2026-11-22T00:30:00+00:00",
+                "phase": "cycle_finished",
+                "completed": completed,
+                "duplicate": duplicate,
+                "claims": completed + duplicate + 1,
+                "retry": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+
+def test_a_cycle_that_moved_work_is_not_a_stall(tmp_path: Path) -> None:
+    """Exit 1 with 3 duplicates and 1 retry is throughput, not a stalled pipeline (#101)."""
+    journal = tmp_path / "logs" / "ticks.jsonl"
+    write_journal(journal, ["cycle_failed", "cycle_failed"])
+    progress = tmp_path / "logs" / "progress.json"
+    write_progress(progress, completed=0, duplicate=3)
+
+    event = append_tick(
+        journal,
+        stage="complete",
+        exit_code=1,
+        check_only=False,
+        stall_threshold=2,
+        progress_path=progress,
+    )
+
+    assert event["outcome"] == "cycle_failed"
+    assert event["stall_streak"] == 0
+    assert event["stall_reasons"] == {}
+    assert event["escalation"] is None
+
+
+def test_a_cycle_that_moved_nothing_still_counts(tmp_path: Path) -> None:
+    journal = tmp_path / "logs" / "ticks.jsonl"
+    write_journal(journal, ["cycle_failed"])
+    progress = tmp_path / "logs" / "progress.json"
+    write_progress(progress, completed=0, duplicate=0)
+
+    event = append_tick(
+        journal,
+        stage="complete",
+        exit_code=1,
+        check_only=False,
+        stall_threshold=2,
+        progress_path=progress,
+    )
+
+    assert event["stall_streak"] == 2
+    assert event["escalation"] == "stalled"

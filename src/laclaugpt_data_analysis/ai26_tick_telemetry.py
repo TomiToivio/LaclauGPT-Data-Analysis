@@ -41,23 +41,31 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
         "report_status": report_status or None,
         "git_sha": git_sha or None,
     }
-    if progress_path is not None and stage == "lock":
+    progress_units = 0
+    if progress_path is not None:
         # A checkpoint is only evidence of the last completed boundary, not proof
         # that the current model call is hung or healthy.
         try:
             progress = json.loads(progress_path.read_text(encoding="utf-8"))
-            observed = datetime.fromisoformat(progress["timestamp_utc"])
-            if observed.tzinfo is None:
-                raise ValueError("progress timestamp missing timezone")
-            event["progress_age_seconds"] = max(0, int(
-                (datetime.now(timezone.utc) - observed).total_seconds()
-            ))
-            event["progress_phase"] = str(progress.get("phase", ""))[:32]
-            event["progress_claims"] = int(progress.get("claims", 0))
-            event["progress_completed"] = int(progress.get("completed", 0))
-            event["progress_retry"] = int(progress.get("retry", 0))
+            # `completed + duplicate` is the cycle's throughput. A cycle that persisted or
+            # recognised work is progressing even when one task retried and the worker
+            # therefore exited 1 (#101); reading exit 1 as "no progress" would alarm on
+            # ordinary retries and hide a real stall in the noise.
+            progress_units = int(progress.get("completed", 0)) + int(progress.get("duplicate", 0))
+            if stage == "lock":
+                observed = datetime.fromisoformat(progress["timestamp_utc"])
+                if observed.tzinfo is None:
+                    raise ValueError("progress timestamp missing timezone")
+                event["progress_age_seconds"] = max(0, int(
+                    (datetime.now(timezone.utc) - observed).total_seconds()
+                ))
+                event["progress_phase"] = str(progress.get("phase", ""))[:32]
+                event["progress_claims"] = int(progress.get("claims", 0))
+                event["progress_completed"] = int(progress.get("completed", 0))
+                event["progress_retry"] = int(progress.get("retry", 0))
         except (OSError, ValueError, TypeError, KeyError):
-            event["progress_phase"] = "unavailable"
+            if stage == "lock":
+                event["progress_phase"] = "unavailable"
     if skip_threshold < 0 or reject_threshold < 0:
         raise ValueError("thresholds must be >= 0 (zero disables escalation)")
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -106,8 +114,14 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
                 if state in ("already_running", "preflight_rejected", "cycle_failed"):
                     stall_reasons[str(state)] = stall_reasons.get(str(state), 0) + 1
             if outcome in ("already_running", "preflight_rejected", "cycle_failed"):
-                stall_streak += 1
-                stall_reasons[outcome] = stall_reasons.get(outcome, 0) + 1
+                # A cycle that moved work is progress even if the worker exited 1 for one
+                # retried task; only a tick that moved nothing advances the stall.
+                if stage == "complete" and progress_units > 0:
+                    stall_streak = 0
+                    stall_reasons = {}
+                else:
+                    stall_streak += 1
+                    stall_reasons[outcome] = stall_reasons.get(outcome, 0) + 1
             event["skip_streak"] = trailing_skip + 1 if outcome == "already_running" else 0
             event["reject_streak"] = trailing_reject + 1 if outcome == "preflight_rejected" else 0
             event["stall_streak"] = stall_streak
