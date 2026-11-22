@@ -38,7 +38,6 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-
 from ep24_cli import configure_step_cli
 from ep24_dna import (
     DNA_COLUMNS,
@@ -202,7 +201,7 @@ def _models() -> type:
         counter_evidence: list[str] = Field(default_factory=list)
 
     class DNAResult(BaseModel):
-        analysis_markdown: str
+        analysis_markdown: str = Field(max_length=600)
         statements: list[DNAStatement] = Field(default_factory=list)
         corpus_level_cautions: list[str] = Field(default_factory=list)
 
@@ -295,27 +294,56 @@ def analyze_context(context: str) -> tuple[str, Any]:
 
     DNAResult = _models()
     metadata = _model_metadata()
-    response = ollama.chat(
-        model=metadata["model"],
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": context},
-        ],
-        format=DNAResult.model_json_schema(),
-        options={
-            "temperature": 0.0,
-            "num_ctx": metadata["num_ctx"],
-            "num_predict": metadata["num_predict"],
-        },
-    )
-    raw = response["message"]["content"]
-    try:
-        parsed = DNAResult.model_validate_json(raw)
-    except Exception as exc:
-        raise Step7ParseError(
-            f"Step 7 structured JSON validation failed: {exc}", raw_response=raw
-        ) from exc
-    return raw, parsed
+    # A successful HTTP response can still contain an empty or truncated JSON
+    # document (notably when the model exhausts its generation budget).
+    # On truncated JSON, retry with a compact output contract, not only more tokens.
+    max_attempts = min(3, max(1, int(os.getenv("LACLAUGPT_STEP7_PARSE_ATTEMPTS", "3"))))
+    last_error = None
+    raw = ""
+    for attempt in range(max_attempts):
+        num_predict = min(16384, max(1, metadata["num_predict"]) * (2 ** attempt))
+        retry_instruction = (
+            "" if attempt == 0 else
+            "\n\nRETRY: The previous JSON was invalid or exceeded the output "
+            "budget. Return COMPLETE, MINIMAL JSON. Keep analysis_markdown below "
+            "250 characters; omit repetitive commentary and repeated claims. "
+            "Use the shortest verbatim evidence quotes. Preserve all distinct "
+            "supported claims; never add claims or return empty merely to fit. "
+            "Close every JSON string, array and object."
+        )
+        response = ollama.chat(
+            model=metadata["model"],
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT + "\nLimit analysis_markdown to 600 characters. Return one statement per evidenced position." + retry_instruction},
+                {"role": "user", "content": context},
+            ],
+            format=DNAResult.model_json_schema(),
+            # Qwen3 thinking can consume the entire generation budget before it
+            # produces a single JSON character. Step 7 needs structured coding,
+            # not a hidden reasoning trace. Ollama supports think=False.
+            think=False,
+            options={
+                "temperature": 0.0,
+                "num_ctx": metadata["num_ctx"],
+                "num_predict": num_predict,
+            },
+        )
+        raw = response["message"]["content"] or ""
+        try:
+            return raw, DNAResult.model_validate_json(raw)
+        except Exception as exc:
+            last_error = exc
+            LOG.warning(
+                "Step 7 invalid structured response attempt=%s/%s num_predict=%s "
+                "response_chars=%s done_reason=%s error=%s",
+                attempt + 1, max_attempts, num_predict, len(raw),
+                response.get("done_reason", "unknown"), exc,
+            )
+    reason = "response was truncated before the JSON closed" if response.get("done_reason") == "length" or "EOF" in str(last_error) else "invalid structured JSON"
+    raise Step7ParseError(
+        f"Step 7 structured JSON validation failed after {max_attempts} attempts: {reason}: {last_error}",
+        raw_response=raw,
+    ) from last_error
 
 
 def _normalization_lookups(row: pd.Series) -> tuple[dict[str, str], dict[str, str]]:
@@ -689,6 +717,16 @@ def process_country(country: str | None = None) -> Path:
                     context_hash, truncated,
                 )
                 try:
+                    for column in DNA_COLUMNS:
+                        out.at[index, column] = ""
+                    from ep24_prompt_contract import build_stage_packet
+                    if not build_stage_packet(7, row).evidence_chars:
+                        out.at[index, "dna_status"] = "no_evidence"
+                        out.at[index, "dna_statements_json"] = "[]"
+                        if storage is not None:
+                            _persist_row(storage, out.loc[index], country=normalized_country)
+                        redis.mark(record_id, "completed")
+                        continue
                     resumed = (
                         _resume_from_mongo(storage, record_id, context_hash=context_hash)
                         if storage is not None
@@ -760,6 +798,8 @@ def process_country(country: str | None = None) -> Path:
                         out.at[index, "dna_persistence_status"] = "mongo_disabled"
                     redis.mark(record_id, "completed")
                 except Exception as exc:
+                    for column in DNA_COLUMNS:
+                        out.at[index, column] = ""
                     out.at[index, "dna_status"] = "error"
                     out.at[index, "dna_error"] = f"{type(exc).__name__}: {exc}"
                     if isinstance(exc, Step7ParseError):

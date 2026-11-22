@@ -228,13 +228,13 @@
         },
         {
           "source_path": "step_7_roihu_discourse_network_analysis.py",
-          "sha256": "a1896af68bb5a511388306b051dbde610eaa4944f22a37d35181e08c0d731526",
+          "sha256": "a57b1b05cf0b556c4de2df08884825f91fa856b53ae92b6a775e502272671831",
           "lines": 811,
           "upstream_sha256": "a1896af68bb5a511388306b051dbde610eaa4944f22a37d35181e08c0d731526"
         },
         {
           "source_path": "step_8_roihu_social_network_analysis.py",
-          "sha256": "9641fb2b90b1f5aebabbe62c70a0d87709137ce9faab94e33d84faf580ee7bca",
+          "sha256": "7fa9e5ab35b110126e52b1d410bf289fb3a988bd4577472ef1cb4a0073bef346",
           "lines": 502,
           "upstream_sha256": "9641fb2b90b1f5aebabbe62c70a0d87709137ce9faab94e33d84faf580ee7bca"
         },
