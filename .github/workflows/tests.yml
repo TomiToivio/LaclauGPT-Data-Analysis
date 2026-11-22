@@ -42,6 +42,12 @@ jobs:
             BASE_SHA="HEAD^"
           fi
 
+          # Start enforcing format on new files without reformatting historical snapshots.
+          mapfile -d '' -t ADDED < <(git diff -z --name-only --diff-filter=A "$BASE_SHA" HEAD -- '*.py')
+          if (( ${#ADDED[@]} )); then
+            ruff format --check --force-exclude -- "${ADDED[@]}"
+          fi
+
           mapfile -t FILES < <(git diff --name-only --diff-filter=ACMR "$BASE_SHA" HEAD -- '*.py')
           if (( ${#FILES[@]} == 0 )); then
             echo "No changed Python files to lint."
@@ -82,7 +88,7 @@ jobs:
           # revision contains more instances than the base revision. This also
           # avoids false positives when an unrelated edit merely shifts line
           # numbers of pre-existing diagnostics.
-          python - <<'PY'
+          BASE_TREE="$BASE_TREE" python - <<'PY'
           import collections
           import json
           import os
@@ -92,18 +98,18 @@ jobs:
               with open(path, encoding="utf-8") as handle:
                   return json.load(handle)
 
-          def key(item):
-              filename = os.path.normpath(item["filename"])
+          def key(item, root):
+              filename = os.path.relpath(item["filename"], root)
               return (filename, item.get("code"), item.get("message"))
 
           base = load("/tmp/ruff-base.json")
           head = load("/tmp/ruff-head.json")
-          base_counts = collections.Counter(key(item) for item in base)
+          base_counts = collections.Counter(key(item, os.environ["BASE_TREE"]) for item in base)
           seen = collections.Counter()
           new = []
 
           for item in head:
-              fingerprint = key(item)
+              fingerprint = key(item, os.getcwd())
               seen[fingerprint] += 1
               if seen[fingerprint] > base_counts[fingerprint]:
                   new.append(item)
