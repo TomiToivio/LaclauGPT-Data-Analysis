@@ -97,9 +97,10 @@ def checkout_drift(
     report["branch"] = branch.splitlines()[0] if code == 0 else ""
 
     if fetch:
-        code, detail = _git(["fetch", "--quiet", "origin"], checkout, timeout)
+        code, detail = _git(["fetch", "--quiet", "origin", "+refs/heads/main:refs/remotes/origin/main"] if reference == DEFAULT_REFERENCE else ["fetch", "--quiet", "origin"], checkout, timeout)
         if code != 0:
-            report["detail"] = f"fetch failed: {detail.splitlines()[0][:80]}"
+            report["detail"] = "fetch from origin failed"
+            return report
 
     code, head = _git(["rev-parse", "--short", "HEAD"], checkout, timeout)
     report["head"] = head.splitlines()[0] if code == 0 else ""
@@ -168,12 +169,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--threshold", type=int, default=0, help="commits of lag to tolerate")
     parser.add_argument("--no-fetch", action="store_true", help="do not contact the remote")
     parser.add_argument("--json", action="store_true", help="machine-readable output")
+    parser.add_argument("--strict", action="store_true", help="require clean main checkouts matching freshly fetched origin/main")
     parser.add_argument("--quiet", action="store_true", help="print nothing when all are current")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if args.strict and (args.no_fetch or args.threshold or args.reference != DEFAULT_REFERENCE):
+        print("strict mode requires freshly fetched origin/main and zero tolerance", file=sys.stderr)
+        return 2
     if args.threshold < 0:
         print("error: --threshold must be zero or greater", file=sys.stderr)
         return 2
@@ -181,10 +186,20 @@ def main(argv: list[str] | None = None) -> int:
     paths = [Path(p) for p in args.path]
     if not paths:
         here = Path(__file__).resolve().parents[2]
-        paths = [here, *sibling_checkouts(here)]
+        paths = [here, *(here.parent / name for name in SIBLING_NAMES)] if args.strict else [here, *sibling_checkouts(here)]
 
     reports = drift_report(paths, reference=args.reference, fetch=not args.no_fetch)
     flagged = [r for r in reports if _needs_attention(r, args.threshold)]
+
+    if args.strict:
+        flagged = []
+        for path, report in zip(paths, reports, strict=True):
+            code, changes = _git(["status", "--porcelain", "--untracked-files=normal"], path)
+            if code or changes:
+                report["detail"] = "could not verify clean working tree" if code else "working tree has local changes"
+            if report["state"] != CURRENT or report["branch"] != "main" or report["detail"]:
+                flagged.append(report)
+                print(f"deployment rejected: {report['name']} branch={report['branch']} state={report['state']} {report['detail']}", file=sys.stderr)
 
     if args.json:
         print(
@@ -200,7 +215,7 @@ def main(argv: list[str] | None = None) -> int:
                 ensure_ascii=False,
             )
         )
-        return 0
+        return 2 if args.strict and flagged else 0
 
     if args.quiet and not flagged:
         return 0
@@ -222,7 +237,7 @@ def main(argv: list[str] | None = None) -> int:
             f"effect until this checkout is refreshed (issue #353)",
             file=sys.stderr,
         )
-    return 0
+    return 2 if args.strict and flagged else 0
 
 
 if __name__ == "__main__":

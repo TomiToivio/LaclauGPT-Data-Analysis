@@ -164,3 +164,15 @@ def test_the_cron_wrapper_actually_calls_the_drift_check() -> None:
     script = pathlib.Path(deploy_drift.__file__).resolve().parents[2] / "scripts" / "run_ai26_laskin.sh"
     text = script.read_text(encoding="utf-8")
     assert "laclaugpt_data_analysis.deploy_drift" in text
+
+
+def test_strict_preflight_rejects_dirty_and_unreachable_remote(repo):
+    checkout = repo["clone"]
+    args = ["--strict", "--path", str(checkout)]
+    assert deploy_drift.main(args) == 0
+    change = checkout / "untracked.txt"
+    change.write_text("local work")
+    assert deploy_drift.main(args) == 2
+    change.unlink()
+    _git(checkout, "remote", "set-url", "origin", str(checkout / "absent"))
+    assert deploy_drift.main(args) == 2
