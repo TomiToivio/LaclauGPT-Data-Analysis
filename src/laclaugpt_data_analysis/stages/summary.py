@@ -48,6 +48,7 @@ from ..prompt_library import load_prompt, prompt_provenance
 from ..social_semiotic import MultimodalSummaryProposal, assert_preanalysis_boundary
 from .prompt_map import phase1_preanalysis_prompt_ids
 from .proposals import SummaryResult
+from .verbatim import VERSION, verify_proposal
 from .shared import (
     PipelineContext,
     append_stage,
@@ -92,9 +93,12 @@ def summarize_record(
     allow_cloud_fallback: bool | None,
 ) -> SummaryResult:
     """Run the descriptive pass and store it as the record's summary."""
+    ai26 = project_profile.casefold() == "ai26"
+    if ai26:
+        prompt_version = f"{prompt_version}+{VERSION}"
     system_id, task_id = phase1_preanalysis_prompt_ids("summary")
     system_resource = load_prompt(system_id, version="v2")
-    task_resource = load_prompt(task_id, version="v2")
+    task_resource = load_prompt(task_id, version="v3" if ai26 else "v2")
     rendered_task = task_resource.render(
         project_note=f"{project_profile.upper()} source context only; remain descriptive."
     )
@@ -126,6 +130,11 @@ def summarize_record(
         prompt_report=prompt_report,
     )
 
+    if ai26:
+        run_meta["evidence_verification"] = verify_proposal(
+            record, proposal, provider=provider, model=model, user_prompt=user_prompt,
+            allow_cloud_fallback=allow_cloud_fallback,
+        )
     now = now_iso()
     record.human_readable.summary = proposal.summary
     record.human_readable.generated_at = now

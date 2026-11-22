@@ -41,6 +41,7 @@ from ..llm.structured_output import chat_structured
 from ..prompt_library import load_prompt, prompt_provenance
 from .prompt_map import prompt_ids_for_stage
 from .proposals import DiscourseProposal
+from .verbatim import VERSION, verify_proposal
 from .shared import (
     PipelineContext,
     append_stage,
@@ -63,11 +64,14 @@ def discourse_analysis(
     allow_cloud_fallback: bool | None,
 ) -> DiscourseProposal:
     """Run the theory stage and record it as a proposal, not a finding."""
+    ai26 = project_profile.casefold() == "ai26"
+    if ai26:
+        prompt_version = f"{prompt_version}+{VERSION}"
     system_id, task_id = prompt_ids_for_stage(project_profile, "discourse")
     system_resource = load_prompt(system_id, version="v1")
     task_resource = load_prompt(
         task_id,
-        version="v2" if project_profile.casefold() in {"ep24", "ai26"} else "v1",
+        version="v3" if ai26 else "v2" if project_profile.casefold() == "ep24" else "v1",
     )
     rendered_task = task_resource.render(
         project_note="AI26 discourse analysis." if project_profile.casefold() == "ai26" else "(none)"
@@ -97,6 +101,11 @@ def discourse_analysis(
         stage="discourse",
         prompt_report=prompt_report,
     )
+    if ai26:
+        run_meta["evidence_verification"] = verify_proposal(
+            record, proposal, provider=provider, model=model, user_prompt=user_prompt,
+            allow_cloud_fallback=allow_cloud_fallback,
+        )
     append_stage(
         record,
         "discourse_analysis",
