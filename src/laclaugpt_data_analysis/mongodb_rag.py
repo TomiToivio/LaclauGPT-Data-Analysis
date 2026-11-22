@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from typing import Any, Iterable, Mapping, Sequence
 
 from .canonical import SCHEMA_VERSION, CanonicalRecord
+from .mongo_write import without_immutable_id
 from .rag import (
     RAG_INDEX_VERSION,
     RAG_MODES,
@@ -153,7 +154,9 @@ class MongoRetrievalBackend:
                 "topics": [item.label for item in record.analysis.topics],
             }
             self.records.update_one(
-                {"canonical_id": record.source_url}, {"$set": document}, upsert=True
+                {"canonical_id": record.source_url},
+                {"$set": without_immutable_id(document)},
+                upsert=True,
             )
             self.edges.delete_many({"source_record": record.source_url, "rag_managed": True})
             edges: list[dict[str, Any]] = []
