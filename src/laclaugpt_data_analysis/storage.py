@@ -131,7 +131,12 @@ class MongoStore:
         enrichment. A full canonical record may still update those fields explicitly.
         """
         for row in rows:
-            payload = dict(row)
+            # #515: ``_id`` is immutable in MongoDB. A row that came back from a read (or from a
+            # pipeline stage that carried one through) would make ``$set`` raise WriteError code 66
+            # "the (immutable) field '_id' was found to have been altered", and the caller's completed
+            # analysis was discarded. The store is the boundary that must not attempt it: ``read()``
+            # already strips ``_id``, so ``write()`` strips it symmetrically.
+            payload = {key: value for key, value in dict(row).items() if key != "_id"}
             payload["project_id"] = self.project_id
             source_url = str(payload.get("source_url") or "")
             if source_url:
