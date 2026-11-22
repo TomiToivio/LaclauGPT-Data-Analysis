@@ -78,8 +78,8 @@ record_tick_on_exit() {
                 --stage "$TICK_STAGE" --exit-code "$code"
                 --progress-path "$telemetry_dir/logs/ai26-worker-progress.json"
                 --worker-status "$WORKER_STATUS" --report-status "$REPORT_STATUS"
-                --skip-threshold "${LACLAUGPT_AI26_SKIP_ALERT_THRESHOLD:-0}"
-                --reject-threshold "${LACLAUGPT_AI26_REJECT_ALERT_THRESHOLD:-0}")
+                --skip-threshold "${LACLAUGPT_AI26_SKIP_ALERT_THRESHOLD:-3}"
+                --reject-threshold "${LACLAUGPT_AI26_REJECT_ALERT_THRESHOLD:-2}")
     (( CHECK_ONLY )) && args+=(--check-only)
     local sha=""
     sha=$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null) || true
