@@ -6,6 +6,7 @@ An advisory lock prevents concurrent cron ticks from interleaving JSON writes.
 from __future__ import annotations
 
 import argparse
+from collections import deque
 import fcntl
 import json
 import os
@@ -14,7 +15,8 @@ from pathlib import Path
 
 
 def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
-                worker_status: str = "", report_status: str = "", git_sha: str = "") -> dict:
+                worker_status: str = "", report_status: str = "", git_sha: str = "",
+                skip_threshold: int = 0, reject_threshold: int = 0) -> dict:
     """Write exactly one atomic JSONL event per invocation, including skipped ticks."""
     if exit_code == 3:
         outcome = "already_running"
@@ -36,14 +38,30 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
         "report_status": report_status or None,
         "git_sha": git_sha or None,
     }
+    if skip_threshold < 0 or reject_threshold < 0:
+        raise ValueError("thresholds must be >= 0 (zero disables escalation)")
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     # A single O_APPEND write under flock; do not replace a shared inode.
     fd = os.open(path, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600)
     try:
-        with os.fdopen(fd, "a", encoding="utf-8") as stream:
+        with os.fdopen(fd, "a+", encoding="utf-8") as stream:
             fcntl.flock(stream, fcntl.LOCK_EX)
             stream.write(json.dumps(event, separators=(",", ":"), sort_keys=True) + "\n")
             stream.flush()
+            # A stable, private status file can be polled by a host-side watcher.
+            # Alarm delivery itself remains an operator choice, not an invented route.
+            status_path = path.with_name("ai26-analysis-alert.json")
+            temporary = status_path.with_name(status_path.name + "." + str(os.getpid()) + ".tmp")
+            try:
+                with temporary.open("w", encoding="utf-8") as status:
+                    os.chmod(temporary, 0o600)
+                    json.dump({k: event[k] for k in ("timestamp_utc", "outcome",
+                              "skip_streak", "reject_streak", "escalation")}, status)
+                    status.write("\\n")
+                os.replace(temporary, status_path)
+            finally:
+                if temporary.exists():
+                    temporary.unlink()
             fcntl.flock(stream, fcntl.LOCK_UN)
     finally:
         # fdopen owns the descriptor after success; do not double-close.
@@ -60,10 +78,12 @@ def main() -> None:
     parser.add_argument("--worker-status", default="")
     parser.add_argument("--report-status", default="")
     parser.add_argument("--git-sha", default="")
+    parser.add_argument("--skip-threshold", type=int, default=0)
+    parser.add_argument("--reject-threshold", type=int, default=0)
     args = parser.parse_args()
     append_tick(args.path, stage=args.stage, exit_code=args.exit_code,
                 check_only=args.check_only, worker_status=args.worker_status,
-                report_status=args.report_status, git_sha=args.git_sha)
+                report_status=args.report_status, git_sha=args.git_sha,\n                skip_threshold=args.skip_threshold, reject_threshold=args.reject_threshold)
 
 
 if __name__ == "__main__":
