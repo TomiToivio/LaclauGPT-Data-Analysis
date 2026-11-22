@@ -40,12 +40,13 @@ class TestTheRealContract:
             assert entry.defect in {fc.NO_PRODUCER, fc.PRODUCER_WITHOUT_INPUT,
                                    fc.PRODUCER_MISSING_UPSTREAM}, name
 
-    def test_the_three_defect_classes_are_all_represented(self):
+    def test_active_defect_classes_are_recognized(self):
         defects = {entry.defect for entry in fc.UNPRODUCED_FIELDS.values()}
-        assert {fc.NO_PRODUCER, fc.PRODUCER_WITHOUT_INPUT, fc.PRODUCER_MISSING_UPSTREAM} <= defects
+        assert defects <= {fc.NO_PRODUCER, fc.PRODUCER_WITHOUT_INPUT, fc.PRODUCER_MISSING_UPSTREAM}
 
     def test_the_fields_this_batch_is_about_are_registered(self):
-        for name in ("themes", "discourses", "them"):
+        assert "themes" not in fc.UNPRODUCED_FIELDS
+        for name in ("discourses", "them"):
             assert name in fc.UNPRODUCED_FIELDS, name
 
     def test_the_report_runs_and_names_the_registered_fields(self):

@@ -67,7 +67,7 @@ def discourse_analysis(
     system_resource = load_prompt(system_id, version="v1")
     task_resource = load_prompt(
         task_id,
-        version="v2" if project_profile.casefold() == "ep24" else "v1",
+        version="v2" if project_profile.casefold() in {"ep24", "ai26"} else "v1",
     )
     rendered_task = task_resource.render(
         project_note="AI26 discourse analysis." if project_profile.casefold() == "ai26" else "(none)"

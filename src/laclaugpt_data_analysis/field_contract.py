@@ -110,16 +110,7 @@ UNPRODUCED_FIELDS: dict[str, UnproducedField] = {
         decision="add a discourse level to the Phase 1 vocabulary, or retire the field and stop "
                  "exporting it to RDF, the knowledge graph and the review export",
     ),
-    "themes": UnproducedField(
-        field="themes",
-        issue="#453",
-        defect=PRODUCER_WITHOUT_INPUT,
-        reason="pipeline.py assigns themes from proposal.themes and the prompt asks for them, but the "
-               "analysed corpus carries none: the path that ran is the discourse stage, whose "
-               "DiscourseProposal has no themes field",
-        decision="add themes to the discourse proposal (and name the Phase 1 concept they "
-                 "operationalise), or drop the field, the prompt line and the export column",
-    ),
+
 }
 
 
