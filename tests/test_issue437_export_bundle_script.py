@@ -62,7 +62,8 @@ def test_export_reports_counts_paths_and_checksums_without_source_text(monkeypat
 
     monkeypatch.setattr(export, "load_settings", lambda: SimpleNamespace())
     monkeypatch.setattr(export, "load_analysis_records", lambda settings, run_id, strict_identity=False: [
-        SimpleNamespace(analysis=SimpleNamespace(status="analyzed")),
+        SimpleNamespace(source_url="https://example.invalid/one", source_native_ids={"document_id": "one"},
+                        analysis=SimpleNamespace(status="analyzed")),
     ])
     monkeypatch.setattr(export, "write_research_bundle", lambda records, root, stem: {"jsonl": artifact})
 
@@ -82,7 +83,8 @@ def test_limit_caps_the_export(monkeypatch, tmp_path, capsys):
     seen = {}
     monkeypatch.setattr(export, "load_settings", lambda: SimpleNamespace())
     monkeypatch.setattr(export, "load_analysis_records", lambda settings, run_id, strict_identity=False: [
-        SimpleNamespace(analysis=SimpleNamespace(status="analyzed")) for _ in range(5)
+        SimpleNamespace(source_url=f"https://example.invalid/{i}", source_native_ids={"document_id": str(i)},
+                        analysis=SimpleNamespace(status="analyzed")) for i in range(5)
     ])
 
     def fake_write(records, root, stem):
