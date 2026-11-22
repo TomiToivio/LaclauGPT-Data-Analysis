@@ -99,10 +99,15 @@ def test_a_reanalysis_replaces_the_stored_result_instead_of_raising() -> None:
     collection = FakeResultCollection()
     store = make_store(collection)
 
-    assert store.write_result(make_task(), {"summary": "first"}, {"model": "gemma4:12b"}, fingerprint="fp-1")
     assert store.write_result(
-        make_task(), {"summary": "second"}, {"model": "gemma4:12b"}, fingerprint="fp-2"
-    ) is True
+        make_task(), {"summary": "first"}, {"model": "gemma4:12b"}, fingerprint="fp-1"
+    )
+    assert (
+        store.write_result(
+            make_task(), {"summary": "second"}, {"model": "gemma4:12b"}, fingerprint="fp-2"
+        )
+        is True
+    )
 
     assert collection.documents["idem-1"]["result"] == {"summary": "second"}
     assert len(collection.replacements) == 1
@@ -115,9 +120,13 @@ def test_the_stored_identity_survives_the_replacement() -> None:
     collection = FakeResultCollection()
     store = make_store(collection)
 
-    store.write_result(make_task(), {"summary": "first"}, {"model": "gemma4:12b"}, fingerprint="fp-1")
+    store.write_result(
+        make_task(), {"summary": "first"}, {"model": "gemma4:12b"}, fingerprint="fp-1"
+    )
     original_id = collection.documents["idem-1"]["_id"]
-    store.write_result(make_task(), {"summary": "second"}, {"model": "gemma4:12b"}, fingerprint="fp-2")
+    store.write_result(
+        make_task(), {"summary": "second"}, {"model": "gemma4:12b"}, fingerprint="fp-2"
+    )
 
     assert collection.documents["idem-1"]["_id"] == original_id
 
@@ -126,9 +135,13 @@ def test_an_unchanged_fingerprint_is_a_duplicate_and_never_replaces() -> None:
     collection = FakeResultCollection()
     store = make_store(collection)
 
-    store.write_result(make_task(), {"summary": "first"}, {"model": "gemma4:12b"}, fingerprint="fp-1")
+    store.write_result(
+        make_task(), {"summary": "first"}, {"model": "gemma4:12b"}, fingerprint="fp-1"
+    )
     assert (
-        store.write_result(make_task(), {"summary": "second"}, {"model": "gemma4:12b"}, fingerprint="fp-1")
+        store.write_result(
+            make_task(), {"summary": "second"}, {"model": "gemma4:12b"}, fingerprint="fp-1"
+        )
         is False
     )
     assert collection.replacements == []
@@ -141,5 +154,7 @@ def test_every_fingerprint_path_can_persist(fingerprint: str) -> None:
     collection = FakeResultCollection()
     store = make_store(collection)
 
-    assert store.write_result(make_task(), {"summary": "x"}, {"model": "m"}, fingerprint=fingerprint)
+    assert store.write_result(
+        make_task(), {"summary": "x"}, {"model": "m"}, fingerprint=fingerprint
+    )
     assert collection.documents["idem-1"]["generation_fingerprint"] == fingerprint
