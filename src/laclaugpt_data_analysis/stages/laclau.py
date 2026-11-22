@@ -57,7 +57,6 @@ from .shared import (
     now_iso,
     render_prompt,
 )
-from .verbatim import VERSION, verify_proposal
 
 
 def discourse_analysis(
@@ -72,9 +71,6 @@ def discourse_analysis(
     allow_cloud_fallback: bool | None,
 ) -> DiscourseProposal:
     """Run the theory stage and record it as a proposal, not a finding."""
-    ai26 = project_profile.casefold() == "ai26"
-    if ai26:
-        prompt_version = f"{prompt_version}+{VERSION}"
     system_id, task_id = prompt_ids_for_stage(project_profile, "discourse")
     system_resource = load_prompt(system_id, version="v1")
     task_resource = load_prompt(
@@ -138,11 +134,6 @@ def discourse_analysis(
         stage="discourse",
         prompt_report=prompt_report,
     )
-    if ai26:
-        run_meta["evidence_verification"] = verify_proposal(
-            record, proposal, provider=provider, model=model, user_prompt=user_prompt,
-            allow_cloud_fallback=allow_cloud_fallback,
-        )
     append_stage(
         record,
         "discourse_analysis",
