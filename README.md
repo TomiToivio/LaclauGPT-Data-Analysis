@@ -1,5 +1,23 @@
 # LaclauGPT Data Analysis
 
+## Find and run the analysis
+
+| Research or development task | Start here |
+| --- | --- |
+| Follow an AI26 item from preprocessing through discourse and network analysis | [Seven numbered steps and their inputs](laclaugpt/HUMAN_PIPELINE.md) |
+| Inspect the study design and public coding guidance | [AI26 reference case](docs/AI26_REFERENCE_CASE.md) and [public codebooks](codebooks/public/) |
+| Trace source identity, evidence and provenance through storage | [Canonical record contract](docs/CANONICAL_RECORD.md) and [Python model](src/laclaugpt_data_analysis/canonical.py) |
+| Find the implementation behind an installed command | Read `[project.scripts]` in [pyproject.toml](pyproject.toml), then open the named module under [src/laclaugpt_data_analysis](src/laclaugpt_data_analysis/) |
+| Inspect deployment or reproduce a regression | [Deployment files](deployment/), [operator scripts](scripts/) and [synthetic fixtures](tests/fixtures/) |
+
+From the repository root, use Python 3.11 or later in a virtual environment:
+
+```bash
+python -m pip install -e '.[dev]'
+laclaugpt-analysis --help
+python -m pytest tests/test_cross_module_parity_fixture.py
+```
+
 [Reading an AI26 record as social-science evidence](docs/AI26_PHASE1_METHOD.md) maps the Phase 1 paper to the code and follows one quoted claim through human review.
 
 > [!IMPORTANT]
