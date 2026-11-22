@@ -1,4 +1,20 @@
-"""Backend-neutral retrieval and semantic-memory layer."""
+"""Backend-neutral retrieval and semantic memory.
+
+Retrieval is **advisory**: a returned context helps a prompt locate material, and no retrieved
+item is evidence. Evidence is what a proposal points at inside a record's own text
+(``stages/evidence_policy.py``); this layer only decides *what the model gets to read*. Keeping the
+two apart is what stops a retrieval score from being read as support for a claim -- see
+``docs/PHASE1_METHODS_GUIDE.md`` section 4.
+
+Every retrieval returns a :class:`RetrievalContext`, including the failures. That is deliberate: a
+retrieval backend that is down must not silently shrink the analysis input, so the audit records
+``status="unavailable"`` and the failure stays visible in the output rather than becoming an
+ordinary-looking empty context.
+
+Backends are interchangeable behind :class:`RetrievalBackend`: an embedded store (default), an
+optional Neo4j graph, or a null backend when RAG is switched off. The index version travels with
+every audit so results from different index builds are not compared as if they were one corpus.
+"""
 from __future__ import annotations
 
 import json
@@ -17,6 +33,13 @@ RAG_MODES = {"none", "vector", "graph", "hybrid"}
 
 @dataclass(frozen=True, slots=True)
 class RetrievalItem:
+    """One retrieved record: what was selected, and how strongly.
+
+    ``score`` is backend-specific and is ``None`` for pure graph traversal, where a path rather than
+    a similarity put the record here. ``graph_path`` is the traversal that reached it, kept because
+    "why did the model see this?" is a question a reader is entitled to ask.
+    """
+
     canonical_id: str
     text: str
     score: float | None = None
@@ -26,6 +49,15 @@ class RetrievalItem:
 
 @dataclass(frozen=True, slots=True)
 class RetrievalAudit:
+    """Provenance of one retrieval, recorded whether or not it succeeded.
+
+    Research-integrity object, not telemetry: it fixes the request id, the filters that were
+    applied, the embedding model and the index version, so a later reader can tell which material a
+    given model output could and could not have seen. ``status`` distinguishes a genuinely empty
+    result from a backend that never answered, and ``warning`` carries the failure class without
+    leaking prompt or source text.
+    """
+
     request_id: str
     method: str
     filters: dict[str, Any]
@@ -44,6 +76,14 @@ class RetrievalAudit:
 
 @dataclass(frozen=True, slots=True)
 class RetrievalContext:
+    """Retrieved items plus their audit, renderable into a prompt.
+
+    ``render`` truncates on a character budget and keeps the ``[RAG source=<id>]`` header, so a
+    model can attribute what it reads and a reviewer can trace a passage back to a canonical id.
+    Truncation is silent by design -- the budget belongs to the prompt, and the full selection
+    stays available in ``items`` and ``audit.selected_canonical_ids``.
+    """
+
     items: list[RetrievalItem]
     audit: RetrievalAudit
     def render(self, *, max_chars: int = 16_000) -> str:
@@ -58,6 +98,13 @@ class RetrievalContext:
 
 
 class RetrievalBackend(Protocol):
+    """What every retrieval backend must offer.
+
+    The four search methods answer in the same currency (:class:`RetrievalItem`) so that switching
+    a backend cannot change what downstream code receives, only what it finds. ``retrieve_context``
+    is the entry point callers should prefer, because it is the one that also produces the audit.
+    """
+
     def healthcheck(self) -> bool: ...
     def index_records(self, records: Sequence[CanonicalRecord]) -> int: ...
     def vector_search(self, query: str, filters: Mapping[str, Any] | None = None, *, top_k: int = 20) -> list[RetrievalItem]: ...
@@ -68,6 +115,12 @@ class RetrievalBackend(Protocol):
 
 
 class NullRetrievalBackend:
+    """The explicit "RAG is off" backend.
+
+    It exists so a disabled feature returns an honest, typed empty context (``status="disabled"``)
+    rather than ``None``, which callers would have to special-case and would eventually forget to).
+    """
+
     embedding_model = ""
     def healthcheck(self) -> bool: return True
     def index_records(self, records: Sequence[CanonicalRecord]) -> int: del records; return 0
@@ -81,11 +134,25 @@ class NullRetrievalBackend:
 
 
 class EmbeddingProvider(Protocol):
+    """Anything that can embed a batch of texts.
+
+    Separate from :class:`RetrievalBackend` because the embedding model and the search backend are
+    independent choices, and the audit has to name the former.
+    """
+
     model: str
     def embed(self, texts: Sequence[str]) -> list[list[float]]: ...
 
 
 class OllamaEmbeddingProvider:
+    """Embeddings from a local Ollama server.
+
+    Invariants worth knowing: the embedding model must be named explicitly (a generation model is
+    not an embedding model, and a silent default would make results incomparable between runs), and
+    a response whose row count does not match the request raises rather than returning a short list
+    that would misalign texts with vectors.
+    """
+
     def __init__(self, *, base_url: str, model: str, timeout: float = 30.0):
         if not model.strip(): raise ValueError("a separate embedding model is required for vector RAG")
         self.base_url, self.model, self.timeout = base_url.rstrip("/"), model, timeout
@@ -100,6 +167,13 @@ class OllamaEmbeddingProvider:
 
 
 def record_filters(record: CanonicalRecord, *, dataset: str = "") -> dict[str, Any]:
+    """Derive the retrieval filters a record belongs to, dropping empties.
+
+    The same derivation is used when indexing and when searching, so a record cannot be indexed
+    under one set of facets and retrieved under another. Missing values are omitted rather than
+    stored as ``""``, because an empty string would match nothing and quietly exclude the record
+    from its own facet.
+    """
     raw = record.source.raw_metadata
     filters = {"dataset": dataset or raw.get("collection_id") or raw.get("study") or "", "country": record.source.country, "arena": raw.get("arena") or "", "platform": record.source.platform, "language": record.content.language or record.source.language, "actor": record.source.author, "source": record.source_url}
     return {key: value for key, value in filters.items() if value not in (None, "")}
@@ -112,6 +186,12 @@ def _context(items: list[RetrievalItem], *, method: str, filters: Mapping[str, A
 
 
 def failed_context(*, method: str, filters: Mapping[str, Any] | None, embedding_model: str, error: Exception) -> RetrievalContext:
+    """Build the "backend unavailable" context instead of raising.
+
+    Retrieval is advisory, so its failure must not abort an analysis that can run without it -- but
+    it must be recorded as a failure. The warning carries the exception *class*, never its message,
+    because backend errors can quote source text or connection strings.
+    """
     return _context([], method=method, filters=filters or {}, embedding_model=embedding_model, status="unavailable", warning=f"{type(error).__name__}: retrieval backend unavailable")
 
 
@@ -187,6 +267,12 @@ class Neo4jRetrievalBackend:
 
 
 def backend_from_settings(settings: Any) -> RetrievalBackend:
+    """Select the backend from configuration, refusing to guess.
+
+    Disabled configuration yields :class:`NullRetrievalBackend`; an unknown backend name raises
+    rather than falling back, for the same reason pipeline selection refuses to fall back -- a typo
+    must not silently change which corpus the model reads.
+    """
     if not getattr(settings, "rag_enabled", False): return NullRetrievalBackend()
     backend = str(getattr(settings, "rag_backend", "mongodb") or "mongodb").casefold()
     embedding_model = str(getattr(settings, "embedding_model", "") or "")
