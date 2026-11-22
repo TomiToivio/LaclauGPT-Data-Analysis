@@ -51,6 +51,45 @@ Compare elites, grassroots mobilisation and parliamentary/electoral politics onl
 
 The paper **proposes** independently double-coded held-out evaluation samples, human–human versus model–human agreement, speaker-attribution/span accuracy, class-wise metrics, abstention/coverage analysis, disagreement retention, multilingual and arena breakdowns when cell sizes permit, and robustness to other models and prompts without formation seeds. None of these procedures should be reported as **completed validation** merely because a unit test or an evaluation template exists. Tests of [quote matching](../../src/laclaugpt_data_analysis/stages/evidence.py), [schema validation](../../src/laclaugpt_data_analysis/canonical.py) and [claim adapter](../../src/laclaugpt_data_analysis/claims.py) can demonstrate bounded *mechanical* properties only; their existence is not evidence of interpretive validity. See [review quality audit](../AI26_REVIEW_QUALITY_AUDIT_444.md) for documented implementation-level concerns. A genuine evaluation needs a dated corpus/annotation manifest, sampling plan, independent coded gold/reference material, and published results (Grimmer, Roberts & Stewart 2022; paper §4.2).
 
+
+### Which test earns each status claim
+
+The table above says *implemented* or *partial*; this says what makes that true, so a reader can check the
+claim instead of trusting it. A passing test here establishes a **mechanical** property, never interpretive
+validity.
+
+| property | test |
+| --- | --- |
+| a quotation is located in the retained source, or kept as non-exact | `tests/test_evidence_span_strictness.py`, `tests/test_evidence_source_grounding.py`, `tests/test_issue458_verbatim_evidence.py` |
+| an abstention replaces coding when there is no source evidence | `tests/test_issue_460_evidence_gate.py`, `tests/test_issue451_no_source_evidence.py` |
+| every coded object defaults to `PROVISIONAL`, and a declared field has a producer | `tests/test_field_contract.py`, `tests/test_canonical_contract.py` |
+| codebook entries validate and carry a revision fingerprint | `tests/test_codebook_context_selection.py`, `tests/test_phase1_codebook_context.py` |
+| the collection handoff and canonical contracts stay stable | `tests/test_analysis_contracts.py`, `tests/test_collection_handoff_contract.py` |
+
+
+## Where the current code and the paper's design differ
+
+Each row is a concrete path, so a reader can confirm the mismatch rather than take it on trust.
+
+1. **Five declared analysis fields are never produced:** `embeddings`, `entity_mentions`, `representations`,
+   `us`, `them`, `topic_assignments` are registered as such in `src/laclaugpt_data_analysis/field_contract.py`,
+   which fails a test if a field is added without a producer or registered without a stated reason. Two are
+   *decisions*, not lapses: `us`/`them` were replaced by `collective_subjects` + `frontier` (#452). The
+   `discourses` field was retired outright (#484) and is migrated out of stored records on load
+   (`canonical.py`), so an older record shows it removed rather than empty. Of the five, only
+   `entity_mentions` bears directly on operation 2 — it is the field that would have made speaker/mention
+   attribution queryable.
+2. **Codebook identity is not recorded per analysis in the current corpus:** `analysis.codebook_refs` is empty
+   on every record and `model_runs[].codebook_revision` is unset (#459). Operation 4 can be audited for new
+   runs only.
+3. **Identity resolution has no review history:** `codebooks.py` validates, fingerprints and merges, but
+   there is no accepted/rejected record of identity decisions, which §3.4 operation 4 asks for explicitly.
+4. **Review is a status, not a record of reasoning:** `ReviewStatus` on an object says what was decided;
+   nothing stores why, and a `REVISED` object is not linked to the disagreement that produced it.
+5. **No corpus-level analysis view:** operation 5 is served by measurement tools
+   (`tools/ai26_ready_frame_audit.py`, `tools/ai26_corpus_diagnostics.py`) and exports, not by an implemented
+   analysis layer. Organising candidate relations by actor, time, language and arena remains researcher work.
+
 ## References
 
 - Laclau, E., & Mouffe, C. (2001). *Hegemony and Socialist Strategy* (2nd ed.). Verso.
