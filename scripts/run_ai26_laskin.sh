@@ -76,6 +76,7 @@ record_tick_on_exit() {
   if [[ -n "$telemetry_dir" && -d "$telemetry_dir" ]]; then
     local args=(--path "$telemetry_dir/logs/ai26-analysis-ticks.jsonl"
                 --stage "$TICK_STAGE" --exit-code "$code"
+                --progress-path "$telemetry_dir/logs/ai26-worker-progress.json"
                 --worker-status "$WORKER_STATUS" --report-status "$REPORT_STATUS"
                 --skip-threshold "${LACLAUGPT_AI26_SKIP_ALERT_THRESHOLD:-0}"
                 --reject-threshold "${LACLAUGPT_AI26_REJECT_ALERT_THRESHOLD:-0}")
@@ -215,6 +216,7 @@ for required in "$RUN_MANIFEST" "$PRIVATE_CONFIG" "$CODEBOOK"; do
 done
 
 mkdir -p "$(dirname "$LOCK_FILE")" "$PRIVATE_CONFIG_DIR/logs"
+export LACLAUGPT_AI26_PROGRESS_PATH="$PRIVATE_CONFIG_DIR/logs/ai26-worker-progress.json"
 
 TICK_STAGE="lock"
 exec 9>"$LOCK_FILE"
