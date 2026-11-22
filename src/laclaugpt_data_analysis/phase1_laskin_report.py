@@ -76,6 +76,7 @@ def load_analysis_records(
     *,
     run_id: str,
     window: tuple[datetime, datetime] | None = None,
+    strict_identity: bool = False,
 ) -> list[CanonicalRecord]:
     """Load the run's analysis results, optionally only those inside a report window (#416).
 
@@ -94,7 +95,15 @@ def load_analysis_records(
     scope = {"project_id": settings.project_id, "run_id": run_id}
     if window is None:
         cursor = collection.find(scope, {"result": 1, "source_url": 1, "_id": 0})
-        return [record for document in cursor if (record := _decode_result(document)) is not None]
+        records = []
+        for document in cursor:
+            record = _decode_result(document)
+            if record is None:
+                if strict_identity:
+                    raise ValueError("analysis result has missing, conflicting or invalid source identity")
+                continue
+            records.append(record)
+        return records
 
     start, end = window
     selected: list[Any] = []
