@@ -11,8 +11,7 @@
 #   scripts/run_ai26_laskin.sh --debug --once    verbose diagnostics on stdout
 #   scripts/run_ai26_laskin.sh --check           preflight only, no work
 #
-# Environment: LACLAUGPT_DRIFT_THRESHOLD (default 0) is the number of commits a checkout may
-# lag origin/main before the drift check warns. It only ever warns; it never blocks a cycle.
+# Production checks require all three clean main checkouts to match freshly fetched origin/main.
 # LACLAUGPT_CYCLE_MAX_SECONDS (default 9000) bounds the worker; LACLAUGPT_REPORT_MAX_SECONDS
 # (default 1800) bounds the periodic report, which runs after it inside the same flock (#360).
 #   scripts/run_ai26_laskin.sh                   same as --once (cron-safe)
@@ -164,12 +163,8 @@ if ! "$PY" -m laclaugpt_data_analysis.preflight; then
   fail "preflight reported a configuration problem; refusing to claim tasks"
 fi
 
-# Deployment drift (issue #353): the checkouts are the deployed code, and nothing pulls
-# them, so a merged fix can be silently inert. Read-only and warning-only by design - a
-# stale runtime is a risk, not an emergency, and refusing here would stall the corpus.
-# Never let this line fail the cycle.
-"$PY" -m laclaugpt_data_analysis.deploy_drift --quiet --threshold "${LACLAUGPT_DRIFT_THRESHOLD:-0}" || \
-  log "drift check unavailable; continuing"
+# Verify the deployed code before check-only success or task claims.
+"$PY" -m laclaugpt_data_analysis.deploy_drift --strict --quiet || fail "deployed revisions failed verification"
 
 if (( CHECK_ONLY )); then
   log "preflight complete (--check); no tasks claimed"
