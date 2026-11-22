@@ -30,8 +30,19 @@ def _decode_result(document: dict[str, Any]) -> CanonicalRecord | None:
     payload = document.get("result")
     if not isinstance(payload, dict):
         return None
+    # Distributed result documents keep the source URL at the envelope level.
+    # The nested result may contain only analysis fields. Never export a shared
+    # placeholder identity or infer a URL from a task/backend identifier (#488).
+    stored_url = document.get("source_url")
+    result_url = payload.get("source_url")
+    if stored_url and result_url and str(stored_url).strip() != str(result_url).strip():
+        return None
+    source_url = str(stored_url or result_url or "").strip()
+    if not source_url:
+        return None
+    prepared = {**payload, "source_url": source_url}
     try:
-        return CanonicalRecord.model_validate(payload)
+        return CanonicalRecord.model_validate(prepared)
     except Exception:
         return None
 
@@ -82,7 +93,7 @@ def load_analysis_records(
     ]
     scope = {"project_id": settings.project_id, "run_id": run_id}
     if window is None:
-        cursor = collection.find(scope, {"result": 1, "_id": 0})
+        cursor = collection.find(scope, {"result": 1, "source_url": 1, "_id": 0})
         return [record for document in cursor if (record := _decode_result(document)) is not None]
 
     start, end = window
