@@ -16,7 +16,8 @@ from pathlib import Path
 
 def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
                 worker_status: str = "", report_status: str = "", git_sha: str = "",
-                skip_threshold: int = 0, reject_threshold: int = 0) -> dict:
+                skip_threshold: int = 0, reject_threshold: int = 0,
+                progress_path: Path | None = None) -> dict:
     """Write exactly one atomic JSONL event per invocation, including skipped ticks."""
     if exit_code == 3:
         outcome = "already_running"
@@ -38,6 +39,23 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
         "report_status": report_status or None,
         "git_sha": git_sha or None,
     }
+    if progress_path is not None and stage == "lock":
+        # A checkpoint is only evidence of the last completed boundary, not proof
+        # that the current model call is hung or healthy.
+        try:
+            progress = json.loads(progress_path.read_text(encoding="utf-8"))
+            observed = datetime.fromisoformat(progress["timestamp_utc"])
+            if observed.tzinfo is None:
+                raise ValueError("progress timestamp missing timezone")
+            event["progress_age_seconds"] = max(0, int(
+                (datetime.now(timezone.utc) - observed).total_seconds()
+            ))
+            event["progress_phase"] = str(progress.get("phase", ""))[:32]
+            event["progress_claims"] = int(progress.get("claims", 0))
+            event["progress_completed"] = int(progress.get("completed", 0))
+            event["progress_retry"] = int(progress.get("retry", 0))
+        except (OSError, ValueError, TypeError, KeyError):
+            event["progress_phase"] = "unavailable"
     if skip_threshold < 0 or reject_threshold < 0:
         raise ValueError("thresholds must be >= 0 (zero disables escalation)")
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -103,13 +121,15 @@ def main() -> None:
     parser.add_argument("--worker-status", default="")
     parser.add_argument("--report-status", default="")
     parser.add_argument("--git-sha", default="")
+    parser.add_argument("--progress-path", type=Path, default=None)
     parser.add_argument("--skip-threshold", type=int, default=0)
     parser.add_argument("--reject-threshold", type=int, default=0)
     args = parser.parse_args()
     append_tick(args.path, stage=args.stage, exit_code=args.exit_code,
                 check_only=args.check_only, worker_status=args.worker_status,
                 report_status=args.report_status, git_sha=args.git_sha,
-                skip_threshold=args.skip_threshold, reject_threshold=args.reject_threshold)
+                skip_threshold=args.skip_threshold, reject_threshold=args.reject_threshold,
+                progress_path=args.progress_path)
 
 
 if __name__ == "__main__":
