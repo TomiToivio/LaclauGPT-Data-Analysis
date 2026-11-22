@@ -18,7 +18,6 @@ PRIVATE_DIR=${LACLAUGPT_PRIVATE_CONFIG_DIR:-"$ROOT_DIR/data/config/ai26"}
 : "${LACLAUGPT_RUN_ID:?required}"
 : "${LACLAUGPT_MONGODB_URI:?required}"
 : "${LACLAUGPT_REDIS_URL:?required}"
-: "${LACLAUGPT_S3_BUCKET:?required}"
 : "${LACLAUGPT_LLM_ENDPOINT:?required}"
 
 # The project-prefixed endpoint is authoritative for this deployment. Export the
@@ -32,7 +31,9 @@ export LACLAUGPT_EXECUTION=cron
 export LACLAUGPT_STORAGE=distributed
 export LACLAUGPT_DATA_BACKEND=mongodb
 export LACLAUGPT_CACHE_BACKEND=redis
-export LACLAUGPT_OBJECT_BACKEND=s3
+# AI26 Phase 1 currently processes text from MongoDB; media/Allas is inactive.
+export LACLAUGPT_OBJECT_BACKEND=local
+export LACLAUGPT_OBJECT_STORE_REQUIRED=0
 export LLM_MODE=${LLM_MODE:-local}
 export LACLAUGPT_LLM_MODE=${LACLAUGPT_LLM_MODE:-local-ollama}
 export LLM_ALLOW_CLOUD_FALLBACK=${LLM_ALLOW_CLOUD_FALLBACK:-0}
@@ -42,8 +43,8 @@ export LACLAUGPT_PRIVATE_CONFIG_DIR="$PRIVATE_DIR"
 
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
-  echo "AI26 Laskin analysis already running; exiting cleanly" >&2
-  exit 0
+  printf "[%s] AI26 Laskin analysis skipped: lock held; status=already_running exit_code=3\n" "$(date -Is)" >&2
+  exit 3
 fi
 
 cd "$ROOT_DIR"
