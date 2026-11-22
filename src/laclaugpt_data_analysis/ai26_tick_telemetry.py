@@ -9,6 +9,7 @@ import argparse
 import fcntl
 import json
 import os
+import sys
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
@@ -88,6 +89,14 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
                 else "rejected" if reject_threshold and event["reject_streak"] >= reject_threshold
                 else None
             )
+            if event["escalation"]:
+                # #514: the status file is for a watcher; this line is for the operator reading
+                # cron's log. Three hours of silence was possible because only one of them existed.
+                print(
+                    f"ALERT: AI26 analysis is not completing ({event['escalation']}): "
+                    f"skip_streak={event['skip_streak']} reject_streak={event['reject_streak']}",
+                    file=sys.stderr,
+                )
             stream.seek(0, os.SEEK_END)
             stream.write(json.dumps(event, separators=(",", ":"), sort_keys=True) + "\n")
             stream.flush()
