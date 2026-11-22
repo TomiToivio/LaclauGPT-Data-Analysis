@@ -8,7 +8,7 @@ from laclaugpt_data_analysis.formation_vocabulary import (
 )
 from laclaugpt_data_analysis.stages.postprocess import _objects
 from laclaugpt_data_analysis.stages.proposals import DiscursiveElement
- 
+
 
 def test_known_aliases_collapse_without_guessing() -> None:
     assert normalize_formation_label("Critical AI") == ("critical_ai", True)
