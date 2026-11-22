@@ -20,13 +20,6 @@ from .phase1_runtime import Phase1TextConfig, run_phase1_text_record
 DEFAULT_MAX_RECORDS = 5
 
 
-def _flag(name: str, default: bool = False) -> bool:
-    value = os.getenv(name)
-    if value is None:
-        return default
-    return value.strip().casefold() in {"1", "true", "yes", "on"}
-
-
 def phase1_laskin_preflight(
     *,
     input_path: Path | None = None,
