@@ -32,6 +32,12 @@ python -m pytest tests/test_cross_module_parity_fixture.py
 >
 > **Project map:** [LaclauGPT / paper + meta-repo](https://github.com/TomiToivio/LaclauGPT) → [Data Collection](https://github.com/TomiToivio/LaclauGPT-Data-Collection) → **Data Analysis (you are here)** → [Data Visualization](https://github.com/TomiToivio/LaclauGPT-Data-Visualization)
 
+**Researcher-facing Phase 1 guide:** [Follow source evidence through provisional discourse codes and human review](docs/methods/phase1_researcher_guide.md). It maps the six operations in the [locked Phase 1 paper](https://github.com/TomiToivio/LaclauGPT/blob/main/paper/PHASE_1_PAPER.md) to code, includes a synthetic attribution example, and distinguishes implementation from proposed validation.
+
+**New to the codebase?** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) maps the tree, the
+pipelines and where each feature lives; [docs/README.md](docs/README.md) indexes every topical
+document in `docs/`.
+
 **LaclauGPT** is an open social-science research framework for **LLM-assisted computational discourse analysis** of large textual and multimodal corpora. It combines computational methods with interpretive political research while keeping model outputs traceable to source evidence, uncertainty, provenance and human review.
 
 The current flagship research programme is **[LaclauGPT: Ideological contestation over AI](https://github.com/TomiToivio/LaclauGPT/blob/main/paper/PHASE_1_PAPER.md)**. The canonical theoretical and methodological contract is **[THEORY.md](https://github.com/TomiToivio/LaclauGPT/blob/main/THEORY.md)**.
@@ -130,6 +136,8 @@ preprocessing
 ```
 
 The current pipeline routes modalities **record-by-record by capability**. When usable materialized images or video frames are present, the visual/multimodal stage runs automatically; when no usable media is available, the record proceeds through the text/caption + metadata path without dummy media fields. Mixed datasets can therefore contain text-only and multimodal records in the same project. Project settings may still constrain unsupported or expensive processing explicitly, but media presence is the ordinary activation signal. Model outputs remain provisional, evidence-linked pre-analysis for human review.
+
+**Where does anything live?** Start with **[docs/REPOSITORY_MAP.md](docs/REPOSITORY_MAP.md)** — one page with the directory tree, every installed entry point, the common commands and the five documents to read first.
 
 For the readable execution order, start with **[docs/DATA_ANALYSIS_PIPELINE.md](docs/DATA_ANALYSIS_PIPELINE.md)** and `src/laclaugpt_data_analysis/stages/runner.py`. For the repository-wide implementation style, including the human-owned numbered AI26 steps and the rule that research logic stays visible, see **[CODING_STYLE.md](CODING_STYLE.md)**. The five scientific stages are deliberately exposed as separate files: preprocess, frame/multimodal analysis, descriptive summary, Laclau analysis, and postprocess.
 
