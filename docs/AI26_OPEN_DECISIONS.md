@@ -127,6 +127,8 @@ share is explained by its criteria; no label is free text.
 
 ## D6 — citations: require verbatim quotation (#458)
 
+**Approved 2026-11-22: option (a)**, with option (b) retained as the recorded fallback for diagnostics only. Every stored `quote` must be a verbatim source span or an explicit abstention; a failed `locate_quote` gets **at most one** evidence-specific correction and then abstains; `exact` and the evidence counts stay comparable, and each run records its evidence-instruction version and retry outcome so historic runs cannot be read as new-instrument runs.
+
 35.2 % of sampled citations are paraphrase (audit §7); 38.3 % are unlocatable under permissive matching.
 
 Options: (a) prompt requires verbatim spans and abstains otherwise, plus one correction round when
