@@ -15,6 +15,7 @@ import logging
 import os
 import socket
 import subprocess
+import traceback
 from dataclasses import dataclass, fields, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -803,8 +804,8 @@ class AI26TaskWorker(TaskWorker):
                     mongo_code = mongo_code or mongo_details.get("code")
                 logger.error(
                     "AI26 result persistence failed: exception=%s mongo_code=%s "
-                    "operation=write_result; task remains retryable",
-                    type(write_exc).__name__, mongo_code,
+                    "operation=write_result site=%s; task remains retryable",
+                    type(write_exc).__name__, mongo_code, _persistence_site(write_exc),
                 )
                 raise
             self.queue.ack(claimed.message_id)
@@ -859,6 +860,19 @@ class AI26TaskWorker(TaskWorker):
             self.queue.publish(retry_task)
             self.queue.ack(claimed.message_id)
             return "retry"
+
+
+def _persistence_site(exc: BaseException) -> str:
+    """Name the code path that raised, without quoting anything it was given.
+
+    #553: a persistence failure used to log only its class and MongoDB code, so locating the
+    offending write needed a re-run plus grep — and the obvious fix, printing the traceback, is
+    forbidden because exception text can carry private source material. Frame *names* carry no
+    content: ``module.py:line:function`` identifies the site and nothing else. Only the innermost
+    frames are kept, because the outer ones are this worker's own call plumbing.
+    """
+    frames = traceback.extract_tb(exc.__traceback__)
+    return "<-".join(f"{Path(frame.filename).name}:{frame.lineno}:{frame.name}" for frame in frames[-3:])
 
 
 #: Failures that say something about the provider, not about the document (#414). An upstream 5xx is
