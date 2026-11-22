@@ -90,6 +90,68 @@ Each row is a concrete path, so a reader can confirm the mismatch rather than ta
    (`tools/ai26_ready_frame_audit.py`, `tools/ai26_corpus_diagnostics.py`) and exports, not by an implemented
    analysis layer. Organising candidate relations by actor, time, language and arena remains researcher work.
 
+## Supplementary distinctions from the methodological audit
+
+### 3.2 Nodal points, floating signifiers, empty signifiers
+
+These are three **functions**, not three kinds of word (Laclau and Mouffe, 2001; Laclau, 1996,
+2005). The same signifier can be a nodal point in one discourse and contested elsewhere.
+
+| Function | What it does | What the evidence must show | What is *not* enough |
+| --- | --- | --- | --- |
+| **Nodal point** | partially fixes meaning by organising other signifiers | other signifiers are related *through* it, and their meaning shifts in that relation | it is frequent, or prominent |
+| **Floating signifier** | is subject to competing attempts at fixation across projects | two or more projects attach different meanings to it | it is vague, or has many senses |
+| **Tendentially empty signifier** | comes to stand for a wider equivalential chain and an absent fullness | the chain is present, and the signifier represents the project beyond its particular reference | breadth or vacuity (§3.1: "mere breadth, vagueness, or multiple meanings establishes none of these functions") |
+
+Frequency can guide retrieval; it cannot establish any of the three. The code emits
+`nodal_points`, `floating_signifiers` and `empty_signifier_candidates`; treating them as findings
+without the corpus-level comparison in operation 5 is a category error.
+
+### 3.3 Equivalence, difference, antagonism
+
+Equivalence links heterogeneous demands through a shared relation to an obstacle without erasing
+their difference. **Difference is not the opposite side of a frontier** — it may describe demands
+accommodated within an institutional order. Antagonism is a constitutive limit: an identity
+organised against what is represented as preventing its fulfilment. Policy disagreement, criticism
+and negative sentiment are therefore *not* evidence of an antagonistic frontier (paper §3.1).
+
+### 3.4 Affective investment is not sentiment
+
+`sentiment` (summary stage) identifies evaluative language. **Affective investment** is the
+attachment through which a signifier, demand or collective identity acquires political force; it
+must be read in relation to its object and the surrounding articulation (§3.1). The discourse
+prompt therefore asks the model to distinguish generic sentiment from affective investment, and
+`affects` is a separate output field. A sentiment score is not an affect code.
+
+### 3.5 Sociotechnical imaginaries
+
+An imaginary connects a vision of technological development to a desirable social order
+(Jasanoff, 2015; Richter et al., 2023). Document-level analysis can identify **candidate** future
+visions — diagnoses of the present, desired outcomes, feared alternatives, authorised agents of
+change. It cannot establish that an imaginary is *collectively held and institutionally
+stabilised*; that requires operation 5 (§2.2). A prediction or a personal hope is not an
+imaginary, and a feared future is examined against the desirable order it threatens rather than
+being equated with one.
+
+### 3.6 Palonen's Formula of Populism: when it applies
+
+$\text{Populism} = \text{Us}^{\text{Affects}_{1}} + \text{Frontier}^{\text{Affects}_{2}}$
+
+(Palonen, 2025.) The formula is an **interpretive device, not a numerical model** (§3.1). It is
+`formula_of_populism` in the `palonen` capability, implemented inside the shared discourse stage.
+
+- **Applies** when the document constructs a collective subject ("Us") *and* a constitutive
+  antagonistic frontier, each with evidenced affective investment.
+- **Abstain** when one of the two is missing, when the frontier is merely an opponent or a policy
+  disagreement, or when affects are asserted rather than evidenced. Finding an in-group and an
+  opponent *initiates* an assessment; it does not establish populism. Anti-elite language alone is
+  explicitly insufficient — the same rule is written into the discourse prompt.
+- Affects carry **no fixed polarity** in advance; neither side of the formula is "negative".
+
+A document may support an articulation or an imaginary while supporting no populism assessment at
+all. `formula_of_populism` being absent is a valid, informative outcome.
+
+
 ## References
 
 - Laclau, E., & Mouffe, C. (2001). *Hegemony and Socialist Strategy* (2nd ed.). Verso.
