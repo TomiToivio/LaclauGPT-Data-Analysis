@@ -178,6 +178,8 @@ def build_prompt_envelope(
     every caller inherits the guard without opting in. ``budget=0`` renders the
     historical unbounded envelope.
     """
+    # Keep earlier interpretations and retrieved material distinguishable from the
+    # source item so a prior model proposal cannot serve as its own evidence.
     total, reserve_output, reserve_schema = resolve_budget(budget)
     provenance = context_provenance or {}
     return PromptEnvelope(

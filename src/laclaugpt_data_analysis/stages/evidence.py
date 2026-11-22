@@ -134,6 +134,9 @@ def evidence_ids(record: CanonicalRecord, quotes: list[str], prefix: str) -> lis
     the new evidence ids so the calling stage can reference them from the objects
     and relations it builds.
     """
+    # A quotation match establishes textual presence, not who endorsed the words.
+    # A journalist can report a minister's articulation without sharing it.
+    # Check speaker and context (paper §3.4; docs/methods/phase1_researcher_guide.md).
     ids: list[str] = []
     source_text = record.content.text or ""
     for quote in quotes:

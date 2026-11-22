@@ -143,6 +143,8 @@ def merge_codebooks(codebooks: Iterable[Codebook], *, codebook_id: str = "effect
     optional: list[str] = []
     for book in books:
         for entry in book.entries:
+            # Later layers override a matching label for this run. Shared spelling
+            # alone cannot establish equivalent political meanings across arenas.
             merged_entries[(entry.kind, entry.label.casefold().strip())] = entry
         sections.update(book.sections)
         required.extend(book.required_sections)
