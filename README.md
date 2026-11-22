@@ -22,6 +22,12 @@
 pipelines and where each feature lives; [docs/README.md](docs/README.md) indexes every topical
 document in `docs/`.
 
+**Researcher?** Start with **[docs/methods/RESEARCH_METHOD_GUIDE.md](docs/methods/RESEARCH_METHOD_GUIDE.md)**.
+It follows one record from retained source, through the model's provisional interpretation, to the human
+review decision: it maps each stage of the Phase 1 paper's six-stage workflow (§3.4) to the code that
+implements it, states what a quotation match does and does not prove, and records where the implementation
+is narrower than the paper's design.
+
 **LaclauGPT** is an open social-science research framework for **LLM-assisted computational discourse analysis** of large textual and multimodal corpora. It combines computational methods with interpretive political research while keeping model outputs traceable to source evidence, uncertainty, provenance and human review.
 
 The current flagship research programme is **[LaclauGPT: Ideological contestation over AI](https://github.com/TomiToivio/LaclauGPT/blob/main/paper/PHASE_1_PAPER.md)**. The canonical theoretical and methodological contract is **[THEORY.md](https://github.com/TomiToivio/LaclauGPT/blob/main/THEORY.md)**.

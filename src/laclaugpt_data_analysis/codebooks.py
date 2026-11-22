@@ -134,6 +134,18 @@ def load_codebook(path: str | Path, *, strict: bool = True) -> Codebook:
 
 
 def merge_codebooks(codebooks: Iterable[Codebook], *, codebook_id: str = "effective") -> Codebook:
+    """Combine codebooks into one effective view, without deciding any identity question.
+
+    Later codebooks win on the same ``(kind, casefold(label))`` key, and the result carries a
+    fingerprint over its inputs, so a merged view is always traceable to the versions that produced it.
+
+    Merging is deliberately *not* the place where identities are resolved. The paper treats matching
+    recurring expressions as a provisional step that must preserve original wording, contextual roles and
+    competing meanings, with new entries and proposed merges staying provisional until reviewed
+    (Phase 1 paper §3.4, stage 4; Palonen 2025 on contested meanings). Semantic similarity is never
+    sufficient grounds to collapse two political meanings, so this function only concatenates what the
+    researcher has already versioned. See ``docs/methods/RESEARCH_METHOD_GUIDE.md`` §3.
+    """
     books = list(codebooks)
     if not books:
         raise ValueError("at least one codebook is required")
