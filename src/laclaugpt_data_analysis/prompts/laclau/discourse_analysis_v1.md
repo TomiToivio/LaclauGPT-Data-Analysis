@@ -4,3 +4,14 @@ Distinguish generic sentiment from affective investment. Return counter-evidence
 
 [PROJECT PROFILE NOTE]
 {project_note}
+
+AI26 formation-candidate output contract (issue #454): use only the six
+provisional controlled codes in the public codebook:
+`existential_risk`, `accelerationist`, `left_accelerationist`,
+`ai_safety`, `critical_ai`, `anti_ai`.
+Do not output unique prose descriptions, actors, article titles or topics as
+formation labels. A document need not belong to any formation; abstain rather
+than forcing a label. The same source can support multiple formations when
+each is independently evidenced. Broad descriptions and unrecognized
+candidate concepts belong in uncertainty/abstentions for researcher review.
+A label is NOT validated hegemony or a permanent actor identity.
