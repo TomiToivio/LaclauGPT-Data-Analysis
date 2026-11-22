@@ -166,13 +166,17 @@ def test_identity_shared_identity_matches_the_laskin_worker(tmp_path=None) -> No
         "export LACLAUGPT_STORAGE=distributed",
         "export LACLAUGPT_DATA_BACKEND=mongodb",
         "export LACLAUGPT_CACHE_BACKEND=redis",
-        "export LACLAUGPT_OBJECT_BACKEND=s3",
     )
     for fragment in shared:
         assert fragment in noopunk, f"the NooPunk worker diverged on {fragment!r}"
         assert fragment in _text(LASKIN_SCRIPT), (
             f"Laskin no longer exports {fragment!r}; revisit this parity test"
         )
+    # The AI26 Laskin production path is text-only, while this historical
+    # interactive NooPunk entry point can still support an S3 artifact backend.
+    assert "export LACLAUGPT_OBJECT_BACKEND=local" in _text(LASKIN_SCRIPT)
+    assert "export LACLAUGPT_OBJECT_STORE_REQUIRED=0" in _text(LASKIN_SCRIPT)
+    assert "export LACLAUGPT_OBJECT_BACKEND=s3" in noopunk
 
 def test_identity_machine_and_execution_differ_from_laskin(tmp_path=None) -> None:
     noopunk = _text(NOOPUNK_SCRIPT)
