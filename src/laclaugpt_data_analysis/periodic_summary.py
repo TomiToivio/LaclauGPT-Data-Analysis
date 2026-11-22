@@ -18,8 +18,8 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from .canonical import CanonicalRecord
-from .formation_vocabulary import is_countable_formation
 from .context_runtime import ContextItem
+from .formation_vocabulary import is_countable_formation
 from .llm.structured_output import chat_structured
 from .prompt_library import load_prompt, prompt_provenance
 from .storage import RecordStore
