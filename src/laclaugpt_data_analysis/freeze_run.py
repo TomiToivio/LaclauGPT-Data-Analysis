@@ -22,7 +22,7 @@ Usage:
       --private-overlay /path/to/private_overlay.yaml \\
       --analysis-config /path/to/analysis.json
 """
-from __future__ import annotations
+from __future__ import annotations  # noqa: I001
 
 import argparse
 import json
