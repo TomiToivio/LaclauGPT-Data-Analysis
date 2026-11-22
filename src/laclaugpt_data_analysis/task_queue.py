@@ -721,9 +721,8 @@ class MongoTaskStore:
                 "provenance": dict(provenance),
                 "terminal": terminal,
                 **bounded_failure_diagnostics(diagnostics),
-                # #504: a BSON datetime, not an epoch float - a float field silently matches nothing
-            # against a datetime range query, which makes a stalled pipeline look like a quiet hour.
-            "created_at": now_utc(),
+                # #504: use BSON datetime so standard range queries can find failures.
+                "created_at": now_utc(),
             }
         )
 
