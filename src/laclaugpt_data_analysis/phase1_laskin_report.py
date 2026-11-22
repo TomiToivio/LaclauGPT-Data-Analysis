@@ -1,4 +1,5 @@
 """Mongo-backed periodic Phase 1 reports for the AI26 Laskin node."""
+from laclaugpt_data_analysis.storage import mongo_set_payload
 from __future__ import annotations
 
 import argparse
@@ -270,7 +271,7 @@ def generate_latest_reports(
                 "run_id": run_id,
                 "report_id": summary.id,
             },
-            {"$set": document},
+            {"$set": mongo_set_payload(document)},
             upsert=True,
         )
 
