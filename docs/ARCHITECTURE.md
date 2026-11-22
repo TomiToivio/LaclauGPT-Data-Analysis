@@ -121,3 +121,25 @@ CI runs the same three, with ruff limited to newly introduced violations. A chan
 the record model, an adapter or backend selection must run `verify_contracts.py`; a change to a
 shell wrapper has no suite, so verify its refusal paths explicitly (`bash -n`, then the exit
 codes) and say so when reporting.
+
+## Lint baseline (measured 2026-11-22)
+
+`ruff check src tests` reports **145 findings**, down from 203 after the #548 burn-down removed the
+57 unsorted-import findings in maintained code. CI gates *newly introduced* violations only, so
+this number is stable but invisible unless written down here.
+
+| Where | Findings | What to do |
+| --- | ---: | --- |
+| `pipelines/ep24/`, `pipelines/ep24_legacy/` (vendored snapshot) | 71 | nothing — re-vendored, never edited here |
+| `rag.py` | 41 | E701/E702: the file's compact one-line style. Split per function, reviewed, not bulk-fixed |
+| `ep24_phase2.py` | 20 | same style question; decide per module |
+| `tests/test_mongodb_backend.py` | 11 | same |
+| everything else | 2 | F401/E402, one each |
+
+Rule families overall: `E702` (44), `E701` (28) — semicolons and multi-statement lines in two
+modules — plus one `F401` and one `E402`. That is why 46 findings are "fixable" but are not fixed
+mechanically: splitting those statements changes the shape of the two densest modules, which is a
+readability decision to take module by module rather than repo-wide.
+
+The aim is to reach zero in maintained code and then switch CI from "new violations only" to
+"clean". Until then, adding a finding in a touched file is a regression even though CI lets it pass.

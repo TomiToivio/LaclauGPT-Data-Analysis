@@ -12,7 +12,6 @@ from collections.abc import Iterable
 from pathlib import Path
 
 import pandas as pd
-
 from ep24_schema import LEGACY_ALIASES, REQUIRED_MEDIA_COLUMNS, value
 
 SOURCE_METADATA_COLUMNS: tuple[str, ...] = ()
@@ -235,8 +234,8 @@ def local_media_path(row: pd.Series, root: str | Path | None = None) -> Path:
     key = media_key(row)
     base = Path(root or os.getenv("LACLAUGPT_ALLAS_LOCAL_ROOT", "./Allas"))
     if key.startswith(("https://", "http://")):
-        from urllib.parse import urlsplit
         from hashlib import sha256
+        from urllib.parse import urlsplit
 
         url = urlsplit(key)
         # Keep URL data under a deterministic, safe local filename.

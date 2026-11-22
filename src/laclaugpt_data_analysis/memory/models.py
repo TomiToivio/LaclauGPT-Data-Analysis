@@ -71,6 +71,8 @@ NER_TYPES_DESCRIPTION = {
 
 
 def now_iso() -> str:
+    """Current UTC time in the format memory records store (second resolution, ``Z`` suffix).
+    """
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 

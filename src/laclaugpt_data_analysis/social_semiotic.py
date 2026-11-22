@@ -225,10 +225,19 @@ class TaxonomyToleranceMixin(BaseModel):
 
 
 class StrictMethodModel(TaxonomyToleranceMixin):
+    """Base for the pre-analysis payloads.
+
+    
+    Unknown keys are forbidden rather than ignored: a model that invents a field is telling you
+    it is answering a different schema than the one it was given, and silently dropping that is
+    how a taxonomy drifts without anyone noticing.
+    """
     model_config = ConfigDict(extra="forbid")
 
 
 class EvidencePointer(StrictMethodModel):
+    """A pointer from an observation to the evidence it rests on, in the modality that carries it.
+    """
     evidence_id: str
     modality: Mode
     source_ref: str = ""
@@ -281,6 +290,8 @@ class EventCandidate(StrictMethodModel):
 
 
 class SemioticResource(StrictMethodModel):
+    """A resource available in a mode and the use it offers (``affordance_observed``).
+    """
     mode: Mode
     description: str
     affordance_observed: str = ""
@@ -289,6 +300,8 @@ class SemioticResource(StrictMethodModel):
 
 
 class ParticipantObservation(StrictMethodModel):
+    """A participant described as the material shows it, not as a theoretical role.
+    """
     participant_id: str
     description: str
     participant_type: str = ""
@@ -297,6 +310,8 @@ class ParticipantObservation(StrictMethodModel):
 
 
 class ProcessObservation(StrictMethodModel):
+    """A process observed in the material, typed by what kind of process it is.
+    """
     process_id: str
     description: str
     process_type: Literal[
@@ -309,6 +324,8 @@ class ProcessObservation(StrictMethodModel):
 
 
 class CircumstanceObservation(StrictMethodModel):
+    """A circumstance framing a process or participant (setting, time, condition).
+    """
     circumstance_id: str
     description: str
     circumstance_type: Literal[
@@ -319,6 +336,8 @@ class CircumstanceObservation(StrictMethodModel):
 
 
 class CompositionObservation(StrictMethodModel):
+    """A compositional feature of the material (layout, salience, reading order, ...).
+    """
     feature: Literal[
         "layout", "salience", "foreground_background", "centre_periphery",
         "size_scale", "vector", "reading_viewing_order", "temporal_sequence",
@@ -331,6 +350,8 @@ class CompositionObservation(StrictMethodModel):
 
 
 class SignObservation(StrictMethodModel):
+    """A sign as it appears in the material, kept with its source form.
+    """
     sign_id: str
     source_form: str
     description: str = ""
@@ -341,6 +362,8 @@ class SignObservation(StrictMethodModel):
 
 
 class SignRelation(StrictMethodModel):
+    """A relation between two signs (contrast, pairing, repetition, part-whole, ...).
+    """
     relation_type: Literal[
         "contrast", "opposition", "pairing", "repetition", "cooccurrence",
         "sequence", "label", "part_whole", "spatial_proximity", "other",
@@ -353,6 +376,8 @@ class SignRelation(StrictMethodModel):
 
 
 class IntermodalRelation(StrictMethodModel):
+    """How two modes stand to each other (redundancy, extension, anchoring, conflict, ...).
+    """
     relation_type: Literal[
         "redundancy", "repetition", "extension", "complementarity",
         "elaboration", "anchoring", "contrast", "conflict", "ambiguity", "other",
@@ -364,6 +389,8 @@ class IntermodalRelation(StrictMethodModel):
 
 
 class ConnotationObservation(StrictMethodModel):
+    """A proposed connotation, with the basis offered and the alternatives considered.
+    """
     description: str
     basis: str
     alternatives: list[str] = Field(default_factory=list)
@@ -372,6 +399,12 @@ class ConnotationObservation(StrictMethodModel):
 
 
 class UncertaintyObservation(StrictMethodModel):
+    """A recorded source of uncertainty (OCR, ASR, translation, speaker, model, ...).
+
+    
+    These are first-class observations because uncertainty that is not written down becomes
+    confidence later; each names the category so it can be counted.
+    """
     category: Literal[
         "ocr", "asr", "translation", "visual", "audio", "speaker", "temporal",
         "missing_modality", "source_context", "model", "other",

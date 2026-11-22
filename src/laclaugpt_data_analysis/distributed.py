@@ -37,6 +37,12 @@ _MODULES = {"collection", "analysis", "visualization", "storage", "simulation"}
 
 
 def validate_project_id(project_id: str) -> str:
+    """Reject a project id that could not be used safely as a storage namespace.
+
+    
+    The id ends up inside Redis key prefixes and MongoDB database names, so the rule is
+    enforced here once instead of being re-derived (and eventually mis-derived) by callers.
+    """
     if not _PROJECT_ID.fullmatch(project_id):
         raise ValueError(
             "project_id must match ^[a-z0-9][a-z0-9_-]{1,63}$; "
@@ -54,6 +60,11 @@ def _segment(value: str, *, label: str) -> str:
 
 @dataclass(frozen=True, slots=True)
 class ProjectNamespace:
+    """The storage names one project maps to: Redis prefix, MongoDB database.
+
+    
+    Centralised so two components cannot disagree about where a project's data lives.
+    """
     project_id: str
     redis_prefix: str = "laclaugpt"
     mongo_database: str = "laclaugpt"

@@ -11,6 +11,7 @@ import json
 from collections import Counter
 from pathlib import Path
 
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("input_csv", type=Path)

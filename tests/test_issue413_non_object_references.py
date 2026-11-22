@@ -16,7 +16,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from laclaugpt_data_analysis.staging import MediaStager, StagingPolicy, object_references  # noqa: E402
+from laclaugpt_data_analysis.staging import (  # noqa: E402
+    MediaStager,
+    StagingPolicy,
+    object_references,
+)
 
 
 class RecordingStore:

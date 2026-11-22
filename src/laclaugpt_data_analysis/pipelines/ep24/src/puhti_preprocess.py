@@ -1,15 +1,17 @@
-import pandas as pd
 import logging
-from ollama import generate
+import os
+import sqlite3
+from logging.handlers import RotatingFileHandler
 from os import listdir
 from os.path import isfile, join
-import os
+
 import cv2
-import sqlite3
 import easyocr
+import pandas as pd
 import whisper
 from deep_translator import GoogleTranslator
-from logging.handlers import RotatingFileHandler
+from ollama import generate
+
 logger = logging.getLogger(__name__)
 os.makedirs('./logs', exist_ok=True)
 os.makedirs('./database', exist_ok=True)

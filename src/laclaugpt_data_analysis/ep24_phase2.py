@@ -1,12 +1,18 @@
 """EP24 Phase 2 DNA/SNA/RDF extension."""
 from __future__ import annotations
-import csv, hashlib, json, sqlite3
+
+import csv
+import hashlib
+import json
+import sqlite3
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
+
 import networkx as nx
-from rdflib import Graph, Literal, Namespace, RDF, URIRef
+from rdflib import RDF, Graph, Literal, Namespace, URIRef
 from rdflib.namespace import DCTERMS, PROV, XSD
+
 from .hungary26_roihu import ollama_chat
 
 LG = Namespace("https://w3id.org/laclaugpt/ep24/")

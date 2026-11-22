@@ -14,8 +14,7 @@ import urllib.request
 from pathlib import Path
 
 import pandas as pd
-
-from ep24_pipeline import recover_allas_filename, recover_media_identity, local_media_path
+from ep24_pipeline import local_media_path, recover_allas_filename, recover_media_identity
 
 LOG = logging.getLogger("ep24_allas")
 

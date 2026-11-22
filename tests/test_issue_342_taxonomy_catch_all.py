@@ -20,6 +20,7 @@ from laclaugpt_data_analysis.critical_ai import (
     CriticalAIObject,
 )
 from laclaugpt_data_analysis.social_semiotic import (
+    _TAXONOMY_CATCH_ALL_FIELDS,
     CompositionObservation,
     IntermodalRelation,
     MultimodalSummaryProposal,
@@ -28,7 +29,6 @@ from laclaugpt_data_analysis.social_semiotic import (
     SignRelation,
     TaxonomyToleranceMixin,
     UncertaintyObservation,
-    _TAXONOMY_CATCH_ALL_FIELDS,
     drain_taxonomy_substitutions,
     taxonomy_catch_all_fields,
 )

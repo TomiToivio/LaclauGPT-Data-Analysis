@@ -3,6 +3,7 @@
 import runpy
 import sys
 from pathlib import Path
+
 from ep24_cli import configure_step_cli
 
 selection = configure_step_cli(5, sys.argv[1:])

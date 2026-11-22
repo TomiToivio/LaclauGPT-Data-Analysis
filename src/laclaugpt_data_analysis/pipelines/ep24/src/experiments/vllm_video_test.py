@@ -27,10 +27,10 @@ import os
 import platform
 import random
 import re
-import shutil
 import shlex
-import sqlite3
+import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
@@ -46,7 +46,16 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from ep24_pipeline import assert_source_metadata_preserved, metadata_context
-from laclaugpt_quality import QUALITY_COLUMNS, merge_status, quality_decision_from_analysis
+from ep24_schema import (
+    REQUIRED_MEDIA_COLUMNS,
+    stable_source_id,
+)
+from ep24_schema import (
+    source_metadata as iter_source_metadata,
+)
+from ep24_schema import (
+    value as ep24_value,
+)
 from ep24_video import (
     VIDEO_INITIAL_SKIP_SECONDS,
     analysis_clip_path,
@@ -54,13 +63,8 @@ from ep24_video import (
     parse_scroll_metadata,
     prepare_analysis_clip,
 )
+from laclaugpt_quality import QUALITY_COLUMNS, merge_status, quality_decision_from_analysis
 from roihu_storage import MongoStorage, StorageConfig
-from ep24_schema import (
-    REQUIRED_MEDIA_COLUMNS,
-    source_metadata as iter_source_metadata,
-    stable_source_id,
-    value as ep24_value,
-)
 
 DEFAULT_MODEL = "Qwen/Qwen3-VL-32B-Instruct"
 DEFAULT_SAMPLE_SIZE = None

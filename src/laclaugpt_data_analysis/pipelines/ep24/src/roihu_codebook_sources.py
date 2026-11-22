@@ -33,7 +33,6 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-
 from roihu_codebooks import CodebookEntry, _entry_id, identity_key
 
 #: Workbook file name -> (kind, entity_type). The kind vocabulary matches

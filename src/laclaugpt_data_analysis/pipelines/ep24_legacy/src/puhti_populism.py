@@ -1,12 +1,13 @@
-from os import name, system
-import pandas as pd
-import ollama
 import json
 import logging
 import sqlite3
 from datetime import datetime
-from pydantic import BaseModel
 from logging.handlers import RotatingFileHandler
+from os import name, system
+
+import ollama
+import pandas as pd
+from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(handlers=[RotatingFileHandler('formula.log', encoding='utf-8', maxBytes=1000000, backupCount=5)], level=logging.DEBUG)

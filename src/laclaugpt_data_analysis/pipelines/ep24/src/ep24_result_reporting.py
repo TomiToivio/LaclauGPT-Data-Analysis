@@ -5,8 +5,8 @@ writes only selected generated result fields. Reporting is disabled by default\n
 """
 from __future__ import annotations
 
-import logging
 import csv
+import logging
 import os
 from pathlib import Path
 
@@ -81,6 +81,7 @@ def report_stage_rows(step: int, country: str, frame: pd.DataFrame, csv_path: st
 
 def main(argv: list[str] | None = None) -> int:
     import argparse
+
     from ep24_cli import checkpoint_path, normalize_country
     parser = argparse.ArgumentParser()
     parser.add_argument("--step", type=int, required=True)

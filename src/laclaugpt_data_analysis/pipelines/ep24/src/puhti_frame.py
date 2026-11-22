@@ -1,12 +1,14 @@
-import pandas as pd
+import ast
+import base64
 import logging
 import os
-import cv2
-import ollama
-import base64
-import ast
 import sqlite3
 from logging.handlers import RotatingFileHandler
+
+import cv2
+import ollama
+import pandas as pd
+
 logger = logging.getLogger(__name__)
 os.makedirs('./logs', exist_ok=True)
 os.makedirs('./database', exist_ok=True)

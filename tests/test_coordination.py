@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from laclaugpt_data_analysis.config import Settings
 from laclaugpt_data_analysis.coordination import (
     ConfigRevision,
     FileConfigStore,
@@ -7,8 +8,12 @@ from laclaugpt_data_analysis.coordination import (
     MessageEnvelope,
 )
 from laclaugpt_data_analysis.distributed import ProjectNamespace
-from laclaugpt_data_analysis.config import Settings
-from laclaugpt_data_analysis.task_queue import InMemoryTaskQueue, RedisStreamQueue, TaskEnvelope, redis_queue_from_settings
+from laclaugpt_data_analysis.task_queue import (
+    InMemoryTaskQueue,
+    RedisStreamQueue,
+    TaskEnvelope,
+    redis_queue_from_settings,
+)
 
 
 def test_file_config_store_preserves_immutable_history(tmp_path: Path) -> None:

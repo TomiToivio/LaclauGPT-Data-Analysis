@@ -1,11 +1,13 @@
-import pandas as pd
+import base64
 import logging
 import os
-import cv2
-import ollama
-import base64
 import sqlite3
 from logging.handlers import RotatingFileHandler
+
+import cv2
+import ollama
+import pandas as pd
+
 logger = logging.getLogger(__name__)
 logging.basicConfig(handlers=[RotatingFileHandler('./logs/frame.log', encoding='utf-8', maxBytes=1000000, backupCount=5)], level=logging.DEBUG)
 formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')

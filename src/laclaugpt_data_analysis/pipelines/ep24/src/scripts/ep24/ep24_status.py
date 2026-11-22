@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """Show MongoDB EP24 progress by country and numbered stage."""
-from pathlib import Path
 import argparse
 import os
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from ep24_settings import load_private_env
+
 load_private_env()
 
 from ep24_stage_orchestrator import countries, status_path

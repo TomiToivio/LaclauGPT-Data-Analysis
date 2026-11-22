@@ -7,7 +7,6 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import pandas as pd
-
 from ep24_models import ollama_model, ollama_model_source
 from ep24_pipeline import (
     ensure_columns,

@@ -1,9 +1,9 @@
 import logging
 import os
+from logging.handlers import RotatingFileHandler
 
 import ollama
 import pandas as pd
-from logging.handlers import RotatingFileHandler
 from pydantic import BaseModel
 
 os.makedirs('./logs', exist_ok=True)

@@ -126,6 +126,12 @@ def run_bounded_phase1(
 
 
 def main(argv: list[str] | None = None) -> int:
+    """CLI entry point for a bounded, text-only Phase 1 run over copied Phase 0 JSONL.
+
+    
+    Returns a process exit code rather than raising, because the host runner reads the code to
+    decide whether to retry, report, or stop.
+    """
     parser = argparse.ArgumentParser(
         description="Bounded text-only Phase 1 Laskin runner over copied Phase 0 JSONL"
     )

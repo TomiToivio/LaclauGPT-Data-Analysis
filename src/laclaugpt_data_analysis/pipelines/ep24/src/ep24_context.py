@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-
 from ep24_memory import seed_researcher_memory
 from ep24_rag import upsert_stage_rag
 from roihu_codebooks import COUNTRY_PROFILES, load_profile

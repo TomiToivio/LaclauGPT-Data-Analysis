@@ -22,7 +22,6 @@ from pathlib import Path
 import cv2
 import ollama
 import pandas as pd
-
 from ep24_models import ollama_model, ollama_model_source
 from ep24_pipeline import (
     assert_source_metadata_preserved,

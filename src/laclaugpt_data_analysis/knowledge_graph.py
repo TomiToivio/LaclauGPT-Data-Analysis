@@ -28,6 +28,12 @@ Layer = Literal["source", "laclau", "dna", "sna", "cross-layer"]
 
 
 class GraphProvenance(Model):
+    """Where a graph element came from: source record, URL and the run that produced it.
+
+    
+    Without this, a node in an exported graph cannot be traced back to the document that
+    justified it.
+    """
     source_id: str
     source_url: str | None = None
     run_id: str | None = None
@@ -41,6 +47,8 @@ class GraphProvenance(Model):
 
 
 class GraphNode(Model):
+    """A node in the analytical graph, identified by a stable URI.
+    """
     id: str
     uri: str
     kind: str
@@ -55,6 +63,8 @@ class GraphNode(Model):
 
 
 class GraphEdge(Model):
+    """A typed edge between two graph nodes.
+    """
     id: str
     uri: str
     source: str
@@ -72,6 +82,8 @@ class GraphEdge(Model):
 
 
 class AnalyticalGraph(Model):
+    """A whole graph for one project, with the schema version and base URI it was written under.
+    """
     schema_version: str = KG_SCHEMA_VERSION
     project_id: str
     base_uri: str
@@ -89,6 +101,8 @@ class AnalyticalGraph(Model):
 
 
 class SNARelation(Model):
+    """A social-network relation between two actors, derived from coded discourse relations.
+    """
     relation_id: str
     source_actor_id: str
     target_actor_id: str
@@ -106,6 +120,8 @@ class SNARelation(Model):
 
 
 class SNADerivedResult(Model):
+    """A derived network result (a metric, a community assignment) for an actor or community.
+    """
     result_id: str
     actor_id: str | None = None
     community_id: str | None = None
@@ -129,7 +145,9 @@ def canonical_actor_uri(base_uri: str, project_id: str, actor_id: str) -> str:
     return stable_uri(base_uri, project_id, "actor", actor_id)
 
 
-def canonical_concept_uri(base_uri: str, project_id: str, concept_id: str) -> str:
+def canonical_concept_uri(
+    base_uri: str, project_id: str, concept_id: str) -> str:
+    """The canonical URI for a concept under a project's base URI (stable across runs)."""
     return stable_uri(base_uri, project_id, "concept", concept_id)
 
 
@@ -677,6 +695,12 @@ def project_sna(
 
 
 def merge_graphs(*graphs: AnalyticalGraph) -> AnalyticalGraph:
+    """Merge graphs, taking the project id and base URI from the first and rejecting an empty call.
+
+    
+    Merging is additive: nodes and edges are unioned rather than replaced, so a partial run can
+    be folded into an earlier one without losing what the earlier run established.
+    """
     if not graphs:
         raise ValueError("At least one graph is required")
     project_id, base_uri = graphs[0].project_id, graphs[0].base_uri
@@ -708,6 +732,8 @@ def merge_graphs(*graphs: AnalyticalGraph) -> AnalyticalGraph:
 
 
 class GraphStore(Protocol):
+    """The store contract every graph backend implements: write a graph, read it back.
+    """
     def write(self, graph: AnalyticalGraph) -> dict[str, Any]: ...
 
     def read(self, project_id: str) -> AnalyticalGraph: ...
@@ -732,6 +758,9 @@ def _edge_row(edge: GraphEdge) -> dict[str, Any]:
 
 
 class CSVGraphStore:
+    """File-based graph store for interchange: one directory of CSV files, inspectable without
+    the library that wrote it.
+    """
     def __init__(self, directory: str | Path):
         self.directory = Path(directory)
 
@@ -793,6 +822,8 @@ class CSVGraphStore:
 
 
 class SQLiteGraphStore:
+    """Embedded SQLite graph store for local runs and tests.
+    """
     def __init__(self, path: str | Path):
         self.path = Path(path)
 
@@ -1022,7 +1053,13 @@ def graph_to_rdf(graph: AnalyticalGraph):
     return dataset
 
 
-def serialize_graph_rdf(graph: AnalyticalGraph, format_name: str = "json-ld") -> str:
+def serialize_graph_rdf(
+    graph: AnalyticalGraph, format_name: str = "json-ld") -> str:
+    """Serialise a graph as RDF (``json-ld``, ``turtle`` or ``nquads``).
+
+    Other format names are passed through to the serialiser, so adding a format does not require a
+    code change here.
+    """
     dataset = graph_to_rdf(graph)
     normalized = {"jsonld": "json-ld", "ttl": "turtle", "nq": "nquads"}.get(
         format_name.casefold(), format_name.casefold()

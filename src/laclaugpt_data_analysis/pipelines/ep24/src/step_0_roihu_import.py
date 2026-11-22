@@ -12,7 +12,7 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ep24_bootstrap import ordered_country_files, prepare_dataframe, country_slug
+from ep24_bootstrap import country_slug, ordered_country_files, prepare_dataframe
 from ep24_cli import normalize_country
 from ep24_settings import load_private_env
 

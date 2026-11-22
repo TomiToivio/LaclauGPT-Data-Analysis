@@ -26,7 +26,6 @@ from pathlib import Path
 
 import cv2
 import pandas as pd
-
 from asr_backend import (
     ASRResult,
     NoAudioStreamError,

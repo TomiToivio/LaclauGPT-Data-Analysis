@@ -12,8 +12,8 @@ import logging
 import os
 import subprocess
 import tempfile
-from pathlib import Path
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable
 
 LOG = logging.getLogger(__name__)

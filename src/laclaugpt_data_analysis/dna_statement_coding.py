@@ -35,11 +35,20 @@ DuplicatePolicy = Literal["preserve", "collapse_document_actor_concept_agreement
 
 
 class DNAEntityCandidate(BaseModel):
+    """A person or organisation the model proposes as part of a statement.
+
+    
+    ``id`` is optional on purpose: an unnamed actor ("the ministry") is still a participant,
+    and forcing a resolved identifier here would merge it into something it may not be.
+    """
     id: str | None = None
     label: str | None = None
 
 
 class DNAConceptCandidate(BaseModel):
+    """The concept or claim a statement is about, with the source wording kept in
+    ``original_text`` so a reviewer can compare the code against the words actually used.
+    """
     id: str | None = None
     label: str
     original_text: str | None = None
@@ -48,6 +57,12 @@ class DNAConceptCandidate(BaseModel):
 
 
 class DNAStatementCandidate(TaxonomyToleranceMixin):
+    """One proposed statement: who said it, about what.
+
+    
+    Actor fields are optional because not every statement names an actor; requiring both
+    would push the model to invent one rather than record the absence.
+    """
     person: DNAEntityCandidate | None = None
     organization: DNAEntityCandidate | None = None
     concept: DNAConceptCandidate
@@ -76,6 +91,10 @@ class DNAStatementCandidate(TaxonomyToleranceMixin):
 
 
 class DNAStatementBatch(BaseModel):
+    """One model response for one record: the statements it proposes and the reasons it
+    abstained. ``abstentions`` is part of the contract, not a debugging aid -- an empty batch
+    with no stated reason is indistinguishable from a failure to read the document.
+    """
     schema_version: str = "dna-statement-coding-v1"
     statements: list[DNAStatementCandidate] = Field(default_factory=list)
     abstentions: list[str] = Field(default_factory=list)
@@ -99,6 +118,8 @@ class DNAStatementCodingConfig(BaseModel):
 def dna_statement_coding_config(
     project_config: dict[str, Any] | None,
 ) -> DNAStatementCodingConfig:
+    """Read the DNA stage's settings from project configuration, applying its defaults.
+    """
     root = project_config or {}
     analysis = root.get("analysis") if isinstance(root.get("analysis"), dict) else {}
     raw = (
@@ -111,7 +132,9 @@ def dna_statement_coding_config(
     return DNAStatementCodingConfig.model_validate(raw or {})
 
 
-def dna_statement_coding_enabled(project_config: dict[str, Any] | None) -> bool:
+def dna_statement_coding_enabled(
+    project_config: dict[str, Any] | None) -> bool:
+    """Whether the DNA stage runs for this project (a predicate over ``dna_statement_coding_config``)."""
     return dna_statement_coding_config(project_config).enabled
 
 

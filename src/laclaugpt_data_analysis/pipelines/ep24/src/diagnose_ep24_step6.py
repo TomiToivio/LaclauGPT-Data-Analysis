@@ -5,6 +5,7 @@ import os
 from collections import Counter
 from pathlib import Path
 
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--env-file", default=os.environ.get("LACLAUGPT_EP24_ENV_FILE"))
