@@ -46,6 +46,31 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
     try:
         with os.fdopen(fd, "a+", encoding="utf-8") as stream:
             fcntl.flock(stream, fcntl.LOCK_EX)
+            stream.seek(0)
+            previous = deque(stream, maxlen=100)
+            skip_streak = reject_streak = 0
+            for raw in reversed(previous):
+                try:
+                    prior = json.loads(raw)
+                except ValueError:
+                    continue
+                state = prior.get("outcome")
+                if state == "check_ok":
+                    continue
+                if state == "already_running" and reject_streak == 0:
+                    skip_streak += 1
+                elif state == "preflight_rejected" and skip_streak == 0:
+                    reject_streak += 1
+                else:
+                    break
+            event["skip_streak"] = skip_streak + 1 if outcome == "already_running" else 0
+            event["reject_streak"] = reject_streak + 1 if outcome == "preflight_rejected" else 0
+            event["escalation"] = (
+                "skipped" if skip_threshold and event["skip_streak"] >= skip_threshold
+                else "rejected" if reject_threshold and event["reject_streak"] >= reject_threshold
+                else None
+            )
+            stream.seek(0, os.SEEK_END)
             stream.write(json.dumps(event, separators=(",", ":"), sort_keys=True) + "\n")
             stream.flush()
             # A stable, private status file can be polled by a host-side watcher.
@@ -57,7 +82,7 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
                     os.chmod(temporary, 0o600)
                     json.dump({k: event[k] for k in ("timestamp_utc", "outcome",
                               "skip_streak", "reject_streak", "escalation")}, status)
-                    status.write("\\n")
+                    status.write("\n")
                 os.replace(temporary, status_path)
             finally:
                 if temporary.exists():
@@ -83,7 +108,8 @@ def main() -> None:
     args = parser.parse_args()
     append_tick(args.path, stage=args.stage, exit_code=args.exit_code,
                 check_only=args.check_only, worker_status=args.worker_status,
-                report_status=args.report_status, git_sha=args.git_sha,\n                skip_threshold=args.skip_threshold, reject_threshold=args.reject_threshold)
+                report_status=args.report_status, git_sha=args.git_sha,
+                skip_threshold=args.skip_threshold, reject_threshold=args.reject_threshold)
 
 
 if __name__ == "__main__":
