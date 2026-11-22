@@ -105,14 +105,58 @@ def read_jsonl(path: str | Path) -> list[CanonicalRecord]:
     return [record_from_json(line) for line in source.read_text(encoding="utf-8").splitlines() if line]
 
 
+#: stdlib ``csv`` refuses a field longer than 131,072 characters unless the caller raises the limit, and
+#: spreadsheet importers are typically stricter. A researcher bundle carries whole transcripts, so a long
+#: value is written as numbered continuation columns instead of one oversized field (#488). Every part stays
+#: inside the cell budget, so a default ``csv.reader`` can read the file (#488).
+CSV_CELL_LIMIT = 90_000
+CSV_PART_SEPARATOR = "__part"
+
+
+def _split_long_values(rows: list[dict[str, Any]], fields: list[str]) -> tuple[list[dict[str, Any]], list[str]]:
+    """Fold over-long cell values into ``<field>, <field>__part2, ...`` and return the extra column names."""
+    extra: list[str] = []
+    split: list[dict[str, Any]] = []
+    for row in rows:
+        out = dict(row)
+        for field in fields:
+            value = out.get(field)
+            if not isinstance(value, str) or len(value) <= CSV_CELL_LIMIT:
+                continue
+            parts = [value[i : i + CSV_CELL_LIMIT] for i in range(0, len(value), CSV_CELL_LIMIT)]
+            out[field] = parts[0]
+            for number, part in enumerate(parts[1:], start=2):
+                key = f"{field}{CSV_PART_SEPARATOR}{number}"
+                out[key] = part
+                if key not in extra:
+                    extra.append(key)
+        split.append(out)
+    return split, extra
+
+
+def _rejoin_long_values(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Rebuild a value that was split across continuation columns."""
+    out: dict[str, Any] = {}
+    for key, value in row.items():
+        if CSV_PART_SEPARATOR not in key:
+            out[key] = value
+    for key in list(out):
+        number = 2
+        while (part_key := f"{key}{CSV_PART_SEPARATOR}{number}") in row:
+            out[key] = f"{out[key]}{row[part_key]}"
+            number += 1
+    return out
+
+
 def write_csv(path: str | Path, records: Iterable[CanonicalRecord]) -> None:
     """Write the canonical record and old-dashboard-compatible columns side by side."""
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     rows = [record_to_flat_row(record) for record in records]
     fields = ["schema_version", "source_url", *NESTED_COLUMNS, *LEGACY_RESEARCH_COLUMNS]
+    rows, extra = _split_long_values(rows, fields)
     with destination.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer = csv.DictWriter(handle, fieldnames=[*fields, *extra])
         writer.writeheader()
         writer.writerows(rows)
 
@@ -122,7 +166,7 @@ def read_csv(path: str | Path) -> list[CanonicalRecord]:
     if not source.exists():
         return []
     with source.open("r", encoding="utf-8", newline="") as handle:
-        return [record_from_flat_row(row) for row in csv.DictReader(handle)]
+        return [record_from_flat_row(_rejoin_long_values(row)) for row in csv.DictReader(handle)]
 
 
 def write_sqlite(path: str | Path, records: Iterable[CanonicalRecord]) -> None:
