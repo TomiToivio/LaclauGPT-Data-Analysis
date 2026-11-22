@@ -70,7 +70,7 @@ TICK_STAGE="preflight"
 WORKER_STATUS=""
 REPORT_STATUS=""
 record_tick_on_exit() {
-  local code=$?
+  local code=${1:-$?}
   trap - EXIT
   local telemetry_dir="${PRIVATE_CONFIG_DIR:-${PRIVATE_ROOT:+$PRIVATE_ROOT/analysis/ai26}}"
   if [[ -n "$telemetry_dir" && -d "$telemetry_dir" ]]; then
@@ -111,8 +111,7 @@ trap stop_wrapper TERM INT HUP
 record_tick_and_cleanup() {
   local code=$?
   cleanup_worker_group
-  (exit "$code")
-  record_tick_on_exit
+  record_tick_on_exit "$code"
 }
 trap record_tick_and_cleanup EXIT
 
