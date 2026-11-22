@@ -16,6 +16,7 @@ import os
 import socket
 import subprocess
 from dataclasses import dataclass, fields, replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -785,12 +786,26 @@ class AI26TaskWorker(TaskWorker):
                 return "duplicate"
         try:
             result = self.handler(task)
-            inserted = self.durable_store.write_result(
-                task,
-                result,
-                self.provenance,
-                fingerprint=self.generation_fingerprint,
-            )
+            try:
+                inserted = self.durable_store.write_result(
+                    task,
+                    result,
+                    self.provenance,
+                    fingerprint=self.generation_fingerprint,
+                )
+            except Exception as write_exc:
+                # #515: report safe MongoDB diagnostic metadata; exception strings can
+                # contain private source text or complete documents, so never print them.
+                mongo_details = getattr(write_exc, "details", None)
+                mongo_code = getattr(write_exc, "code", None)
+                if isinstance(mongo_details, dict):
+                    mongo_code = mongo_code or mongo_details.get("code")
+                logger.error(
+                    "AI26 result persistence failed: exception=%s mongo_code=%s "
+                    "operation=write_result; task remains retryable",
+                    type(write_exc).__name__, mongo_code,
+                )
+                raise
             self.queue.ack(claimed.message_id)
             return "completed" if inserted else "duplicate"
         except Exception as exc:
@@ -1149,6 +1164,41 @@ def _cycle_exit_code(counts: dict[str, int]) -> int:
     return 0
 
 
+def _write_ai26_progress(counts: dict[str, int], phase: str) -> None:
+    """Best-effort, private count-only progress checkpoint (#512), never a liveness claim.
+
+    A task may spend many minutes inside its first model call, so a stale checkpoint
+    is a diagnostic signal only, not sufficient grounds to terminate a worker.
+    """
+    target = os.environ.get("LACLAUGPT_AI26_PROGRESS_PATH", "").strip()
+    if not target:
+        return
+    path = Path(target)
+    temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with temporary.open("w", encoding="utf-8") as stream:
+            os.chmod(temporary, 0o600)
+            json.dump({
+                "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+                "phase": phase,
+                "pid": os.getpid(),
+                "claims": counts.get("claims", 0),
+                "completed": counts.get("completed", 0),
+                "retry": counts.get("retry", 0),
+                "dead_letter": counts.get("dead-letter", 0),
+            }, stream, sort_keys=True)
+            stream.write("\n")
+        os.replace(temporary, path)
+    except OSError as exc:
+        logger.warning("AI26 progress checkpoint unavailable: %s", type(exc).__name__)
+    finally:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
 def _run_bounded_cycle(
     worker: TaskWorker,
     *,
@@ -1182,7 +1232,9 @@ def _run_bounded_cycle(
     }
     failure_classes: dict[str, int] = {}
     work_units = 0
+    _write_ai26_progress(counts, "ready")
     while work_units < work_limit and counts["claims"] < claim_limit:
+        _write_ai26_progress(counts, "running_task")
         outcome = worker.run_once(reclaim_idle_ms=reclaim_idle_ms)
         counts["claims"] += 1
         counts[outcome] = counts.get(outcome, 0) + 1
@@ -1191,10 +1243,12 @@ def _run_bounded_cycle(
         failure_class = getattr(worker, "last_failure_class", None)
         if failure_class:
             failure_classes[failure_class] = failure_classes.get(failure_class, 0) + 1
+        _write_ai26_progress(counts, "task_finished")
         if outcome == "idle":
             break
         if outcome != "duplicate":
             work_units += 1
+    _write_ai26_progress(counts, "cycle_finished")
     return counts, failure_classes
 
 def _cycle_exit_status(

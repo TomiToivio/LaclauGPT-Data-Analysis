@@ -9,12 +9,15 @@ import argparse
 import fcntl
 import json
 import os
-from datetime import UTC, datetime
+from collections import deque
+from datetime import datetime, timezone
 from pathlib import Path
 
 
 def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
-                worker_status: str = "", report_status: str = "", git_sha: str = "") -> dict:
+                worker_status: str = "", report_status: str = "", git_sha: str = "",
+                skip_threshold: int = 0, reject_threshold: int = 0,
+                progress_path: Path | None = None) -> dict:
     """Write exactly one atomic JSONL event per invocation, including skipped ticks."""
     if exit_code == 3:
         outcome = "already_running"
@@ -27,7 +30,7 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
     else:
         outcome = "cycle_failed"
     event = {
-        "timestamp_utc": datetime.now(UTC).isoformat(),
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "outcome": outcome,
         "stage": stage,
         "exit_code": exit_code,
@@ -36,14 +39,72 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
         "report_status": report_status or None,
         "git_sha": git_sha or None,
     }
+    if progress_path is not None and stage == "lock":
+        # A checkpoint is only evidence of the last completed boundary, not proof
+        # that the current model call is hung or healthy.
+        try:
+            progress = json.loads(progress_path.read_text(encoding="utf-8"))
+            observed = datetime.fromisoformat(progress["timestamp_utc"])
+            if observed.tzinfo is None:
+                raise ValueError("progress timestamp missing timezone")
+            event["progress_age_seconds"] = max(0, int(
+                (datetime.now(timezone.utc) - observed).total_seconds()
+            ))
+            event["progress_phase"] = str(progress.get("phase", ""))[:32]
+            event["progress_claims"] = int(progress.get("claims", 0))
+            event["progress_completed"] = int(progress.get("completed", 0))
+            event["progress_retry"] = int(progress.get("retry", 0))
+        except (OSError, ValueError, TypeError, KeyError):
+            event["progress_phase"] = "unavailable"
+    if skip_threshold < 0 or reject_threshold < 0:
+        raise ValueError("thresholds must be >= 0 (zero disables escalation)")
     path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
     # A single O_APPEND write under flock; do not replace a shared inode.
-    fd = os.open(path, os.O_CREAT | os.O_APPEND | os.O_WRONLY, 0o600)
+    fd = os.open(path, os.O_CREAT | os.O_APPEND | os.O_RDWR, 0o600)
     try:
-        with os.fdopen(fd, "a", encoding="utf-8") as stream:
+        with os.fdopen(fd, "a+", encoding="utf-8") as stream:
             fcntl.flock(stream, fcntl.LOCK_EX)
+            stream.seek(0)
+            previous = deque(stream, maxlen=100)
+            skip_streak = reject_streak = 0
+            for raw in reversed(previous):
+                try:
+                    prior = json.loads(raw)
+                except ValueError:
+                    continue
+                state = prior.get("outcome")
+                if state == "check_ok":
+                    continue
+                if state == "already_running" and reject_streak == 0:
+                    skip_streak += 1
+                elif state == "preflight_rejected" and skip_streak == 0:
+                    reject_streak += 1
+                else:
+                    break
+            event["skip_streak"] = skip_streak + 1 if outcome == "already_running" else 0
+            event["reject_streak"] = reject_streak + 1 if outcome == "preflight_rejected" else 0
+            event["escalation"] = (
+                "skipped" if skip_threshold and event["skip_streak"] >= skip_threshold
+                else "rejected" if reject_threshold and event["reject_streak"] >= reject_threshold
+                else None
+            )
+            stream.seek(0, os.SEEK_END)
             stream.write(json.dumps(event, separators=(",", ":"), sort_keys=True) + "\n")
             stream.flush()
+            # A stable, private status file can be polled by a host-side watcher.
+            # Alarm delivery itself remains an operator choice, not an invented route.
+            status_path = path.with_name("ai26-analysis-alert.json")
+            temporary = status_path.with_name(status_path.name + "." + str(os.getpid()) + ".tmp")
+            try:
+                with temporary.open("w", encoding="utf-8") as status:
+                    os.chmod(temporary, 0o600)
+                    json.dump({k: event[k] for k in ("timestamp_utc", "outcome",
+                              "skip_streak", "reject_streak", "escalation")}, status)
+                    status.write("\n")
+                os.replace(temporary, status_path)
+            finally:
+                if temporary.exists():
+                    temporary.unlink()
             fcntl.flock(stream, fcntl.LOCK_UN)
     finally:
         # fdopen owns the descriptor after success; do not double-close.
@@ -60,10 +121,15 @@ def main() -> None:
     parser.add_argument("--worker-status", default="")
     parser.add_argument("--report-status", default="")
     parser.add_argument("--git-sha", default="")
+    parser.add_argument("--progress-path", type=Path, default=None)
+    parser.add_argument("--skip-threshold", type=int, default=0)
+    parser.add_argument("--reject-threshold", type=int, default=0)
     args = parser.parse_args()
     append_tick(args.path, stage=args.stage, exit_code=args.exit_code,
                 check_only=args.check_only, worker_status=args.worker_status,
-                report_status=args.report_status, git_sha=args.git_sha)
+                report_status=args.report_status, git_sha=args.git_sha,
+                skip_threshold=args.skip_threshold, reject_threshold=args.reject_threshold,
+                progress_path=args.progress_path)
 
 
 if __name__ == "__main__":
