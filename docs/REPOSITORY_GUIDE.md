@@ -74,3 +74,5 @@ changing the relevant modules.
 **Practical test:** A reader should find the scientific step in a numbered
 file, its supporting contract or adapter in a descriptively named module,
 and the operational invocation in one documented CLI or script.
+
+For source-to-interpretation traceability, use the [Phase 1 researcher guide](methods/phase1_researcher_guide.md); its coding proposals require human review.
