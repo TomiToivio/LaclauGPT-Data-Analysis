@@ -8,6 +8,8 @@ falling back to local persistence.
 """
 from __future__ import annotations
 
+from .mongo_safety import strip_mongo_id
+
 import csv
 import importlib.util
 import json
@@ -136,7 +138,7 @@ class MongoStore:
             # "the (immutable) field '_id' was found to have been altered", and the caller's completed
             # analysis was discarded. The store is the boundary that must not attempt it: ``read()``
             # already strips ``_id``, so ``write()`` strips it symmetrically.
-            payload = {key: value for key, value in dict(row).items() if key != "_id"}
+            payload = strip_mongo_id(row)
             payload["project_id"] = self.project_id
             source_url = str(payload.get("source_url") or "")
             if source_url:
