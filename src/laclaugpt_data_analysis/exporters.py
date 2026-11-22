@@ -8,7 +8,7 @@ from collections.abc import Iterable
 from pathlib import Path
 
 from .canonical import CanonicalRecord
-from .interchange import write_csv, write_jsonl
+from .interchange import record_to_flat_row, write_jsonl
 from .multimodal.evidence import MultimodalEvidenceBundle
 from .research_record import ensure_research_layers
 
@@ -72,6 +72,52 @@ def write_human_reports(
     return written
 
 
+
+# Python's default csv.reader refuses a field longer than 131072 characters.
+# Keep well below that threshold, even after CSV quoting. This is a bounded
+# researcher VIEW: the paired canonical JSONL remains complete and lossless.
+RESEARCH_CSV_CELL_LIMIT = 100_000
+
+
+def _bounded_csv_cell(value: str, *, column: str) -> str:
+    """Represent oversize values explicitly rather than silently cutting JSON."""
+    if len(value) <= RESEARCH_CSV_CELL_LIMIT:
+        return value
+    if column in {
+        "source", "content", "intermediate", "evidence", "analysis",
+        "human_readable", "provenance", "review", "legacy",
+        "source_native_ids", "raw_capture",
+    }:
+        return json.dumps({
+            "_csv_view_truncated": True,
+            "column": column,
+            "original_characters": len(value),
+            "complete_record": "paired canonical JSONL (match by source_url)",
+        }, sort_keys=True)
+    suffix = f" [TRUNCATED IN RESEARCH CSV: original {len(value)} characters; full value in paired canonical JSONL]"
+    return value[: RESEARCH_CSV_CELL_LIMIT - len(suffix)] + suffix
+
+
+def _write_research_csv(records: list[CanonicalRecord], path: Path) -> None:
+    """Write an importable, bounded projection; never modify canonical records."""
+    from .interchange import NESTED_COLUMNS
+    from .research_record import LEGACY_RESEARCH_COLUMNS
+
+    fields = ["schema_version", "source_url", *NESTED_COLUMNS, *LEGACY_RESEARCH_COLUMNS]
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for record in records:
+            row = record_to_flat_row(record)
+            writer.writerow({key: _bounded_csv_cell(row[key], column=key) for key in fields})
+
+
+def _require_distinct_bundle_identities(records: list[CanonicalRecord]) -> None:
+    """Refuse export before writing anything when identities are not distinct."""
+    identities = [item.source_url.strip() for item in records]
+    if any(not source_url for source_url in identities) or len(set(identities)) != len(identities):
+        raise ValueError("bundle contains missing or duplicate source identities")
+
 def write_research_bundle(
     records: Iterable[CanonicalRecord],
     output_root: str | Path,
@@ -85,13 +131,14 @@ def write_research_bundle(
     from the canonical JSON/DB representation.
     """
     items = [ensure_research_layers(record) for record in records]
+    _require_distinct_bundle_identities(items)
     root = Path(output_root)
     root.mkdir(parents=True, exist_ok=True)
     jsonl_path = root / f"{stem}.jsonl"
     csv_path = root / f"{stem}_researchers.csv"
     reports_dir = root / f"{stem}_reports"
     write_jsonl(jsonl_path, items)
-    write_csv(csv_path, items)
+    _write_research_csv(items, csv_path)
     reports = write_human_reports(items, reports_dir)
     return {
         "jsonl": jsonl_path,
