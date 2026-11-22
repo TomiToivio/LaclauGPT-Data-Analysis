@@ -2,6 +2,26 @@
 
 **New to the codebase?** Start with the [repository navigation guide](docs/REPOSITORY_GUIDE.md) for the module map, development commands and safe refactoring boundaries. For scientific step order, read [Data Analysis Pipeline](docs/DATA_ANALYSIS_PIPELINE.md).
 
+## Find and run the analysis
+
+| Research or development task | Start here |
+| --- | --- |
+| Follow an AI26 item from preprocessing through discourse and network analysis | [Seven numbered steps and their inputs](laclaugpt/HUMAN_PIPELINE.md) |
+| Inspect the study design and public coding guidance | [AI26 reference case](docs/AI26_REFERENCE_CASE.md) and [public codebooks](codebooks/public/) |
+| Trace source identity, evidence and provenance through storage | [Canonical record contract](docs/CANONICAL_RECORD.md) and [Python model](src/laclaugpt_data_analysis/canonical.py) |
+| Find the implementation behind an installed command | Read `[project.scripts]` in [pyproject.toml](pyproject.toml), then open the named module under [src/laclaugpt_data_analysis](src/laclaugpt_data_analysis/) |
+| Inspect deployment or reproduce a regression | [Deployment files](deployment/), [operator scripts](scripts/) and [synthetic fixtures](tests/fixtures/) |
+
+From the repository root, use Python 3.11 or later in a virtual environment:
+
+```bash
+python -m pip install -e '.[dev]'
+laclaugpt-analysis --help
+python -m pytest tests/test_cross_module_parity_fixture.py
+```
+
+[Reading an AI26 record as social-science evidence](docs/AI26_PHASE1_METHOD.md) maps the Phase 1 paper to the code and follows one quoted claim through human review.
+
 > [!IMPORTANT]
 > **Continuous software development; research phases apply to papers only.** This repository's `main` branch maintains the current AI26 implementation. AI26 is the default and only project developed here. EP24, Hungary26 and Brazil26 are moving to separate project repositories. Historical compatibility code may remain, but it is dormant and must not drive new architecture or defaults. Human-readable/project-publication versions belong in the legacy EP24 or other project-specific repositories; this repository currently prioritizes machine-readable canonical data, reproducibility and live AI26 operations over human-readable reports or legacy dashboards.
 
@@ -15,6 +35,12 @@
 > **Part of the [LaclauGPT](https://github.com/TomiToivio/LaclauGPT) project.** The main LaclauGPT repository is the **meta-repository** and project front door: it contains the scientific paper, theory, shared architecture, canonical data contract and complete-system documentation. This repository is only the **Data Analysis** implementation stage.
 >
 > **Project map:** [LaclauGPT / paper + meta-repo](https://github.com/TomiToivio/LaclauGPT) → [Data Collection](https://github.com/TomiToivio/LaclauGPT-Data-Collection) → **Data Analysis (you are here)** → [Data Visualization](https://github.com/TomiToivio/LaclauGPT-Data-Visualization)
+
+**Researcher-facing Phase 1 guide:** [Follow source evidence through provisional discourse codes and human review](docs/methods/phase1_researcher_guide.md). It maps the six operations in the [locked Phase 1 paper](https://github.com/TomiToivio/LaclauGPT/blob/main/paper/PHASE_1_PAPER.md) to code, includes a synthetic attribution example, and distinguishes implementation from proposed validation.
+
+**New to the codebase?** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) maps the tree, the
+pipelines and where each feature lives; [docs/README.md](docs/README.md) indexes every topical
+document in `docs/`.
 
 **LaclauGPT** is an open social-science research framework for **LLM-assisted computational discourse analysis** of large textual and multimodal corpora. It combines computational methods with interpretive political research while keeping model outputs traceable to source evidence, uncertainty, provenance and human review.
 
@@ -114,6 +140,8 @@ preprocessing
 ```
 
 The current pipeline routes modalities **record-by-record by capability**. When usable materialized images or video frames are present, the visual/multimodal stage runs automatically; when no usable media is available, the record proceeds through the text/caption + metadata path without dummy media fields. Mixed datasets can therefore contain text-only and multimodal records in the same project. Project settings may still constrain unsupported or expensive processing explicitly, but media presence is the ordinary activation signal. Model outputs remain provisional, evidence-linked pre-analysis for human review.
+
+**Where does anything live?** Start with **[docs/REPOSITORY_MAP.md](docs/REPOSITORY_MAP.md)** — one page with the directory tree, every installed entry point, the common commands and the five documents to read first.
 
 For the readable execution order, start with **[docs/DATA_ANALYSIS_PIPELINE.md](docs/DATA_ANALYSIS_PIPELINE.md)** and `src/laclaugpt_data_analysis/stages/runner.py`. For the repository-wide implementation style, including the human-owned numbered AI26 steps and the rule that research logic stays visible, see **[CODING_STYLE.md](CODING_STYLE.md)**. The five scientific stages are deliberately exposed as separate files: preprocess, frame/multimodal analysis, descriptive summary, Laclau analysis, and postprocess.
 

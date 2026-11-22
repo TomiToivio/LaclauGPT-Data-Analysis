@@ -92,6 +92,18 @@ def _candidate_objects(
     values: list[EvidenceLinkedCandidate],
     kind: str,
 ) -> list[DiscourseObject]:
+    """Turn evidence-linked candidates into canonical objects, without upgrading their status.
+
+    Every object keeps the evidence ids it was proposed with, stays ``PROVISIONAL``, and records whether
+    a corpus is required to assess it at all.
+
+    ``corpus_required`` covers ``floating_signifier``, ``empty_signifier`` and ``formation`` because each
+    of those is a claim *about relations across documents*: that different actors pull a signifier apart,
+    that it is used because it can mean anything, or that an actor belongs to a shared formation. A single
+    document can propose the label but cannot establish it, so the flag is written into the object's
+    metadata as ``corpus_validation_required`` and left for the researcher to act on. See
+    ``docs/methods/RESEARCH_METHOD_GUIDE.md`` §4 and Phase 1 paper §3.4.
+    """
     corpus_required = kind in {"floating_signifier", "empty_signifier", "formation"}
     return [
         DiscourseObject(

@@ -41,6 +41,8 @@ def import_dats_human_correction(payload: dict[str, Any]) -> HumanReview:
     reviewed_at = payload.get("reviewed_at")
     if not reviewed_at:
         raise ValueError("DATS human correction requires reviewed_at")
+    # A separate event preserves the distinction between the original proposal
+    # and the researcher who took responsibility for revising its interpretation.
     return HumanReview(
         review_id=str(payload.get("review_id") or f"dats-review:{payload['target_id']}"),
         target_id=str(payload["target_id"]),

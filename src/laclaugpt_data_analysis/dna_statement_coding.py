@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from .canonical import CanonicalRecord
-from .codebooks import CodebookEntry
+from .codebooks import CodebookEntry, format_codebook_context
 from .context_envelope import PromptEnvelope, build_prompt_envelope
 from .discourse_network.models import DiscourseStatement, EvidenceSpan, Stance, ValidationStatus
 from .llm.structured_output import chat_structured
@@ -115,14 +115,6 @@ def dna_statement_coding_enabled(project_config: dict[str, Any] | None) -> bool:
     return dna_statement_coding_config(project_config).enabled
 
 
-def _memory_text(entries: list[CodebookEntry]) -> str:
-    rows: list[str] = []
-    for entry in entries:
-        aliases = ", ".join(entry.aliases)
-        rows.append(f"- {entry.kind}: {entry.label}" + (f" (aliases: {aliases})" if aliases else ""))
-    return "\n".join(rows)
-
-
 def _filtered_previous_analysis(record: CanonicalRecord) -> str:
     selected: dict[str, Any] = {}
     for name, value in record.intermediate.stage_outputs.items():
@@ -166,7 +158,7 @@ def _build_envelope(
         source_context=context.source_context,
         situational_context=(context.situational_context if config.include_periodic_context else ""),
         memory_context="\n".join(
-            part for part in (context.memory_context, _memory_text(entries)) if part
+            part for part in (context.memory_context, format_codebook_context(entries)) if part
         ),
         rag_context=(context.rag_context if config.include_rag else ""),
         context_provenance=context.provenance,

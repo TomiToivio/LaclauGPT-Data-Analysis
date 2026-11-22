@@ -26,6 +26,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from .checksums import sha256_file as _sha256_file
+
 logger = logging.getLogger(__name__)
 
 # A record may name its object under any of these canonical locations. The order
@@ -145,14 +147,6 @@ class StagedObject:
 
 def _digest(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _dotted(payload: Any, dotted: str) -> Any:

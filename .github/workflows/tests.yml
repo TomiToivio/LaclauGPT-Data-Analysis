@@ -51,16 +51,21 @@ jobs:
           echo "Checking changed Python files for newly introduced Ruff violations:"
           printf '  %s\n' "${FILES[@]}"
 
-          # Capture Ruff diagnostics for HEAD. Ruff exits non-zero when it finds
-          # violations, so do not let `set -e` abort before we can compare them.
-          ruff check --output-format=json -- "${FILES[@]}" > /tmp/ruff-head.json || true
+          mapfile -t NEW_FILES < <(git diff --name-only --diff-filter=A "$BASE_SHA" HEAD -- '*.py')
+          if (( ${#NEW_FILES[@]} )); then
+            ruff format --check -- "${NEW_FILES[@]}"
+          fi
 
-          # Recreate the base versions of changed files in a temporary tree and
-          # lint them with the same repository configuration. Files added by the
-          # current change have no baseline diagnostics.
-          BASE_TREE="$(mktemp -d)"
-          trap 'rm -rf "$BASE_TREE"' EXIT
-          git worktree add --detach "$BASE_TREE" "$BASE_SHA" >/dev/null
+          # Ruff returns 1 for lint findings and 2 for a failed invocation.
+          lint_report() {
+            ruff check --output-format=json -- "$@" || [[ $? == 1 ]]
+          }
+
+          TEMP_DIR="$(mktemp -d)"
+          BASE_TREE="$TEMP_DIR/base"
+          git worktree add --detach "$BASE_TREE" "$BASE_SHA"
+          trap 'git worktree remove --force "$BASE_TREE"; rm -rf "$TEMP_DIR"' EXIT
+          lint_report "${FILES[@]}" > "$TEMP_DIR/head.json"
           (
             cd "$BASE_TREE"
             BASE_FILES=()
@@ -69,60 +74,13 @@ jobs:
                 BASE_FILES+=("$file")
               fi
             done
-            if (( ${#BASE_FILES[@]} == 0 )); then
-              printf '[]\n' > /tmp/ruff-base.json
+            if (( ${#BASE_FILES[@]} )); then
+              lint_report "${BASE_FILES[@]}"
             else
-              ruff check --output-format=json -- "${BASE_FILES[@]}" > /tmp/ruff-base.json || true
+              echo '[]'
             fi
-          )
-          git worktree remove --force "$BASE_TREE" >/dev/null
-
-          # Legacy debt is a baseline, not a reason to reject a focused change.
-          # Compare diagnostics by file/rule/message and fail only when the new
-          # revision contains more instances than the base revision. This also
-          # avoids false positives when an unrelated edit merely shifts line
-          # numbers of pre-existing diagnostics.
-          python - <<'PY'
-          import collections
-          import json
-          import os
-          import sys
-
-          def load(path):
-              with open(path, encoding="utf-8") as handle:
-                  return json.load(handle)
-
-          def key(item):
-              filename = os.path.normpath(item["filename"])
-              return (filename, item.get("code"), item.get("message"))
-
-          base = load("/tmp/ruff-base.json")
-          head = load("/tmp/ruff-head.json")
-          base_counts = collections.Counter(key(item) for item in base)
-          seen = collections.Counter()
-          new = []
-
-          for item in head:
-              fingerprint = key(item)
-              seen[fingerprint] += 1
-              if seen[fingerprint] > base_counts[fingerprint]:
-                  new.append(item)
-
-          if not new:
-              print("No new Ruff violations introduced by this change.")
-              sys.exit(0)
-
-          print("New Ruff violations introduced by this change:")
-          for item in new:
-              location = item.get("location") or {}
-              row = location.get("row", "?")
-              column = location.get("column", "?")
-              code = item.get("code") or "ruff"
-              print(f"{item['filename']}:{row}:{column}: {code} {item.get('message', '')}")
-
-          print(f"\n{len(new)} new Ruff violation(s). Existing baseline debt is ignored.")
-          sys.exit(1)
-          PY
+          ) > "$TEMP_DIR/base.json"
+          python tools/compare_ruff_reports.py "$TEMP_DIR/base.json" "$BASE_TREE" "$TEMP_DIR/head.json" "$PWD"
 
   test:
     name: test (${{ matrix.python-version }})

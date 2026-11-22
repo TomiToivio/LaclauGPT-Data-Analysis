@@ -1,8 +1,10 @@
 # Documentation index
 
-Every document in `docs/`, grouped by what it is for. 72 files; this page is
+Every document in `docs/`, grouped by what it is for. 71 files; this page is
 generated from each file's own title, so it cannot drift from what the files say about
 themselves. Start with [ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the repository.
+
+- [Phase 1 research method: source evidence to human review](AI26_PHASE1_METHOD.md)
 
 ## AI26 operations and runtime
 
@@ -48,6 +50,7 @@ themselves. Start with [ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the 
 - [MongoDB-first graph / vector RAG](RAG.md)
 - [Redis coordination for distributed analysis](REDIS_COORDINATION.md)
 - [Optional Redis analysis task worker](REDIS_TASK_WORKER.md)
+- [Repository map: where everything lives](REPOSITORY_MAP.md)
 - [Versioned analysis pipelines (#399)](VERSIONED_ANALYSIS_PIPELINES.md)
 
 ## Research record and data contracts
@@ -92,5 +95,7 @@ themselves. Start with [ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the 
 ## Cross-cutting notes
 
 - [Repository navigation for human maintainers](REPOSITORY_GUIDE.md)
+
+- [Repository map: paths and responsibilities](REPOSITORY_MAP.md)
 
 - [LaclauGPT Coding Style](CODING_STYLE.md)

@@ -22,10 +22,9 @@ Usage:
       --private-overlay /path/to/private_overlay.yaml \\
       --analysis-config /path/to/analysis.json
 """
-from __future__ import annotations
+from __future__ import annotations  # noqa: I001
 
 import argparse
-import hashlib
 import json
 import os
 import subprocess
@@ -35,17 +34,10 @@ from pathlib import Path
 from typing import Any
 
 from .canonical import SCHEMA_VERSION
+from .checksums import sha256_file as _sha256_file
 from .codebooks import codebook_layer_snapshot, load_codebook, merge_codebooks
 
 DEFAULT_MODEL = "gemma4:12b"
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _repo_root() -> Path:

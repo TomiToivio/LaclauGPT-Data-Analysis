@@ -4,7 +4,7 @@ Project manifests, source identifiers, codebooks, credentials and paths stay pri
 The public engine supplies orchestration, Allas/S3 staging, checkpointing, durable state,
 Redis best-effort leases and canonical-pipeline integration.
 """
-from __future__ import annotations
+from __future__ import annotations  # noqa: I001
 
 import argparse
 import csv
@@ -22,6 +22,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 from .canonical import CanonicalRecord
+from .checksums import sha256_file
 from .canonical_pipeline import PipelineContext, run_canonical_pipeline
 from .codebooks import load_codebook
 from .config import Settings, load_settings
@@ -54,14 +55,6 @@ class ReprocessingConfig(BaseModel):
 def load_reprocessing_config(path: str | Path) -> ReprocessingConfig:
     payload = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
     return ReprocessingConfig.model_validate(payload)
-
-
-def sha256_file(path: str | Path) -> str:
-    digest = hashlib.sha256()
-    with Path(path).open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _dotted(payload: dict[str, Any], path: str) -> Any:
