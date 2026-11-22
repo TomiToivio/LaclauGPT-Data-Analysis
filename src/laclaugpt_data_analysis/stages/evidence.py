@@ -17,6 +17,15 @@ When a quote *is* found, the evidence carries real character offsets and
 which the model paraphrases instead of quoting — which is itself a finding about
 the model's reliability, and part of the audit trail a reviewer needs.
 
+What a match establishes, and what it does not
+----------------------------------------------
+A located quotation establishes that these words occur in the retained source representation. It does not
+establish who said them, whether the surrounding text endorses or reports them, or what they signify
+politically (paper §3.4, closing paragraph: a matching quotation can still be irrelevant, misattributed, or
+stripped of crucial context). Attribution, negation and reported speech are interpretive questions the
+summary and discourse stages answer, and a reviewer checks; the offsets here answer only the mechanical
+one. `docs/methods/phase1_researcher_guide.md` §4 carries the worked example.
+
 The minimum length rule
 -----------------------
 Quotes shorter than `_MIN_QUOTE_CHARS` are refused even when they match: a very

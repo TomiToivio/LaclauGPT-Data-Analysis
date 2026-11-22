@@ -134,6 +134,14 @@ def load_codebook(path: str | Path, *, strict: bool = True) -> Codebook:
 
 
 def merge_codebooks(codebooks: Iterable[Codebook], *, codebook_id: str = "effective") -> Codebook:
+    """Layer several codebooks into one, later layers overriding earlier ones by (kind, label).
+
+    Merging here is a *configuration* act: the project book plus a private overlay, in a stated order.
+    It is not the identity resolution the paper describes in §3.4 operation 4, where "semantic similarity
+    is insufficient grounds for merging political meanings". Do not use this function to decide that two
+    labels mean the same thing — that decision belongs to a researcher, and the entries it produces stay
+    provisional until reviewed.
+    """
     """Combine codebooks into one effective view, without deciding any identity question.
 
     Later codebooks win on the same ``(kind, casefold(label))`` key, and the result carries a
