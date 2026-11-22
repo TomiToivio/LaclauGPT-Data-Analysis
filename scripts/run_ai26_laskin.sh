@@ -81,10 +81,13 @@ record_tick_on_exit() {
     local sha=""
     sha=$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null) || true
     [[ -z "$sha" ]] || args+=(--git-sha "$sha")
-    python3 "$ROOT_DIR/src/laclaugpt_data_analysis/ai26_tick_telemetry.py" "${args[@]}" ||
-      printf '[%s] WARNING: unable to persist AI26 tick telemetry\\n' "$(date -Is)" >&2
+    local interpreter="$ROOT_DIR/.venv/bin/python"
+    [[ -x "$interpreter" ]] || interpreter=python3
+    if ! "$interpreter" "$ROOT_DIR/src/laclaugpt_data_analysis/ai26_tick_telemetry.py" "${args[@]}"; then
+      printf '[%s] WARNING: AI26 tick journal append failed; verify journal path and permissions\\n' "$(date -Is)" >&2
+    fi
   else
-    printf '[%s] WARNING: private telemetry directory unavailable; no tick JSONL written\\n' "$(date -Is)" >&2
+    printf '[%s] WARNING: private telemetry directory unavailable; no tick JSONL written\n' "$(date -Is)" >&2
   fi
 }
 trap record_tick_on_exit EXIT
@@ -106,22 +109,7 @@ done
 
 log() { printf '[%s] %s\n' "$(date -Is)" "$*"; }
 
-# #506: one persistent, structured record per tick. A monitor must be able to tell a successful cycle from a
-# configuration rejection and from a lock-held skip without reading the log; cron's exit status alone cannot
-# express the difference between "did the work" and "declined to start". Telemetry never fails a cycle.
-tick_status() {
-  local outcome="$1" code="$2" detail="${3:-}" interpreter="$ROOT_DIR/.venv/bin/python"
-  [[ -x "$interpreter" ]] || return 0
-  "$interpreter" -m laclaugpt_data_analysis.tick_status record \
-    --outcome "$outcome" --exit-code "$code" --detail "$detail" \
-    --head "$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null || printf '')" >/dev/null 2>&1 || true
-}
-
-fail() {
-  printf '[%s] ERROR: %s\n' "$(date -Is)" "$*" >&2
-  tick_status preflight_rejected 2 "$*"
-  exit 2
-}
+fail() { printf '[%s] ERROR: %s\\n' "$(date -Is)" "$*" >&2; exit 2; }
 
 # ---------------------------------------------------------------- preflight --
 [[ -d "$ROOT_DIR" ]] || fail "repository root not found: $ROOT_DIR"
@@ -230,7 +218,6 @@ TICK_STAGE="lock"
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
   log "AI26 Laskin analysis skipped: lock held; status=already_running exit_code=3"
-  tick_status already_running 3 "lock held by a running cycle"
   exit 3
 fi
 
@@ -361,9 +348,4 @@ fi
 
 TICK_STAGE="complete"
 log "AI26 Laskin analysis end worker_status=$WORKER_STATUS report_status=$REPORT_STATUS status=$FINAL_STATUS"
-case "$FINAL_STATUS" in
-  0) tick_status success 0 "worker_status=$WORKER_STATUS report_status=$REPORT_STATUS" ;;
-  4) tick_status report_failed 4 "worker_status=$WORKER_STATUS report_status=$REPORT_STATUS" ;;
-  *) tick_status cycle_failed "$FINAL_STATUS" "worker_status=$WORKER_STATUS report_status=$REPORT_STATUS" ;;
-esac
 exit "$FINAL_STATUS"
