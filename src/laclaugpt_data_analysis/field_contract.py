@@ -107,8 +107,10 @@ UNPRODUCED_FIELDS: dict[str, UnproducedField] = {
         reason="AnalysisProposal declares discourses and pipeline.py copies it, but the discourse "
                "stage returns DiscourseProposal, which has no discourses field — so the copy is always "
                "an empty list",
-        decision="add a discourse level to the Phase 1 vocabulary, or retire the field and stop "
-                 "exporting it to RDF, the knowledge graph and the review export",
+        decision="RETIRED 2026-11-22 (D1, docs/AI26_OPEN_DECISIONS.md): no discourse level exists in "
+                 "the Phase 1 vocabulary and none is computed, so the review export no longer carries "
+                 "the column. The storage field stays reserved for Phase 2 rather than breaking 5 302 "
+                 "stored records; a phase that produces discourses fills it and re-enables the column.",
     ),
     "themes": UnproducedField(
         field="themes",
@@ -117,8 +119,10 @@ UNPRODUCED_FIELDS: dict[str, UnproducedField] = {
         reason="pipeline.py assigns themes from proposal.themes and the prompt asks for them, but the "
                "analysed corpus carries none: the path that ran is the discourse stage, whose "
                "DiscourseProposal has no themes field",
-        decision="add themes to the discourse proposal (and name the Phase 1 concept they "
-                 "operationalise), or drop the field, the prompt line and the export column",
+        decision="RETIRED FROM THE PROMPT 2026-11-22 (D3, docs/AI26_OPEN_DECISIONS.md): the prompt no "
+                 "longer asks for themes, because a field the schema discards spends tokens on text that "
+                 "is thrown away. Kept reserved in the record until a decision names what a theme is "
+                 "that `topics` does not already capture.",
     ),
 }
 

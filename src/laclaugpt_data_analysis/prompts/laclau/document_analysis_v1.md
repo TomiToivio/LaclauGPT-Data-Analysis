@@ -8,4 +8,4 @@
 {codebook_context}
 
 [TASK]
-Return explicit topics/themes, sentiment observations, stance, floating/empty-signifier candidates, equivalence/difference chains, antagonisms and actor/entity relations only when supported by the current source item. Do not invent multimodal evidence for text-only records. Keep theoretical candidates provisional and report uncertainty or abstention when evidence is insufficient.
+Return explicit topics, sentiment observations, stance, floating/empty-signifier candidates, equivalence/difference chains, antagonisms and actor/entity relations only when supported by the current source item. Do not invent multimodal evidence for text-only records. Keep theoretical candidates provisional and report uncertainty or abstention when evidence is insufficient.
