@@ -11,6 +11,7 @@ from __future__ import annotations
 import time
 from typing import Any, Mapping
 
+from ..mongo_write import without_immutable_id
 from ..storage import mongo_client
 from ..timequery import now_utc
 from .models import (
@@ -172,9 +173,7 @@ class MongoTaskStore:
             if not result_supersedes_fingerprint(stored, fingerprint):
                 return False
             # Keep the existing document's identity: a replacement may not carry `_id` at all.
-            self.results.replace_one(
-                query, {key: value for key, value in document.items() if key != "_id"}
-            )
+            self.results.replace_one(query, without_immutable_id(document))
             return True
 
     def write_failure(

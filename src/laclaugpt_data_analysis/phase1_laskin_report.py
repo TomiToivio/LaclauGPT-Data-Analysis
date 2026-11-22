@@ -8,6 +8,7 @@ from typing import Any, Mapping, Sequence
 
 from .canonical import CanonicalRecord
 from .config import Settings, load_settings
+from .mongo_write import without_immutable_id
 from .periodic_summary import (
     PeriodicDiscourseSummary,
     grouped_summaries,
@@ -270,7 +271,7 @@ def generate_latest_reports(
                 "run_id": run_id,
                 "report_id": summary.id,
             },
-            {"$set": document},
+            {"$set": without_immutable_id(document)},
             upsert=True,
         )
 
