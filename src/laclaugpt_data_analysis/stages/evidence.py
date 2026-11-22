@@ -113,6 +113,20 @@ def _locate_elided(normalised_source: str, normalised_quote: str,
     return positions[first], positions[last] + 1
 
 
+# #458 / D6: the model may decline to quote; that is a result, not a citation.
+VERBATIM_ABSTENTION = "no verbatim evidence found"
+
+
+def is_abstention(quote: str) -> bool:
+    """True when the model declined instead of quoting."""
+    return quote.strip().casefold().startswith(VERBATIM_ABSTENTION)
+
+
+def evidence_status(exact: bool) -> str:
+    """Per-item status stored alongside `exact`; additive to the existing metrics."""
+    return "verified" if exact else "unverified"
+
+
 def evidence_ids(record: CanonicalRecord, quotes: list[str], prefix: str) -> list[str]:
     """Attach evidence to a record, verifying each quote against the source.
 
@@ -124,7 +138,9 @@ def evidence_ids(record: CanonicalRecord, quotes: list[str], prefix: str) -> lis
     source_text = record.content.text or ""
     for quote in quotes:
         text = quote.strip()
-        if not text:
+        if not text or is_abstention(text):
+            # A stored abstention would be counted as a citation by every downstream
+            # metric; the object keeps its analysis, the evidence list keeps its honesty.
             continue
         evidence_id = f"{prefix}:evidence:{len(record.evidence) + 1}"
         start, end = locate_quote(source_text, text)
@@ -137,7 +153,11 @@ def evidence_ids(record: CanonicalRecord, quotes: list[str], prefix: str) -> lis
                 quote=text,
                 start_offset=start if exact else None,
                 end_offset=end if exact else None,
-                metadata={"review_status": "PROVISIONAL", "exact": exact},
+                metadata={
+                    "review_status": "PROVISIONAL",
+                    "exact": exact,
+                    "evidence_status": evidence_status(exact),
+                },
             )
         )
         ids.append(evidence_id)

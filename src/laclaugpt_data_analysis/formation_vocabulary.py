@@ -55,3 +55,15 @@ def normalize_formation_label(label: str) -> tuple[str, bool]:
     if normalized:
         return normalized, True
     return "unknown", False
+
+
+def is_countable_formation(item: object) -> bool:
+    """Exclude unresolved non-formations from counts, filters and distributions.
+
+    Legacy labels without the new metadata remain visible as historical data;
+    neither 'unknown' nor 'other' is an ideological formation in any version.
+    """
+    label = str(getattr(item, "label", "") or "").strip().casefold()
+    metadata = getattr(item, "metadata", None) or {}
+    return bool(label and label not in FORMATION_FALLBACKS
+                and metadata.get("formation_label_resolved") is not False)

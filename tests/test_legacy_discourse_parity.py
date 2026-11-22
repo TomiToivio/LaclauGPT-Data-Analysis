@@ -66,7 +66,6 @@ class ParityProvider:
                 )
             ],
             formations=["democratic AI project"],
-            discourses=["democratic technology discourse"],
             imaginaries=["democratically governed AI future"],
             equivalence_chains=[
                 ChainProposal(

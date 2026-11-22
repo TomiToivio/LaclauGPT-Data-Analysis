@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from .canonical import CanonicalRecord
 from .context_runtime import ContextItem
+from .formation_vocabulary import is_countable_formation
 from .llm.structured_output import chat_structured
 from .prompt_library import load_prompt, prompt_provenance
 from .storage import RecordStore
@@ -330,7 +331,7 @@ def record_matches_scope(record: CanonicalRecord, scope: SummaryScope) -> bool:
     if scope.dimension == "signifier":
         return wanted in {_item_label(item).casefold() for item in _labels(record, "signifiers")}
     if scope.dimension == "formation":
-        return wanted in {_item_label(item).casefold() for item in _labels(record, "formations")}
+        return wanted in {_item_label(item).casefold() for item in _labels(record, "formations") if is_countable_formation(item)}
     if scope.dimension in {"topic", "theme"}:
         labels = _topic_labels(record) | {
             _item_label(item).casefold() for item in _labels(record, "themes")
@@ -427,14 +428,14 @@ def _aggregate_records(
         record_formations = {
             _item_label(item)
             for item in _labels(record, "formations")
-            if _item_label(item)
+            if _item_label(item) and is_countable_formation(item)
         }
 
         for family, field in family_fields.items():
             seen_labels: set[str] = set()
             for item in _labels(record, field):
                 label = _item_label(item)
-                if not label:
+                if not label or (family == "formations" and not is_countable_formation(item)):
                     continue
                 counts[family][label] += 1
                 seen_labels.add(label)

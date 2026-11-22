@@ -125,7 +125,7 @@ def test_without_a_window_the_old_behaviour_is_unchanged(monkeypatch):
     monkeypatch.setattr(report, "_mongo_client", lambda _settings: _Client(collection))
     report.load_analysis_records(_settings(), run_id="run")
     assert len(collection.calls) == 1
-    assert collection.calls[0][1] == {"result": 1, "_id": 0}
+    assert collection.calls[0][1] == {"result": 1, "source_url": 1, "_id": 0}
 
 
 def test_a_report_timeout_is_graded_apart_from_a_worker_failure():

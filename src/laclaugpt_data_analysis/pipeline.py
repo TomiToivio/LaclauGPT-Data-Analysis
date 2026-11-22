@@ -58,7 +58,6 @@ class AnalysisProposal(BaseModel):
     nodal_points: list[str] = Field(default_factory=list)
     floating_signifiers: list[EvidenceLinkedCandidate] = Field(default_factory=list)
     empty_signifier_candidates: list[EvidenceLinkedCandidate] = Field(default_factory=list)
-    discourses: list[str] = Field(default_factory=list)
     imaginaries: list[str] = Field(default_factory=list)
     equivalence_chains: list[ChainProposal] = Field(default_factory=list)
     difference_chains: list[ChainProposal] = Field(default_factory=list)
@@ -277,7 +276,7 @@ def analyze_record(
     ]
     record.analysis.signifiers.extend(record.analysis.floating_signifiers)
     record.analysis.signifiers.extend(record.analysis.empty_signifier_candidates)
-    for field in ("formations", "nodal_points", "discourses", "imaginaries"):
+    for field in ("formations", "nodal_points", "imaginaries"):
         values = getattr(proposal, field)
         setattr(
             record.analysis,
@@ -343,7 +342,6 @@ def analyze_record(
         record.analysis.empty_signifier_candidates,
         record.analysis.formations,
         record.analysis.nodal_points,
-        record.analysis.discourses,
         record.analysis.imaginaries,
     ):
         for item in collection:

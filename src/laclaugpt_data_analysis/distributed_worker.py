@@ -61,7 +61,10 @@ AI26_MODEL = "gemma4:12b"
 
 #: The prompt identity the worker's stages run under. It must match the default of
 #: ``stages.runner.run_canonical_pipeline``; a changed prompt version invalidates resume.
-AI26_PROMPT_VERSION = "canonical-pipeline-v1"
+# #458 / D6: bumped because the evidence instruction changed what the model is asked
+# for. A run recorded as v1 was made under the paraphrase-tolerant instruction, so the
+# two must never be pooled when evidence quality is measured.
+AI26_PROMPT_VERSION = "canonical-pipeline-v2"
 
 
 def ai26_generation_fingerprint(

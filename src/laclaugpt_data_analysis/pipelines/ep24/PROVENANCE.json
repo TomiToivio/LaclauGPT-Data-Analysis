@@ -463,5 +463,11 @@
   "pipeline_id": "ep24",
   "source_ref": "db123759fe21b194275d87d6ccc3b7c4f98a2055",
   "source_repository": "TomiToivio/LaclauGPT-Multimodal-Analysis",
-  "sync_policy": "Frozen snapshot. Upstream is not a runtime dependency. Re-import only by pinning a new SHA and recording the diff; never by pulling a branch."
+  "sync_policy": "Frozen snapshot. Upstream is not a runtime dependency. Re-import only by pinning a new SHA and recording the diff; never by pulling a branch.",
+  "selective_vendor_ports": {
+    "steps_7_8": {
+      "reference": "47efd31fbc4f7ff88639dbf78060c807e89b7214",
+      "scope": "Selective structured-output guard port from upstream #403/#409/#410. Step 8 adapts the retry behavior to its local extraction call. Existing dependency, configuration and codebook differences are intentional."
+    }
+  }
 }

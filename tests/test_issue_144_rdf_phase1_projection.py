@@ -71,13 +71,9 @@ def _phase1_record() -> CanonicalRecord:
     analysis.abstentions = ["no tendentially empty signifier established"]
 
     # Phase 1 discourse-theoretical objects.
-    analysis.discourses = [
-        DiscourseObject(object_id="discourse:1", label="accelerationist discourse", kind="discourse",
-                        evidence_ids=["ev-1"], confidence=0.4, uncertainty="weak")
-    ]
     analysis.imaginaries = [
         DiscourseObject(object_id="imaginary:1", label="AI-driven abundance", kind="imaginary",
-                        evidence_ids=["ev-1"], metadata={"corpus_validation_required": True})
+                        evidence_ids=["ev-1"], confidence=0.4, uncertainty="weak", metadata={"corpus_validation_required": True})
     ]
     analysis.us = [DiscourseObject(object_id="us:1", label="the builders", kind="collective_subject", evidence_ids=["ev-1"])]
     analysis.them = [DiscourseObject(object_id="them:1", label="regulators", kind="other", evidence_ids=["ev-1"])]
@@ -127,7 +123,6 @@ def _subjects_of(dataset, rdf_type):
 
 def test_phase1_discourse_objects_survive_projection(dataset) -> None:
     for rdf_type in (
-        NS.Discourse,
         NS.SociotechnicalImaginary,
         NS.CollectiveSubject,
         NS.Other,
@@ -140,7 +135,6 @@ def test_phase1_discourse_objects_survive_projection(dataset) -> None:
 
 def test_phase1_objects_retain_provenance_and_review_state(dataset) -> None:
     for rdf_type in (
-        NS.Discourse,
         NS.SociotechnicalImaginary,
         NS.CollectiveSubject,
         NS.Other,
@@ -152,7 +146,7 @@ def test_phase1_objects_retain_provenance_and_review_state(dataset) -> None:
 
 
 def test_phase1_objects_retain_evidence_and_uncertainty(dataset) -> None:
-    discourse = next(iter(_subjects_of(dataset, NS.Discourse)))
+    discourse = next(iter(_subjects_of(dataset, NS.SociotechnicalImaginary)))
     assert list(dataset.quads((discourse, NS.hasEvidence, None))), "discourse lost its evidence link"
     assert list(dataset.quads((discourse, NS.uncertainty, None))), "discourse lost its uncertainty note"
     assert list(dataset.quads((discourse, NS.confidence, None))), "discourse lost its confidence"

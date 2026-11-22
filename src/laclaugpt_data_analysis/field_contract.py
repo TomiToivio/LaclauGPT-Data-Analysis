@@ -100,16 +100,6 @@ UNPRODUCED_FIELDS: dict[str, UnproducedField] = {
                "it occurred in the source",
         decision="emit mention spans when entities are extracted, or retire the field",
     ),
-    "discourses": UnproducedField(
-        field="discourses",
-        issue="#450",
-        defect=PRODUCER_MISSING_UPSTREAM,
-        reason="AnalysisProposal declares discourses and pipeline.py copies it, but the discourse "
-               "stage returns DiscourseProposal, which has no discourses field — so the copy is always "
-               "an empty list",
-        decision="add a discourse level to the Phase 1 vocabulary, or retire the field and stop "
-                 "exporting it to RDF, the knowledge graph and the review export",
-    ),
 
 }
 

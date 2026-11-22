@@ -126,6 +126,24 @@ class DiscursiveRelation(BaseModel):
     evidence: list[str] = Field(default_factory=list)
 
 
+class CorrectedQuote(BaseModel):
+    """One failed quote and its verbatim replacement (#458 / D6).
+
+    `original` is what the model previously claimed was evidence; `verbatim` is the span
+    it now copies from the source. Both are kept so the change is auditable rather than a
+    silent rewrite.
+    """
+
+    original: str = ""
+    verbatim: str = ""
+
+
+class EvidenceCorrectionProposal(BaseModel):
+    """The one-shot evidence-only answer: replacements, never a retry loop."""
+
+    corrections: list[CorrectedQuote] = Field(default_factory=list)
+
+
 class DiscourseProposal(BaseModel):
     """Laclau/Mouffe analysis vocabulary, mirroring the theory the project tests.
 

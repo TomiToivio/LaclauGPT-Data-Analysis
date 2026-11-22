@@ -86,7 +86,6 @@ def _adapt_shared_parity_fixture(data: dict[str, Any]) -> dict[str, Any]:
         ("formations", "formation"),
         ("signifiers", "signifier"),
         ("nodal_points", "nodal_point"),
-        ("discourses", "discourse"),
         ("imaginaries", "imaginary"),
         ("us", "us"),
         ("them", "them"),

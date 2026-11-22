@@ -17,16 +17,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pandas as pd
-
 from ep24_cli import configure_step_cli
 from ep24_entities import fold_key, resolution_lookup
 from ep24_models import ollama_model, ollama_model_source
-from ep24_prompt_contract import effective_prompt_fingerprint
 from ep24_pipeline import (
     load_cumulative_csv,
-    metadata_context,
     write_cumulative_csv,
 )
+from ep24_prompt_contract import effective_prompt_fingerprint
 from ep24_sna import (
     SNA_SCHEMA_VERSION,
     apply_reconciliation_metrics,
@@ -86,6 +84,26 @@ population-level influence from a small sample. Produce short Markdown prose lab
 interpretation rather than empirical fact."""
 
 
+def analyze_context(ollama, model, evidence, result_type):
+    """Extract an evidence-backed graph with a bounded JSON repair budget."""
+    budget = max(1, int(os.getenv("LACLAUGPT_STEP8_NUM_PREDICT", "2048")))
+    prompt = EXTRACTION_SYSTEM + "\nLimit analysis_markdown to 600 characters."
+    for attempt in range(3):
+        response = ollama.chat(
+            model=model, think=False, format=result_type.model_json_schema(),
+            messages=[{"role": "system", "content": prompt}, {"role": "user", "content": evidence}],
+            options={"temperature": 0.0, "num_ctx": 8192, "num_predict": min(8192, budget * 2**attempt)},
+        )
+        try:
+            return result_type.model_validate_json(response["message"]["content"] or "")
+        except ValueError as exc:
+            if attempt == 2:
+                truncated = response.get("done_reason") == "length" or "EOF" in str(exc)
+                reason = "response was truncated before the JSON closed" if truncated else "invalid structured JSON"
+                raise ValueError(f"Step 8 {reason} after three attempts") from exc
+            prompt = EXTRACTION_SYSTEM + "\nReturn complete compact JSON. Limit analysis_markdown to 250 characters."
+
+
 def _models():
     """Import runtime-only dependencies after CLI parsing."""
     from pydantic import BaseModel, Field
@@ -99,7 +117,7 @@ def _models():
         confidence: float = Field(ge=0.0, le=1.0)
 
     class SNAResult(BaseModel):
-        analysis_markdown: str
+        analysis_markdown: str = Field(max_length=600)
         edges: list[SNAEdge]
 
     class CastellsResult(BaseModel):
@@ -403,6 +421,8 @@ def run_language(lang: str) -> Path | None:
         LOG.info("step8 row=%s context_sha256=%s packet_chars=%d tokens_est=%d fields_truncated=%d characters_lost=%d",
                  index, context_hash, len(evidence), truncation["estimated_tokens"],
                  truncation["fields_truncated"], truncation["characters_lost"])
+        for column in output_columns:
+            df.at[index, column] = ""
         if not any(str(row.get(name) or "").strip() for name in ("asr_transcript", "asr_translation", "ocr_1", "dna_statements_json")):
             df.at[index, "sna_status"] = "no_evidence"
             df.at[index, "sna_error"] = ""
@@ -415,16 +435,7 @@ def run_language(lang: str) -> Path | None:
             continue
 
         try:
-            response = ollama.chat(
-                model=model,
-                messages=[
-                    {"role": "system", "content": EXTRACTION_SYSTEM},
-                    {"role": "user", "content": evidence},
-                ],
-                format=SNAResult.model_json_schema(),
-                options={"temperature": 0.0, "num_ctx": 8192},
-            )
-            extracted = SNAResult.model_validate_json(response["message"]["content"])
+            extracted = analyze_context(ollama, model, evidence, SNAResult)
             raw_edges = _enrich_edges(_network_relation_gate(_grounded_edge_candidates(extracted.edges, evidence)), row)
             nodes, edges = graph_from_edges(raw_edges, row)
             # Issue #197: enrichment only supplies a canonical id when the mention
@@ -472,6 +483,8 @@ def run_language(lang: str) -> Path | None:
             all_nodes.extend(nodes)
             all_edges.extend(edges)
         except Exception as exc:
+            for column in output_columns:
+                df.at[index, column] = ""
             df.at[index, "sna_status"] = "error"
             df.at[index, "sna_error"] = f"{type(exc).__name__}: {exc}"
             LOG.error("STEP8_ROW_ERROR item=%s type=%s retryable=true detail=%s",

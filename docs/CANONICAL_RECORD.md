@@ -100,3 +100,7 @@ Any persisted semantic change must include a schema-version decision, migration 
 ## Privacy
 
 All tests and examples are synthetic. Runtime records, codebooks, transcripts, OCR, frames, researcher notes, databases and exports belong under the ignored `data/` tree or remote private infrastructure, never in Git.
+
+### Retired AI26 named-discourse field (#450)
+
+The shared interchange version remains 1.2.0. Analysis accepts previous payloads with an empty named-discourses list. When importing a nonempty historical list, Analysis preserves its contents under the literal key `analysis.discourses` in `legacy`. Current analysis, review sections, RDF and graph projections omit the retired field. Existing exports retain their historical columns.
