@@ -1,6 +1,8 @@
 """Mongo-backed periodic Phase 1 reports for the AI26 Laskin node."""
 from __future__ import annotations
 
+from .mongo_safety import strip_mongo_id
+
 import argparse
 import os
 from datetime import UTC, datetime, timedelta
@@ -270,7 +272,7 @@ def generate_latest_reports(
                 "run_id": run_id,
                 "report_id": summary.id,
             },
-            {"$set": document},
+            {"$set": strip_mongo_id(document)},
             upsert=True,
         )
 
