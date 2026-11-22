@@ -193,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.strict:
         flagged = []
-        for path, report in zip(paths, reports):
+        for path, report in zip(paths, reports, strict=True):
             code, changes = _git(["status", "--porcelain", "--untracked-files=normal"], path)
             if code or changes:
                 report["detail"] = "could not verify clean working tree" if code else "working tree has local changes"
