@@ -206,6 +206,8 @@ def _validated_span(text: str, candidate: DNAStatementCandidate) -> EvidenceSpan
                     end_char=candidate.stop,
                     exact=True,
                 )
+    # A repeated quotation may have several speakers. This fallback locates the
+    # first occurrence; attribution still needs the surrounding passage.
     start = text.find(quote) if quote else -1
     if start >= 0:
         return EvidenceSpan(
