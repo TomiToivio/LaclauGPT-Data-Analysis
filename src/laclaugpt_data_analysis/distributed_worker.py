@@ -21,8 +21,8 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from .canonical import SCHEMA_VERSION, CanonicalRecord
-from .checksums import sha256_file
 from .canonical_pipeline import PipelineContext, run_canonical_pipeline
+from .checksums import sha256_file
 from .codebooks import load_codebook
 from .config import Settings, load_settings
 from .debug_mode import configure_logging
