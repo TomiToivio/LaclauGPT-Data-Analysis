@@ -1,7 +1,5 @@
 # LaclauGPT Data Analysis
 
-**New to the codebase?** Start with the [repository navigation guide](docs/REPOSITORY_GUIDE.md) for the module map, development commands and safe refactoring boundaries. For scientific step order, read [Data Analysis Pipeline](docs/DATA_ANALYSIS_PIPELINE.md).
-
 ## Find and run the analysis
 
 | Research or development task | Start here |
@@ -38,9 +36,17 @@ python -m pytest tests/test_cross_module_parity_fixture.py
 
 **Researcher-facing Phase 1 guide:** [Follow source evidence through provisional discourse codes and human review](docs/methods/phase1_researcher_guide.md). It maps the six operations in the [locked Phase 1 paper](https://github.com/TomiToivio/LaclauGPT/blob/main/paper/PHASE_1_PAPER.md) to code, includes a synthetic attribution example, and distinguishes implementation from proposed validation.
 
+**New to the codebase?** Start with the [repository navigation guide](docs/REPOSITORY_GUIDE.md) and the [architecture map](docs/ARCHITECTURE.md).
+
 **New to the codebase?** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) maps the tree, the
 pipelines and where each feature lives; [docs/README.md](docs/README.md) indexes every topical
 document in `docs/`.
+
+**Researcher?** Start with **[docs/methods/RESEARCH_METHOD_GUIDE.md](docs/methods/RESEARCH_METHOD_GUIDE.md)**.
+It follows one record from retained source, through the model's provisional interpretation, to the human
+review decision: it maps each stage of the Phase 1 paper's six-stage workflow (§3.4) to the code that
+implements it, states what a quotation match does and does not prove, and records where the implementation
+is narrower than the paper's design.
 
 **LaclauGPT** is an open social-science research framework for **LLM-assisted computational discourse analysis** of large textual and multimodal corpora. It combines computational methods with interpretive political research while keeping model outputs traceable to source evidence, uncertainty, provenance and human review.
 

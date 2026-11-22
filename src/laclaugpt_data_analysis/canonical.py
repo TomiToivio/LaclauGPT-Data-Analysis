@@ -25,6 +25,15 @@ from .models import (
 )
 
 SCHEMA_VERSION = "1.2.0"
+#: The review vocabulary a researcher uses on a coded object (paper §3.4, operation 6).
+#:
+#: * ``PROVISIONAL`` — the default for everything a model proposes. A proposal is not a finding until a
+#:   human validates it, so no coded object is ever stored as accepted by the pipeline itself.
+#: * ``ACCEPTED`` / ``REJECTED`` — a researcher's decision about that object, recorded on it.
+#: * ``REVISED`` — kept by the researcher but changed; the change is a new object, not an edit in place.
+#: * ``CANONICAL`` — the version downstream analysis should use.
+#: * ``SUPERSEDED`` — replaced by a later object; kept so the disagreement and its history survive rather
+#:   than being overwritten.
 ReviewStatus = Literal[
     "PROVISIONAL", "ACCEPTED", "REJECTED", "REVISED", "CANONICAL", "SUPERSEDED"
 ]

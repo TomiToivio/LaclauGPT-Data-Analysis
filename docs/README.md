@@ -1,6 +1,6 @@
 # Documentation index
 
-Every document in `docs/`, grouped by what it is for. 71 files; this page is
+Every document in `docs/`, grouped by what it is for. 72 files; this page is
 generated from each file's own title, so it cannot drift from what the files say about
 themselves. Start with [ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the repository.
 
@@ -50,12 +50,12 @@ themselves. Start with [ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the 
 - [MongoDB-first graph / vector RAG](RAG.md)
 - [Redis coordination for distributed analysis](REDIS_COORDINATION.md)
 - [Optional Redis analysis task worker](REDIS_TASK_WORKER.md)
-- [Repository map: where everything lives](REPOSITORY_MAP.md)
 - [Versioned analysis pipelines (#399)](VERSIONED_ANALYSIS_PIPELINES.md)
 
 ## Research record and data contracts
 
 - [CSC Allas S3 write verification](ALLAS_S3_WRITE_VERIFICATION.md)
+- [Research method guide: from one record to a reviewed claim (methods/)](methods/RESEARCH_METHOD_GUIDE.md)
 - [Canonical analysis record](CANONICAL_RECORD.md)
 - [Distributed project storage](DISTRIBUTED_PROJECT_STORAGE.md)
 - [Four-layer research record in Data Analysis](FOUR_LAYER_RESEARCH_RECORD.md)
@@ -94,8 +94,7 @@ themselves. Start with [ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the 
 
 ## Cross-cutting notes
 
-- [Repository navigation for human maintainers](REPOSITORY_GUIDE.md)
-
 - [Repository map: paths and responsibilities](REPOSITORY_MAP.md)
+- [Repository navigation for human maintainers](REPOSITORY_GUIDE.md)
 
 - [LaclauGPT Coding Style](CODING_STYLE.md)

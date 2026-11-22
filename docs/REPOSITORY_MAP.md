@@ -1,9 +1,7 @@
 # Repository map
 
 Where things live, in one page. Written for a Python developer or a social-science researcher who needs to
-find something without reading 290 modules first. Everything below was checked against the repository, not
-recalled: paths, entry points and the `[project.scripts]` table come from `pyproject.toml` and the tree on
-`main`.
+locate a pipeline stage, inspect a result or run the worker.
 
 ## The one-paragraph version
 
@@ -20,10 +18,10 @@ must not quietly reinterpret it.**
 | path | what it is |
 | --- | --- |
 | `src/laclaugpt_data_analysis/` | the package — all production code |
-| `tests/` | pytest suite (229 modules); the fastest way to learn behaviour |
+| `tests/` | pytest suite; the fastest way to learn behaviour |
 | `scripts/` | operator entry points (shell wrappers, cron targets, one-off tools) |
 | `config/`, `codebooks/`, `contexts/`, `ontology/`, `schemas/` | data the pipeline reads: study configs, codebooks, context packs, ontology, JSON/RDF schemas |
-| `docs/` | 75 pages of operational and acceptance documentation (see "Where to read first" below) |
+| `docs/` | operational and acceptance documentation (see "Where to read first" below) |
 | `deployment/`, `external/`, `evaluation/`, `tools/` | deployment assets, vendored externals, evaluation harnesses, ad-hoc tools |
 | `data/` | local runtime output; **not** a source of truth and not versioned content |
 | `AGENTS.md`, `CLAUDE.md`, `CODEX.md`, `HERMES.md`, `CODING_STYLE.md`, `CONTRIBUTING.md` | agent and contributor instructions |
@@ -40,9 +38,12 @@ must not quietly reinterpret it.**
 - **`discourse_network/`**, **`sna/`**, **`multimodal/`** — the opt-in extensions. None of them are default.
 - **`pipelines/`** — pipeline wiring and the CLI (`laclaugpt-analysis`), including the vendored EP24 steps.
 - **`interoperability/`**, **`canonical.py`**, **`schemas`** consumers — the canonical record contract.
-- **`phases`/`phase1_*` modules** — the Laskin runtime: config, worker, periodic report, shadow runs.
-- **`preflight.py`**, **`deploy_drift.py`**, **`task_queue.py`**, **`tick_status`-family telemetry** — the
-  operational layer that keeps a cron-driven pipeline honest.
+- **`phase1_*.py` modules** — the Laskin runtime: config, worker, periodic report, shadow runs.
+- **`preflight.py`**, **`deploy_drift.py`**, **`tick_status`-family telemetry** — the
+  configuration checks, deployment drift detection and per-cycle status reporting.
+- **[`task_queue/`](../src/laclaugpt_data_analysis/task_queue/)** — formerly `task_queue.py`. Existing Python
+  imports use `laclaugpt_data_analysis.task_queue`. Read `models.py` for task identity and resume rules,
+  `worker.py` for retries and acknowledgement, and the individual store modules for result persistence.
 
 ## Entry points (from `[project.scripts]`)
 
