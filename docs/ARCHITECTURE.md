@@ -69,7 +69,7 @@ collections.
 | I want | Look at |
 | --- | --- |
 | the worker that claims and executes tasks | `distributed_worker.py` |
-| the queue, leases and task documents | `task_queue.py` |
+| the queue, leases and task documents | `task_queue/models.py` (envelopes), `task_queue/redis_queue.py` (claims and leases) |
 | what a canonical record is | `schemas/`, `field_contract.py`, `docs/CANONICAL_RECORD.md` |
 | how a record is analysed end to end | `contextual_pipeline.py`, `canonical_pipeline.py`, `docs/DATA_ANALYSIS_PIPELINE.md` |
 | AI26 stage prompts | `prompts/`, `prompt_library.py`, `docs/PROMPT_LIBRARY.md` |

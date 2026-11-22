@@ -83,7 +83,7 @@ Requests and responses should preserve the same `correlation_id` so interaction 
 
 ## Task queue and leases
 
-The existing `task_queue.py` Redis implementation uses Streams consumer groups for atomic claiming. Pending entries are reclaimed using `XAUTOCLAIM` after a configured idle period, which provides the worker-crash lease/reclaim mechanism.
+The `task_queue/redis_queue.py` adapter uses Streams consumer groups for atomic claiming. Pending entries are reclaimed using `XAUTOCLAIM` after a configured idle period, which provides the worker-crash lease/reclaim mechanism.
 
 `TaskEnvelope` carries project, run, config and codebook revisions plus an idempotency key. `MongoTaskStore` applies a unique `(project_id, run_id, idempotency_key)` result constraint so durable duplicate results are rejected even if a task is redelivered.
 

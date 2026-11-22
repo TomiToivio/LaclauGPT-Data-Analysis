@@ -1,15 +1,5 @@
 """Task-queue contracts: envelopes, resume identity and store protocols.
 
-The queue is split by responsibility, so a reader can open the one file that
-answers their question:
-
-* ``models.py`` (this file) -- what a task *is*, and what a queue or store must do;
-* ``memory.py`` -- in-process adapters used by tests and single-process runs;
-* ``sqlite_store.py`` -- durable local result history without any server;
-* ``mongo_store.py`` -- durable distributed result history;
-* ``redis_queue.py`` -- Redis Streams transport with consumer groups;
-* ``worker.py`` -- the claim/analyse/acknowledge loop and its settings wiring.
-
 The protocols here are the only contract the worker depends on, so adapters can
 be swapped without touching the scientific pipeline.
 """
@@ -127,6 +117,7 @@ class TaskEnvelope:
     attempt: int = 1
 
     def validate(self) -> None:
+        """Raise ValueError for a missing identity field or a nonpositive attempt."""
         required = {
             "task_id": self.task_id,
             "idempotency_key": self.idempotency_key,
@@ -145,11 +136,13 @@ class TaskEnvelope:
             raise ValueError("task envelope attempt must be >= 1")
 
     def to_dict(self) -> dict[str, Any]:
+        """Validate the envelope before serializing its queue payload."""
         self.validate()
         return asdict(self)
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> TaskEnvelope:
+        """Read a queue payload, defaulting an omitted attempt to the first try."""
         envelope = cls(
             task_id=str(payload.get("task_id") or ""),
             idempotency_key=str(payload.get("idempotency_key") or ""),
