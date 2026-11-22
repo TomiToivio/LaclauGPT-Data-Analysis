@@ -186,7 +186,7 @@ mkdir -p "$(dirname "$LOCK_FILE")" "$PRIVATE_CONFIG_DIR/logs"
 
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
-  log "AI26 Laskin analysis already running; exiting cleanly"
+  log "AI26 Laskin analysis skipped: lock held; status=already_running exit_code=3"
   exit 3
 fi
 

@@ -38,7 +38,8 @@ def test_laskin_wrapper_is_bounded_cron_safe():
     assert "--max-tasks" in script
     assert "--reclaim-idle-ms" in script
     assert "--worker-id \"laskin-cron-" in script
-    assert "LACLAUGPT_OBJECT_BACKEND=s3" in script
+    assert "LACLAUGPT_OBJECT_BACKEND=local" in script
+    assert "LACLAUGPT_OBJECT_STORE_REQUIRED=0" in script
     assert "laclaugpt-analysis-worker" in script
 
 
