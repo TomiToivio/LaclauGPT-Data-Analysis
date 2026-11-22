@@ -66,7 +66,6 @@ NOT_PROJECTED_HERE = {
     "actor_entity_relations",
     "classifications",
     "codebook_refs",
-    "discourses",
     "embeddings",
     "entity_mentions",
     "memory_refs",
