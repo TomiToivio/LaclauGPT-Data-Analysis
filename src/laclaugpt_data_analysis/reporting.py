@@ -8,6 +8,7 @@ from datetime import date, datetime
 from pydantic import BaseModel, Field
 
 from .canonical import CanonicalRecord
+from .formation_vocabulary import is_countable_formation
 
 
 class DailyReport(BaseModel):
@@ -30,7 +31,7 @@ def _record_date(record: CanonicalRecord) -> date | None:
 def _matches(record: CanonicalRecord, filters: dict[str, str]) -> bool:
     author = (record.source.author or record.source.author_fullname).casefold()
     signifiers = {x.label.casefold() for x in record.analysis.signifiers}
-    formations = {x.label.casefold() for x in record.analysis.formations}
+    formations = {x.label.casefold() for x in record.analysis.formations if is_countable_formation(x)}
     for key, value in filters.items():
         wanted = value.casefold()
         if key == "author" and wanted not in author:
@@ -62,7 +63,7 @@ def build_daily_report(
     ]
     entities = Counter(x.label for record in selected for x in record.analysis.entities)
     signifiers = Counter(x.label for record in selected for x in record.analysis.signifiers)
-    formations = Counter(x.label for record in selected for x in record.analysis.formations)
+    formations = Counter(x.label for record in selected for x in record.analysis.formations if is_countable_formation(x))
 
     summaries = [
         record.human_readable.summary or record.analysis.summary or "" for record in selected
