@@ -1,5 +1,6 @@
 """Controlled, provisional AI26 formation labels (#454)."""
 
+from laclaugpt_data_analysis.canonical import CanonicalRecord
 from laclaugpt_data_analysis.formation_vocabulary import (
     FORMATION_LABELS,
     FORMATION_VOCABULARY_VERSION,
@@ -7,8 +8,7 @@ from laclaugpt_data_analysis.formation_vocabulary import (
 )
 from laclaugpt_data_analysis.stages.postprocess import _objects
 from laclaugpt_data_analysis.stages.proposals import DiscursiveElement
-from laclaugpt_data_analysis.canonical import CanonicalRecord
-
+ 
 
 def test_known_aliases_collapse_without_guessing() -> None:
     assert normalize_formation_label("Critical AI") == ("critical_ai", True)
