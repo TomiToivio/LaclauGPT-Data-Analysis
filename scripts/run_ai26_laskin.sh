@@ -93,7 +93,28 @@ record_tick_on_exit() {
     printf '[%s] WARNING: private telemetry directory unavailable; no tick JSONL written\n' "$(date -Is)" >&2
   fi
 }
-trap record_tick_on_exit EXIT
+# Keep the flock owned by this wrapper alone. Children close FD 9 and run
+# in a separate session, so terminating the wrapper cannot strand the lock.
+ACTIVE_GROUP=""
+cleanup_worker_group() {
+  if [[ -n "$ACTIVE_GROUP" ]]; then
+    kill -TERM -- "-$ACTIVE_GROUP" 2>/dev/null || true
+    ACTIVE_GROUP=""
+  fi
+}
+stop_wrapper() {
+  trap - TERM INT HUP
+  cleanup_worker_group
+  exit 143
+}
+trap stop_wrapper TERM INT HUP
+record_tick_and_cleanup() {
+  local code=$?
+  cleanup_worker_group
+  (exit "$code")
+  record_tick_on_exit
+}
+trap record_tick_and_cleanup EXIT
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -135,6 +156,9 @@ set -a
 set +a
 
 # GNU timeout is required for the worker watchdog (issue #332).
+if ! command -v setsid >/dev/null 2>&1; then
+  fail "setsid is required to isolate and clean up the AI26 worker process group"
+fi
 if ! command -v timeout >/dev/null 2>&1; then
   fail "GNU timeout is required for the AI26 worker watchdog"
 fi
@@ -289,7 +313,7 @@ log "AI26 Laskin analysis start run=$LACLAUGPT_RUN_ID max_tasks=$MAX_TASKS cycle
 # from a task failure. A timeout is recorded as worker_status=124 and flows
 # into the existing non-zero exit path.
 set +e
-timeout --signal=TERM --kill-after="${CYCLE_KILL_GRACE_SECONDS}s" "${CYCLE_MAX_SECONDS}s" \
+setsid timeout --signal=TERM --kill-after="${CYCLE_KILL_GRACE_SECONDS}s" "${CYCLE_MAX_SECONDS}s" \
   "$ROOT_DIR/.venv/bin/laclaugpt-analysis-worker" \
   --run-manifest "$RUN_MANIFEST" \
   --private-config "$PRIVATE_CONFIG" \
@@ -297,8 +321,11 @@ timeout --signal=TERM --kill-after="${CYCLE_KILL_GRACE_SECONDS}s" "${CYCLE_MAX_S
   --worker-id "laskin-cron-${HOSTNAME:-unknown}" \
   --seed-ready \
   --reclaim-idle-ms "$RECLAIM_IDLE_MS" \
-  --max-tasks "$MAX_TASKS"
+  --max-tasks "$MAX_TASKS" 9>&- &
+ACTIVE_GROUP=$!
+wait "$ACTIVE_GROUP"
 WORKER_STATUS=$?
+cleanup_worker_group
 set -e
 if [[ "$WORKER_STATUS" -eq 124 ]]; then
   log "AI26 Laskin analysis CYCLE CEILING exceeded after ${CYCLE_MAX_SECONDS}s; worker terminated by TERM (then KILL after ${CYCLE_KILL_GRACE_SECONDS}s). Pending tasks are left for safe reclaim on a later cycle; see issue #332."
