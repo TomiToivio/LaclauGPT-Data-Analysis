@@ -26,6 +26,7 @@ import argparse
 import json
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -131,6 +132,67 @@ def checkout_drift(
     return report
 
 
+#: A changed file whose name carries one of these can change what a stored record contains.
+#: Analysis reads Collection's records; it never reads Visualization at all, so only a
+#: schema-affecting Collection change can make an analysis run unsafe (#499, #500).
+SCHEMA_HINTS: tuple[str, ...] = ("canonical", "model", "schema")
+
+#: The sibling whose records the analysis stage consumes.
+RECORD_SOURCE_CHECKOUT = "LaclauGPT-Data-Collection"
+
+
+@dataclass(frozen=True)
+class StrictVerdict:
+    """Whether one checkout's drift should stop an analysis cycle, and what to do about it."""
+
+    blocks: bool
+    warning: str = ""
+    remedy: str = ""
+
+
+def analysis_blocking_changes(path: Path, reference: str = DEFAULT_REFERENCE) -> list[str]:
+    """Files between HEAD and ``reference`` that can change the shape of an analysed record.
+
+    Name-based, offline, and deliberately over-reporting: a false positive refuses one cycle,
+    while a false negative lets a cycle write results against a record contract it no longer
+    matches.
+    """
+    code, output = _git(["diff", "--name-only", f"HEAD..{reference}"], Path(path))
+    if code:
+        return []
+    package = "src/laclaugpt_data_collection/"
+    return sorted(
+        line for line in output.splitlines()
+        if line.startswith(package) and any(hint in Path(line).name.lower() for hint in SCHEMA_HINTS)
+    )
+
+
+def strict_verdict(
+    *, owning: bool, name: str, path: Path, report: dict[str, Any], reference: str = DEFAULT_REFERENCE
+) -> StrictVerdict:
+    """Decide what one checkout's drift means for an analysis cycle.
+
+    #499/#500: requiring *all three* checkouts to match origin/main stopped the paper's
+    analysis because a dashboard repository had merged. The owning checkout must be current
+    (it is the code doing the work); a sibling matters only when it is the record source and
+    the drift can change the record shape.
+    """
+    remedy = f"git -C {path} fetch origin && git -C {path} checkout main && git -C {path} pull --ff-only"
+    current = report["state"] == CURRENT and report["branch"] == "main" and not report.get("detail")
+    if current:
+        return StrictVerdict(False)
+    if owning:
+        return StrictVerdict(True, remedy=remedy)
+    if name == RECORD_SOURCE_CHECKOUT and report["state"] == BEHIND:
+        changed = analysis_blocking_changes(Path(path), reference)
+        if changed:
+            return StrictVerdict(
+                True, remedy=f"{remedy} (record-shape files: {', '.join(changed[:3])})"
+            )
+        return StrictVerdict(False, warning="record source is behind but no record-shape file changed")
+    return StrictVerdict(False, warning="sibling drift cannot affect analysis")
+
+
 def sibling_checkouts(path: str | Path) -> list[Path]:
     """The cron checkouts that sit beside ``path``, when they exist."""
     parent = Path(path).resolve().parent
@@ -193,13 +255,29 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.strict:
         flagged = []
-        for path, report in zip(paths, reports, strict=True):
+        for index, (path, report) in enumerate(zip(paths, reports, strict=True)):
             code, changes = _git(["status", "--porcelain", "--untracked-files=normal"], path)
             if code or changes:
                 report["detail"] = "could not verify clean working tree" if code else "working tree has local changes"
-            if report["state"] != CURRENT or report["branch"] != "main" or report["detail"]:
+            verdict = strict_verdict(
+                owning=index == 0, name=report["name"], path=Path(path), report=report,
+                reference=args.reference,
+            )
+            report["blocks_analysis"] = verdict.blocks
+            report["remedy"] = verdict.remedy
+            if verdict.blocks:
                 flagged.append(report)
-                print(f"deployment rejected: {report['name']} branch={report['branch']} state={report['state']} {report['detail']}", file=sys.stderr)
+                print(
+                    f"deployment rejected: {report['name']} branch={report['branch']} "
+                    f"state={report['state']} {report['detail']}; fix: {verdict.remedy}",
+                    file=sys.stderr,
+                )
+            elif verdict.warning:
+                print(
+                    f"WARNING: {report['name']} {report['state']} does not block analysis "
+                    f"({verdict.warning}); fix when convenient: {verdict.remedy}",
+                    file=sys.stderr,
+                )
 
     if args.json:
         print(

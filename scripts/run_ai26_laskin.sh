@@ -60,6 +60,7 @@ if [[ ! "$REPORT_MAX_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
   printf 'ERROR: LACLAUGPT_REPORT_MAX_SECONDS must be a positive integer (seconds)\n' >&2
   exit 2
 fi
+OBJECT_STORE_STATE="unchecked"
 RUN_MODE="once"
 CHECK_ONLY=0
 DEBUG_FLAG=0
@@ -158,9 +159,18 @@ else
   log "curl not available; skipping Ollama preflight"
 fi
 
-# Configuration validation (offline, redacted).
-if ! "$PY" -m laclaugpt_data_analysis.preflight; then
-  fail "preflight reported a configuration problem; refusing to claim tasks"
+# Configuration validation (offline, redacted). The report is captured as well as printed so
+# a degraded-but-tolerated object store reaches the cycle's final status line (#501).
+PREFLIGHT_JSON="$("$PY" -m laclaugpt_data_analysis.preflight)" || fail "preflight reported a configuration problem; refusing to claim tasks"
+printf '%s\n' "$PREFLIGHT_JSON"
+OBJECT_STORE_STATE="$(printf '%s' "$PREFLIGHT_JSON" | "$PY" -c '
+import json, sys
+report = json.load(sys.stdin)
+store = (report.get("checks") or {}).get("object_store") or {}
+print("degraded:" + str(store.get("degraded_reason") or "unknown") if store.get("degraded") else "ok")
+' 2>/dev/null || echo unknown)"
+if [[ "$OBJECT_STORE_STATE" != "ok" ]]; then
+  log "WARNING: object store is ${OBJECT_STORE_STATE}; continuing because LACLAUGPT_OBJECT_STORE_REQUIRED=0 (recorded as degraded, #501)"
 fi
 
 # Verify the deployed code before check-only success or task claims.
@@ -311,5 +321,5 @@ elif [[ "${LACLAUGPT_PERIODIC_REPORTS:-1}" == "0" ]]; then
   REPORT_STATUS="disabled"
 fi
 
-log "AI26 Laskin analysis end worker_status=$WORKER_STATUS report_status=$REPORT_STATUS status=$FINAL_STATUS"
+log "AI26 Laskin analysis end worker_status=$WORKER_STATUS report_status=$REPORT_STATUS object_store=$OBJECT_STORE_STATE status=$FINAL_STATUS"
 exit "$FINAL_STATUS"

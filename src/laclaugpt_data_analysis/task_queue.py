@@ -11,6 +11,7 @@ from typing import Any, Callable, Mapping, Protocol
 
 from .config import Settings
 from .storage import mongo_client, redis_client
+from .timestamps import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -680,7 +681,10 @@ class MongoTaskStore:
             "result": dict(result),
             "provenance": dict(provenance),
             "generation_fingerprint": fingerprint,
-            "created_at": time.time(),
+            # #504: a datetime is queryable by a datetime range; the float was not. The epoch
+            # stays beside it for numeric consumers, so neither representation has to guess.
+            "created_at": utc_now(),
+            "created_at_epoch": time.time(),
         }
         try:
             self.results.insert_one(document)
@@ -718,7 +722,9 @@ class MongoTaskStore:
                 "provenance": dict(provenance),
                 "terminal": terminal,
                 **bounded_failure_diagnostics(diagnostics),
-                "created_at": time.time(),
+                # #504: same rule as the result writer -- datetime first, epoch beside it.
+                "created_at": utc_now(),
+                "created_at_epoch": time.time(),
             }
         )
 

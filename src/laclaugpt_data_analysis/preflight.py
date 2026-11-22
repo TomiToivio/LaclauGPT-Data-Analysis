@@ -247,6 +247,15 @@ def preflight_report() -> dict[str, Any]:
         # sees "quota exhausted" and sees that this run chose to continue anyway. What it stops is a full
         # bucket for a media pipeline blocking a text-only analysis run (#407 / #396).
         report["checks"]["object_store"]["blocking"] = False
+        # #501: `required: false` is an availability decision, not a claim that storage worked.
+        # When the store is refusing writes, every run that continues is degraded, and the run
+        # record has to be able to say so -- otherwise "raw text was persisted" quietly becomes
+        # "it was not, and nothing said so".
+        if store_check.get("writeable") is False or store_check.get("reachable") is False:
+            report["checks"]["object_store"]["degraded"] = True
+            report["checks"]["object_store"]["degraded_reason"] = str(
+                provider_code or ("unreachable" if store_check.get("reachable") is False else "not writeable")
+            )
     if store_required and store_check.get("reachable") is False and not provider_code:
         # No provider code: the request never got an answer (DNS, TLS, timeout).
         problems.append("object store unreachable")

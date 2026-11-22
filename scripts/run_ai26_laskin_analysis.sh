@@ -42,8 +42,10 @@ export LACLAUGPT_PRIVATE_CONFIG_DIR="$PRIVATE_DIR"
 
 exec 9>"$LOCK_FILE"
 if ! flock -n 9; then
-  echo "AI26 Laskin analysis already running; exiting cleanly" >&2
-  exit 0
+  # #503: 3 is the code the wrapper documents for "already running". Exiting 0 here made a
+  # tick that claimed, analysed and wrote nothing indistinguishable from a healthy one.
+  echo "AI26 Laskin analysis already running; exiting with 3 (already running)" >&2
+  exit 3
 fi
 
 cd "$ROOT_DIR"
