@@ -89,20 +89,11 @@ derived or exported for Phase 1. Nothing is lost: an opposed pole the source sta
 Success criterion: `them` populated iff a record has an antagonism whose source is in `us`; both empty
 otherwise; no record with `them` and empty `us`.
 
-## D3 — `themes` asked for, dropped by the schema (#453)
+## D3 — DECIDED: option 2 (#453)
 
-`prompts/laclau/document_analysis_v1.md:11` asks the model for "topics/themes"; `DiscourseProposal` has no
-`themes` field, so a theme cannot survive validation, and `postprocess` never assigns `analysis.themes`.
+A political theme is an interpretive claim about how a source connects an AI issue to a conflict over power, legitimacy, rights or collective interests. For example, a dispute over who controls workplace automation can support a theme of worker control. A mention of automation alone is a descriptive topic. Return themes as labelled elements with source quotations. Omit unsupported themes and avoid duplicating signifier or formation labels.
 
-Options: (a) wire `themes` through proposal → postprocess and name the Phase 1 concept it operationalises;
-(b) remove it from the prompt and from `AnalysisSection`.
-
-Recommended for decision: **(b) remove from the prompt, keep the field reserved** until a decision names
-what a theme is that `topics` (already populated) does not capture. Leaving the prompt asking for output
-the schema discards spends tokens on text that is thrown away.
-
-Success criterion: the prompt requests only fields the schema can store; a test enumerates the two sets
-and compares them (the companion guard in this PR covers the canonical side).
+The AI26 discourse task v2, DiscourseProposal and canonical postprocessor implement the field. Historical records retain the 0/3,636 baseline. Review coverage and false positives on a fixed sample before wider reprocessing.
 
 ## D4 — analyses without source text, and coding without evidence (#451, #460)
 
