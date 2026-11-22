@@ -801,10 +801,13 @@ class AI26TaskWorker(TaskWorker):
                 mongo_code = getattr(write_exc, "code", None)
                 if isinstance(mongo_details, dict):
                     mongo_code = mongo_code or mongo_details.get("code")
+                # Traceback locations are useful without exposing private source text.
+                import traceback
+                locations = [f"{frame.name}:{frame.lineno}" for frame in traceback.extract_tb(write_exc.__traceback__)[-8:]]
                 logger.error(
                     "AI26 result persistence failed: exception=%s mongo_code=%s "
-                    "operation=write_result; task remains retryable",
-                    type(write_exc).__name__, mongo_code,
+                    "operation=write_result traceback=%s; task remains retryable",
+                    type(write_exc).__name__, mongo_code, " <- ".join(locations),
                 )
                 raise
             self.queue.ack(claimed.message_id)
