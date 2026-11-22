@@ -48,6 +48,7 @@ from ..canonical import (
     RelationChain,
 )
 from ..models import Topic
+from ..formation_vocabulary import FORMATION_VOCABULARY_VERSION, normalize_formation_label
 from ..research_record import ensure_research_layers
 from ..social_semiotic import UncertaintyObservation
 from .evidence import evidence_ids
@@ -88,19 +89,36 @@ def _objects(
     document from asserting something only the collection can establish.
     """
     corpus_required = kind in {"floating_signifier", "empty_signifier", "formation"}
-    return [
-        DiscourseObject(
-            object_id=f"{kind}:{index}",
-            label=item.label,
-            kind=kind,
-            evidence_ids=evidence_ids(record, item.evidence, f"{kind}:{index}"),
-            confidence=item.confidence,
-            uncertainty=item.uncertainty,
-            review_status="PROVISIONAL",
-            metadata={"corpus_validation_required": corpus_required},
+    results: list[DiscourseObject] = []
+    for index, item in enumerate(items, start=1):
+        label = item.label
+        description = None
+        metadata: dict[str, object] = {"corpus_validation_required": corpus_required}
+        if kind == "formation":
+            label, resolved = normalize_formation_label(item.label)
+            metadata.update({
+                "formation_vocabulary_version": FORMATION_VOCABULARY_VERSION,
+                "formation_label_resolved": resolved,
+                "original_formation_label": item.label,
+            })
+            if not resolved:
+                # Preserve novel prose without assigning an invented ideology.
+                description = item.label
+                metadata["requires_label_review"] = True
+        results.append(
+            DiscourseObject(
+                object_id=f"{kind}:{index}",
+                label=label,
+                kind=kind,
+                description=description,
+                evidence_ids=evidence_ids(record, item.evidence, f"{kind}:{index}"),
+                confidence=item.confidence,
+                uncertainty=item.uncertainty,
+                review_status="PROVISIONAL",
+                metadata=metadata,
+            )
         )
-        for index, item in enumerate(items, start=1)
-    ]
+    return results
 
 
 def _relation_chains(
