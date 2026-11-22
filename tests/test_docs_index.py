@@ -17,13 +17,20 @@ INDEX = DOCS / "README.md"
 
 
 def documents() -> set[str]:
+    """Every markdown document under ``docs/``, as a path relative to ``docs/``.
+
+    Subdirectories count: ``methods/`` and ``legacy_ep24_prompts/`` hold documents a reader
+    needs, and a glob over the top level silently declared the index complete without them.
+    """
     return {
         path.relative_to(DOCS).as_posix() for path in DOCS.rglob("*.md")
-    } - {INDEX.name}
+    } - {INDEX.relative_to(DOCS).as_posix()}
 
 
 def links(index: str) -> set[str]:
-    return set(re.findall(r"\]\(([A-Za-z0-9_./-]+\.md)\)", index))
+    return set(
+        re.findall(r"\]\(((?:[A-Za-z0-9_.-]+/)*[A-Za-z0-9_.-]+\.md)\)", index)
+    )
 
 
 def test_every_document_is_indexed():
