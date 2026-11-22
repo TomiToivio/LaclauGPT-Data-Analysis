@@ -38,7 +38,7 @@ from ep24_sna import (
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s %(levelname)s %(message)s")
 LOG = logging.getLogger("step_8_roihu_social_network_analysis")
 
-PROMPT_VERSION = "ep24-sna-extraction/3.1-audited-relations"
+PROMPT_VERSION = "ep24-sna-extraction/3.2-bounded-structured-retry"
 CASTELLS_PROMPT_VERSION = "ep24-sna-castells/1.0"
 
 EXTRACTION_SYSTEM = """Extract only empirical actor-to-actor communication or institutional
@@ -84,14 +84,20 @@ population-level influence from a small sample. Produce short Markdown prose lab
 interpretation rather than empirical fact."""
 
 
+def _extraction_prompt(attempt: int) -> str:
+    """Exact system prompt, including the bounded compact-JSON retry contract."""
+    if attempt:
+        return EXTRACTION_SYSTEM + "\nReturn complete compact JSON. Limit analysis_markdown to 250 characters."
+    return EXTRACTION_SYSTEM + "\nLimit analysis_markdown to 600 characters."
+
+
 def analyze_context(ollama, model, evidence, result_type):
     """Extract an evidence-backed graph with a bounded JSON repair budget."""
     budget = max(1, int(os.getenv("LACLAUGPT_STEP8_NUM_PREDICT", "2048")))
-    prompt = EXTRACTION_SYSTEM + "\nLimit analysis_markdown to 600 characters."
     for attempt in range(3):
         response = ollama.chat(
             model=model, think=False, format=result_type.model_json_schema(),
-            messages=[{"role": "system", "content": prompt}, {"role": "user", "content": evidence}],
+            messages=[{"role": "system", "content": _extraction_prompt(attempt)}, {"role": "user", "content": evidence}],
             options={"temperature": 0.0, "num_ctx": 8192, "num_predict": min(8192, budget * 2**attempt)},
         )
         try:
@@ -101,7 +107,6 @@ def analyze_context(ollama, model, evidence, result_type):
                 truncated = response.get("done_reason") == "length" or "EOF" in str(exc)
                 reason = "response was truncated before the JSON closed" if truncated else "invalid structured JSON"
                 raise ValueError(f"Step 8 {reason} after three attempts") from exc
-            prompt = EXTRACTION_SYSTEM + "\nReturn complete compact JSON. Limit analysis_markdown to 250 characters."
 
 
 def _models():
@@ -196,10 +201,12 @@ def sna_evidence_report(row, *, model: str | None = None) -> tuple[str, dict, st
         "model_visible_chars": packet.model_visible_chars,
     }
     digest = effective_prompt_fingerprint(
-        EXTRACTION_SYSTEM,
-        f"{PROMPT_VERSION}\n{packet.text}",
+        _extraction_prompt(0),
+        f"{PROMPT_VERSION}\n{packet.text}\nretry_system={_extraction_prompt(1)}",
         model or ollama_model(),
-        {"temperature": 0.0, "num_ctx": 8192},
+        {"temperature": 0.0, "num_ctx": 8192,
+         "num_predict": [min(8192, max(1, int(os.getenv("LACLAUGPT_STEP8_NUM_PREDICT", "2048"))) * 2**i) for i in range(3)],
+         "think": False},
     )
     return packet.text, report, digest
 

@@ -63,12 +63,10 @@ def list_runs(settings) -> list[dict[str, object]]:
 
 
 def dedupe_by_source_url(records):
-    """One record per source URL, keeping the first; return (records, collapsed, no_native_id).
+    """Collapse only identical repeated records, never distinct analyses (#488).
 
-    A run can hold two analyses of the same source (a re-analysis, or a duplicated row).
-    A bundle is a research artifact keyed by source identity, so carrying both would look
-    like two sources and make `bundle_audit` -- correctly -- refuse the file. What was
-    dropped is reported instead of disappearing (#488).
+    The Mongo query has no stable ordering: choosing the 'first' of two
+    different analyses would discard research data nondeterministically.
     """
     seen: dict[str, object] = {}
     kept: list[object] = []
@@ -76,13 +74,14 @@ def dedupe_by_source_url(records):
     no_native_id = 0
     for record in records:
         key = (getattr(record, "source_url", "") or "").strip()
-        # An empty URL is a missing identity, not a shared one: deduping it would fold
-        # unrelated records together, which is the very failure this guards against.
-        if key and key in seen:
+        if not key:
+            raise ValueError("bundle source identity missing")
+        if key in seen:
+            if seen[key] != record:
+                raise ValueError("conflicting analyses share a source identity; refuse arbitrary deduplication")
             collapsed += 1
             continue
-        if key:
-            seen[key] = record
+        seen[key] = record
         if not (getattr(record, "source_native_ids", None) or {}).get("document_id"):
             no_native_id += 1
         kept.append(record)
@@ -123,7 +122,7 @@ def main(argv: list[str] | None = None) -> int:
     if not args.run_id or not args.output_root:
         parser.error("--run-id and --output-root are required unless --list-runs is given")
 
-    records = load_analysis_records(settings, run_id=args.run_id)
+    records = load_analysis_records(settings, run_id=args.run_id, strict_identity=True)
     completed = [r for r in records if getattr(r.analysis, "status", "") == COMPLETED]
     if not completed:
         print(json.dumps({"run_id": args.run_id, "status": "no_completed_records",

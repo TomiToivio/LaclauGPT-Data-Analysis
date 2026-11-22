@@ -467,7 +467,8 @@
   "selective_vendor_ports": {
     "steps_7_8": {
       "reference": "47efd31fbc4f7ff88639dbf78060c807e89b7214",
-      "scope": "Selective structured-output guard port from upstream #403/#409/#410. Step 8 adapts the retry behavior to its local extraction call. Existing dependency, configuration and codebook differences are intentional."
+      "scope": "Selective structured-output guard port from upstream #403/#409/#410. Step 8 adapts the retry behavior to its local extraction call. Existing dependency, configuration and codebook differences are intentional.",
+      "prompt_provenance": "After PR #485 review, local Step 7 v4 and Step 8 3.2 bump their effective prompt versions; fingerprints incorporate initial and retry system instructions, bounded num_predict ladder, think=False. These intentional local versions do not claim byte-for-byte upstream parity. AI26 Phase 1 is unaffected."
     }
   }
 }

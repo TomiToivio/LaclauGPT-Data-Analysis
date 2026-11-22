@@ -45,7 +45,7 @@ def test_missing_run_id_and_output_root_is_a_usage_error(monkeypatch):
 def test_a_run_without_completed_records_refuses_to_write_a_bundle(monkeypatch, tmp_path, capsys):
     """The operator decision is explicit: no synthetic or empty export passed off as real."""
     monkeypatch.setattr(export, "load_settings", lambda: SimpleNamespace())
-    monkeypatch.setattr(export, "load_analysis_records", lambda settings, run_id: [
+    monkeypatch.setattr(export, "load_analysis_records", lambda settings, run_id, strict_identity=False: [
         SimpleNamespace(analysis=SimpleNamespace(status="collection-only")),
     ])
     code = export.main(["--run-id", "r1", "--output-root", str(tmp_path / "bundle")])
@@ -61,9 +61,8 @@ def test_export_reports_counts_paths_and_checksums_without_source_text(monkeypat
     artifact.write_text('{"x": 1}\n', encoding="utf-8")
 
     monkeypatch.setattr(export, "load_settings", lambda: SimpleNamespace())
-    monkeypatch.setattr(export, "load_analysis_records", lambda settings, run_id: [
-        SimpleNamespace(source_url="https://a.invalid/1", source_native_ids={"document_id": "d1"},
-                        analysis=SimpleNamespace(status="analyzed")),
+    monkeypatch.setattr(export, "load_analysis_records", lambda settings, run_id, strict_identity=False: [
+        SimpleNamespace(analysis=SimpleNamespace(status="analyzed")),
     ])
     monkeypatch.setattr(export, "write_research_bundle", lambda records, root, stem: {"jsonl": artifact})
 
@@ -82,10 +81,8 @@ def test_export_reports_counts_paths_and_checksums_without_source_text(monkeypat
 def test_limit_caps_the_export(monkeypatch, tmp_path, capsys):
     seen = {}
     monkeypatch.setattr(export, "load_settings", lambda: SimpleNamespace())
-    monkeypatch.setattr(export, "load_analysis_records", lambda settings, run_id: [
-        SimpleNamespace(source_url=f"https://a.invalid/{i}", source_native_ids={"document_id": f"d{i}"},
-                        analysis=SimpleNamespace(status="analyzed"))
-        for i in range(5)
+    monkeypatch.setattr(export, "load_analysis_records", lambda settings, run_id, strict_identity=False: [
+        SimpleNamespace(analysis=SimpleNamespace(status="analyzed")) for _ in range(5)
     ])
 
     def fake_write(records, root, stem):
@@ -97,33 +94,26 @@ def test_limit_caps_the_export(monkeypatch, tmp_path, capsys):
     assert seen["n"] == 2
 
 
-def test_duplicate_source_urls_are_collapsed_and_declared():
-    """#488: a bundle keyed by source identity must not carry the same URL twice."""
-    record = lambda url, doc: SimpleNamespace(source_url=url, source_native_ids={"document_id": doc})
-    records, collapsed, no_native_id = export.dedupe_by_source_url([
-        record("https://a.invalid/1", "d1"),
-        record("https://a.invalid/1", "d1"),
-        record("https://a.invalid/2", "d2"),
-        record("https://a.invalid/3", ""),
-    ])
-    assert [r.source_url for r in records] == [
-        "https://a.invalid/1", "https://a.invalid/2", "https://a.invalid/3",
-    ]
+def test_identical_duplicate_source_urls_are_counted_and_collapsed():
+    record = SimpleNamespace(source_url="https://example.invalid/1",
+                             source_native_ids={"document_id": "d1"})
+    distinct = SimpleNamespace(source_url="https://example.invalid/2",
+                               source_native_ids={})
+    kept, collapsed, no_native_id = export.dedupe_by_source_url([record, record, distinct])
+    assert kept == [record, distinct]
     assert collapsed == 1
-    assert no_native_id == 1, "records with no native document_id are counted, not hidden"
+    assert no_native_id == 1
 
 
-def test_collapsing_keeps_the_first_analysis_deterministically():
-    first = SimpleNamespace(source_url="https://a.invalid/1", source_native_ids={"document_id": "d1"})
-    second = SimpleNamespace(source_url="https://a.invalid/1", source_native_ids={"document_id": "d2"})
-    records, collapsed, _ = export.dedupe_by_source_url([first, second])
-    assert records == [first] and collapsed == 1
+def test_conflicting_analyses_cannot_be_silently_deduplicated():
+    first = SimpleNamespace(source_url="https://example.invalid/1",
+                            source_native_ids={"document_id": "d1"})
+    conflicting = SimpleNamespace(source_url="https://example.invalid/1",
+                                  source_native_ids={"document_id": "d2"})
+    with pytest.raises(ValueError, match="conflicting analyses"):
+        export.dedupe_by_source_url([first, conflicting])
 
 
-def test_records_with_no_url_are_not_folded_together(monkeypatch, tmp_path):
-    """Missing identity is not shared identity: two URL-less records must both survive."""
-    records, collapsed, _ = export.dedupe_by_source_url([
-        SimpleNamespace(source_url="", source_native_ids={}),
-        SimpleNamespace(source_url="", source_native_ids={}),
-    ])
-    assert len(records) == 2 and collapsed == 0
+def test_missing_identity_is_rejected_not_collapsed():
+    with pytest.raises(ValueError, match="identity missing"):
+        export.dedupe_by_source_url([SimpleNamespace(source_url="", source_native_ids={})])
