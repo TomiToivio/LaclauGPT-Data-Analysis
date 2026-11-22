@@ -35,12 +35,20 @@ def test_rejection_outranks_a_lock_in_the_escalation(tmp_path):
     journal = tmp_path / "ticks.jsonl"
     for _ in range(2):
         append_tick(
-            journal, stage="preflight", exit_code=2, check_only=False,
-            reject_threshold=2, skip_threshold=1,
+            journal,
+            stage="preflight",
+            exit_code=2,
+            check_only=False,
+            reject_threshold=2,
+            skip_threshold=1,
         )
     event = append_tick(
-        journal, stage="lock", exit_code=3, check_only=False,
-        reject_threshold=2, skip_threshold=1,
+        journal,
+        stage="lock",
+        exit_code=3,
+        check_only=False,
+        reject_threshold=2,
+        skip_threshold=1,
     )
     # Both thresholds are exceeded; the actionable cause must be the one reported.
     assert event["skip_streak"] >= 1
@@ -52,7 +60,9 @@ def test_success_still_clears_the_rejection_streak(tmp_path):
     journal = tmp_path / "ticks.jsonl"
     append_tick(journal, stage="preflight", exit_code=2, check_only=False, reject_threshold=2)
     append_tick(journal, stage="complete", exit_code=0, check_only=False, reject_threshold=2)
-    fresh = append_tick(journal, stage="preflight", exit_code=2, check_only=False, reject_threshold=2)
+    fresh = append_tick(
+        journal, stage="preflight", exit_code=2, check_only=False, reject_threshold=2
+    )
     assert fresh["reject_streak"] == 1
 
 
