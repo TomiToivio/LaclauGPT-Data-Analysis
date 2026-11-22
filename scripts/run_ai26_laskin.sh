@@ -89,6 +89,12 @@ record_tick_on_exit() {
   local code=$?
   trap - EXIT
   kill_worker_group
+  # #554: --force-unlock is a recovery command, not a cycle. Recording it as exit 0 would
+  # log a `cycle_completed` event and reset the very stall streak the operator is recovering
+  # from, turning a real stall into an apparently healthy hour.
+  if (( FORCE_UNLOCK )); then
+    return 0
+  fi
   local telemetry_dir="${PRIVATE_CONFIG_DIR:-${PRIVATE_ROOT:+$PRIVATE_ROOT/analysis/ai26}}"
   if [[ -n "$telemetry_dir" && -d "$telemetry_dir" ]]; then
     local args=(--path "$telemetry_dir/logs/ai26-analysis-ticks.jsonl"
