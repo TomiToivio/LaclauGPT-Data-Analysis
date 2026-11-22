@@ -61,6 +61,34 @@ def list_runs(settings) -> list[dict[str, object]]:
     ]
 
 
+
+def dedupe_by_source_url(records):
+    """One record per source URL, keeping the first; return (records, collapsed, no_native_id).
+
+    A run can hold two analyses of the same source (a re-analysis, or a duplicated row).
+    A bundle is a research artifact keyed by source identity, so carrying both would look
+    like two sources and make `bundle_audit` -- correctly -- refuse the file. What was
+    dropped is reported instead of disappearing (#488).
+    """
+    seen: dict[str, object] = {}
+    kept: list[object] = []
+    collapsed = 0
+    no_native_id = 0
+    for record in records:
+        key = (getattr(record, "source_url", "") or "").strip()
+        # An empty URL is a missing identity, not a shared one: deduping it would fold
+        # unrelated records together, which is the very failure this guards against.
+        if key and key in seen:
+            collapsed += 1
+            continue
+        if key:
+            seen[key] = record
+        if not (getattr(record, "source_native_ids", None) or {}).get("document_id"):
+            no_native_id += 1
+        kept.append(record)
+    return kept, collapsed, no_native_id
+
+
 def _deployed_sha() -> str:
     try:
         return subprocess.run(
@@ -101,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"run_id": args.run_id, "status": "no_completed_records",
                           "records_seen": len(records)}, indent=2))
         return 2
+    completed, collapsed, no_native_id = dedupe_by_source_url(completed)
     if args.limit:
         completed = completed[: args.limit]
 
@@ -116,6 +145,8 @@ def main(argv: list[str] | None = None) -> int:
         "exported_at_utc": datetime.now(UTC).isoformat(timespec="seconds"),
         "deployed_sha": _deployed_sha(),
         "records_exported": len(completed),
+        "duplicates_collapsed": collapsed,
+        "records_without_native_id": no_native_id,
         "records_seen_in_run": len(records),
         "output_root": str(args.output_root),
         "artifacts": artifacts,

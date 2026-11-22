@@ -62,7 +62,8 @@ def test_export_reports_counts_paths_and_checksums_without_source_text(monkeypat
 
     monkeypatch.setattr(export, "load_settings", lambda: SimpleNamespace())
     monkeypatch.setattr(export, "load_analysis_records", lambda settings, run_id: [
-        SimpleNamespace(analysis=SimpleNamespace(status="analyzed")),
+        SimpleNamespace(source_url="https://a.invalid/1", source_native_ids={"document_id": "d1"},
+                        analysis=SimpleNamespace(status="analyzed")),
     ])
     monkeypatch.setattr(export, "write_research_bundle", lambda records, root, stem: {"jsonl": artifact})
 
@@ -73,6 +74,7 @@ def test_export_reports_counts_paths_and_checksums_without_source_text(monkeypat
     assert payload["artifacts"]["analysis.jsonl"]["sha256"] == hashlib.sha256(artifact.read_bytes()).hexdigest()
     assert set(payload) == {
         "run_id", "exported_at_utc", "deployed_sha", "records_exported",
+        "duplicates_collapsed", "records_without_native_id",
         "records_seen_in_run", "output_root", "artifacts",
     }, "the summary is the privacy boundary: counts and paths only, never record content"
 
@@ -81,7 +83,9 @@ def test_limit_caps_the_export(monkeypatch, tmp_path, capsys):
     seen = {}
     monkeypatch.setattr(export, "load_settings", lambda: SimpleNamespace())
     monkeypatch.setattr(export, "load_analysis_records", lambda settings, run_id: [
-        SimpleNamespace(analysis=SimpleNamespace(status="analyzed")) for _ in range(5)
+        SimpleNamespace(source_url=f"https://a.invalid/{i}", source_native_ids={"document_id": f"d{i}"},
+                        analysis=SimpleNamespace(status="analyzed"))
+        for i in range(5)
     ])
 
     def fake_write(records, root, stem):
@@ -91,3 +95,35 @@ def test_limit_caps_the_export(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(export, "write_research_bundle", fake_write)
     assert export.main(["--run-id", "r1", "--output-root", str(tmp_path), "--limit", "2"]) == 0
     assert seen["n"] == 2
+
+
+def test_duplicate_source_urls_are_collapsed_and_declared():
+    """#488: a bundle keyed by source identity must not carry the same URL twice."""
+    record = lambda url, doc: SimpleNamespace(source_url=url, source_native_ids={"document_id": doc})
+    records, collapsed, no_native_id = export.dedupe_by_source_url([
+        record("https://a.invalid/1", "d1"),
+        record("https://a.invalid/1", "d1"),
+        record("https://a.invalid/2", "d2"),
+        record("https://a.invalid/3", ""),
+    ])
+    assert [r.source_url for r in records] == [
+        "https://a.invalid/1", "https://a.invalid/2", "https://a.invalid/3",
+    ]
+    assert collapsed == 1
+    assert no_native_id == 1, "records with no native document_id are counted, not hidden"
+
+
+def test_collapsing_keeps_the_first_analysis_deterministically():
+    first = SimpleNamespace(source_url="https://a.invalid/1", source_native_ids={"document_id": "d1"})
+    second = SimpleNamespace(source_url="https://a.invalid/1", source_native_ids={"document_id": "d2"})
+    records, collapsed, _ = export.dedupe_by_source_url([first, second])
+    assert records == [first] and collapsed == 1
+
+
+def test_records_with_no_url_are_not_folded_together(monkeypatch, tmp_path):
+    """Missing identity is not shared identity: two URL-less records must both survive."""
+    records, collapsed, _ = export.dedupe_by_source_url([
+        SimpleNamespace(source_url="", source_native_ids={}),
+        SimpleNamespace(source_url="", source_native_ids={}),
+    ])
+    assert len(records) == 2 and collapsed == 0
