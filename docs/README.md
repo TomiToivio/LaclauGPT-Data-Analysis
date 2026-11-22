@@ -4,6 +4,8 @@ Every document in `docs/`, grouped by what it is for. 71 files; this page is
 generated from each file's own title, so it cannot drift from what the files say about
 themselves. Start with [ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the repository.
 
+- [Phase 1 research method: source evidence to human review](AI26_PHASE1_METHOD.md)
+
 ## AI26 operations and runtime
 
 - [Bounded AI26 run-next delegation (#341)](AI26_BOUNDED_RUN_NEXT.md)
