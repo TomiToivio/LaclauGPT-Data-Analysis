@@ -76,7 +76,9 @@ record_tick_on_exit() {
   if [[ -n "$telemetry_dir" && -d "$telemetry_dir" ]]; then
     local args=(--path "$telemetry_dir/logs/ai26-analysis-ticks.jsonl"
                 --stage "$TICK_STAGE" --exit-code "$code"
-                --worker-status "$WORKER_STATUS" --report-status "$REPORT_STATUS")
+                --worker-status "$WORKER_STATUS" --report-status "$REPORT_STATUS"
+                --skip-threshold "${LACLAUGPT_AI26_SKIP_ALERT_THRESHOLD:-0}"
+                --reject-threshold "${LACLAUGPT_AI26_REJECT_ALERT_THRESHOLD:-0}")
     (( CHECK_ONLY )) && args+=(--check-only)
     local sha=""
     sha=$(git -C "$ROOT_DIR" rev-parse --short HEAD 2>/dev/null) || true
@@ -84,7 +86,7 @@ record_tick_on_exit() {
     local interpreter="$ROOT_DIR/.venv/bin/python"
     [[ -x "$interpreter" ]] || interpreter=python3
     if ! "$interpreter" "$ROOT_DIR/src/laclaugpt_data_analysis/ai26_tick_telemetry.py" "${args[@]}"; then
-      printf '[%s] WARNING: AI26 tick journal append failed; verify journal path and permissions\\n' "$(date -Is)" >&2
+      printf '[%s] WARNING: AI26 tick journal append failed; verify journal path and permissions\n' "$(date -Is)" >&2
     fi
   else
     printf '[%s] WARNING: private telemetry directory unavailable; no tick JSONL written\n' "$(date -Is)" >&2
