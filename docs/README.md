@@ -1,6 +1,6 @@
 # Documentation index
 
-Every document in `docs/`, grouped by what it is for. 71 files; this page is
+Every document in `docs/`, grouped by what it is for. 72 files; this page is
 generated from each file's own title, so it cannot drift from what the files say about
 themselves. Start with [ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the repository.
 
@@ -95,5 +95,6 @@ themselves. Start with [ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the 
 ## Cross-cutting notes
 
 - [Repository map: paths and responsibilities](REPOSITORY_MAP.md)
+- [Repository navigation for human maintainers](REPOSITORY_GUIDE.md)
 
 - [LaclauGPT Coding Style](CODING_STYLE.md)

@@ -18,6 +18,25 @@
 
 **Researcher-facing Phase 1 guide:** [Follow source evidence through provisional discourse codes and human review](docs/methods/phase1_researcher_guide.md). It maps the six operations in the [locked Phase 1 paper](https://github.com/TomiToivio/LaclauGPT/blob/main/paper/PHASE_1_PAPER.md) to code, includes a synthetic attribution example, and distinguishes implementation from proposed validation.
 
+**New to the codebase?** Start with the [repository navigation guide](docs/REPOSITORY_GUIDE.md) and the [architecture map](docs/ARCHITECTURE.md).
+
+## Find and run the analysis
+
+| Task | Start here |
+| --- | --- |
+| Understand seven protected scientific steps | [Human pipeline](laclaugpt/HUMAN_PIPELINE.md) |
+| Find package modules and installed commands | [Repository guide](docs/REPOSITORY_GUIDE.md) and [pyproject.toml](pyproject.toml) |
+| Trace evidence and source identity | [Canonical record contract](docs/CANONICAL_RECORD.md) |
+| Run deployment and inspect tests | [Deployment](deployment/), [scripts](scripts/) and [tests](tests/) |
+
+Run the development checks with Python 3.11+:
+
+```bash
+python -m pip install -e '.[dev]'
+python -m pytest
+python -m ruff check src tests
+```
+
 **New to the codebase?** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) maps the tree, the
 pipelines and where each feature lives; [docs/README.md](docs/README.md) indexes every topical
 document in `docs/`.
