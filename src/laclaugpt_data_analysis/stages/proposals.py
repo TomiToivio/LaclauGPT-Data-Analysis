@@ -145,6 +145,7 @@ class DiscourseProposal(BaseModel):
     nodal_point_candidates: list[DiscursiveElement] = Field(default_factory=list)
     floating_signifier_candidates: list[DiscursiveElement] = Field(default_factory=list)
     empty_signifier_candidates: list[DiscursiveElement] = Field(default_factory=list)
+    themes: list[DiscursiveElement] = Field(default_factory=list)
     formation_candidates: list[DiscursiveElement] = Field(default_factory=list)
     imaginary_candidates: list[DiscursiveElement] = Field(default_factory=list)
     populist: bool = False

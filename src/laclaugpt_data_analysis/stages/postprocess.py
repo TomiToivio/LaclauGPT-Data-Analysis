@@ -51,7 +51,7 @@ from ..formation_vocabulary import FORMATION_VOCABULARY_VERSION, normalize_forma
 from ..models import Topic
 from ..research_record import ensure_research_layers
 from ..social_semiotic import UncertaintyObservation
-from .evidence import evidence_ids
+from .evidence import evidence_ids, locate_quote
 from .evidence_gate import abstain_without_source_evidence
 from .proposals import (
     DiscourseProposal,
@@ -193,6 +193,7 @@ def postprocess_record(
     # This covers every caller of the postprocessor, so a caller that skipped the
     # runner-level gate cannot still write labels derived from metadata (#451).
     if abstain_without_source_evidence(record, stage="postprocess"):
+        record.analysis.themes = []
         return ensure_research_layers(record)
 
     record.analysis.status = "analyzed"
@@ -212,6 +213,21 @@ def postprocess_record(
     )
     record.analysis.nodal_points = _objects(record, discourse.nodal_point_candidates, "nodal_point")
     record.analysis.formations = _objects(record, discourse.formation_candidates, "formation")
+    reserved_labels = {
+        item.label.strip().casefold()
+        for item in [*record.analysis.signifiers, *record.analysis.formations, *discourse.formation_candidates]
+    }
+    themes = []
+    for theme in discourse.themes:
+        label = theme.label.strip().casefold()
+        if not label or label in reserved_labels:
+            continue
+        quotes = [quote for quote in theme.evidence
+                  if locate_quote(record.content.text or "", quote.strip())[0] is not None]
+        if quotes:
+            themes.append(theme.model_copy(update={"evidence": quotes}))
+            reserved_labels.add(label)
+    record.analysis.themes = _objects(record, themes, "theme")
     record.analysis.imaginaries = (
         _objects(record, discourse.imaginary_candidates, "imaginary")
         if enabled(ctx, "sociotechnical_imaginaries")

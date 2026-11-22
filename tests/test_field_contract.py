@@ -45,7 +45,9 @@ class TestTheRealContract:
         assert defects <= {fc.NO_PRODUCER, fc.PRODUCER_WITHOUT_INPUT, fc.PRODUCER_MISSING_UPSTREAM}
 
     def test_the_fields_this_batch_is_about_are_registered(self):
-        for name in ("themes", "them"):
+        assert "themes" not in fc.UNPRODUCED_FIELDS
+        assert "discourses" not in fc.UNPRODUCED_FIELDS
+        for name in ("them",):
             assert name in fc.UNPRODUCED_FIELDS, name
 
     def test_the_report_runs_and_names_the_registered_fields(self):

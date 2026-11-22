@@ -100,16 +100,7 @@ UNPRODUCED_FIELDS: dict[str, UnproducedField] = {
                "it occurred in the source",
         decision="emit mention spans when entities are extracted, or retire the field",
     ),
-    "themes": UnproducedField(
-        field="themes",
-        issue="#453",
-        defect=PRODUCER_WITHOUT_INPUT,
-        reason="pipeline.py assigns themes from proposal.themes and the prompt asks for them, but the "
-               "analysed corpus carries none: the path that ran is the discourse stage, whose "
-               "DiscourseProposal has no themes field",
-        decision="add themes to the discourse proposal (and name the Phase 1 concept they "
-                 "operationalise), or drop the field, the prompt line and the export column",
-    ),
+
 }
 
 
