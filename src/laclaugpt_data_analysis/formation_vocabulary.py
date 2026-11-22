@@ -10,10 +10,16 @@ from __future__ import annotations
 import re
 
 FORMATION_VOCABULARY_VERSION = "ai26-formations-2026-11-22"
-FORMATION_LABELS = frozenset({
-    "existential_risk", "accelerationist", "left_accelerationist",
-    "ai_safety", "critical_ai", "anti_ai",
-})
+FORMATION_LABELS = frozenset(
+    {
+        "existential_risk",
+        "accelerationist",
+        "left_accelerationist",
+        "ai_safety",
+        "critical_ai",
+        "anti_ai",
+    }
+)
 FORMATION_FALLBACKS = frozenset({"other", "unknown"})
 
 _ALIASES: dict[str, str] = {
@@ -49,7 +55,7 @@ _ALIASES: dict[str, str] = {
 # have no automatic mapping: context may distinguish different formations.
 
 def normalize_formation_label(label: str) -> tuple[str, bool]:
-    """Return (controlled_label, resolved_exactly), without semantic guessing."""
+    """Return the controlled label and whether it matches a documented alias."""
     text = re.sub(r"\s+", " ", label.strip()).casefold()
     normalized = _ALIASES.get(text)
     if normalized:
@@ -65,5 +71,8 @@ def is_countable_formation(item: object) -> bool:
     """
     label = str(getattr(item, "label", "") or "").strip().casefold()
     metadata = getattr(item, "metadata", None) or {}
-    return bool(label and label not in FORMATION_FALLBACKS
-                and metadata.get("formation_label_resolved") is not False)
+    return bool(
+        label
+        and label not in FORMATION_FALLBACKS
+        and metadata.get("formation_label_resolved") is not False
+    )
