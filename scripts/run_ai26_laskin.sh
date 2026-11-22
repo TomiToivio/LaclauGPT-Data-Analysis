@@ -11,7 +11,7 @@
 #   scripts/run_ai26_laskin.sh --debug --once    verbose diagnostics on stdout
 #   scripts/run_ai26_laskin.sh --check           preflight only, no work
 #
-# Production checks require all three clean main checkouts to match freshly fetched origin/main.
+# Gate only the executed Analysis checkout; warn about sibling drift.
 # LACLAUGPT_CYCLE_MAX_SECONDS (default 9000) bounds the worker; LACLAUGPT_REPORT_MAX_SECONDS
 # (default 1800) bounds the periodic report, which runs after it inside the same flock (#360).
 #   scripts/run_ai26_laskin.sh                   same as --once (cron-safe)
@@ -112,7 +112,6 @@ fi
 : "${LACLAUGPT_RUN_ID:?LACLAUGPT_RUN_ID is required}"
 : "${LACLAUGPT_MONGODB_URI:?LACLAUGPT_MONGODB_URI is required}"
 : "${LACLAUGPT_REDIS_URL:?LACLAUGPT_REDIS_URL is required}"
-: "${LACLAUGPT_S3_BUCKET:?LACLAUGPT_S3_BUCKET is required}"
 
 [[ "$LACLAUGPT_PROJECT_ID" == "ai26" ]] || fail "this wrapper only runs the ai26 project"
 
@@ -123,7 +122,9 @@ export LACLAUGPT_EXECUTION=${LACLAUGPT_EXECUTION:-cron}
 export LACLAUGPT_STORAGE=${LACLAUGPT_STORAGE:-distributed}
 export LACLAUGPT_DATA_BACKEND=${LACLAUGPT_DATA_BACKEND:-mongodb}
 export LACLAUGPT_CACHE_BACKEND=${LACLAUGPT_CACHE_BACKEND:-redis}
-export LACLAUGPT_OBJECT_BACKEND=${LACLAUGPT_OBJECT_BACKEND:-s3}
+# AI26 is text-only. MongoDB/Redis remain required; no media/object storage.
+export LACLAUGPT_OBJECT_BACKEND=local
+export LACLAUGPT_OBJECT_STORE_REQUIRED=0
 export LACLAUGPT_LLM_MODE=${LACLAUGPT_LLM_MODE:-local-ollama}
 export LACLAUGPT_LLM_MODEL=${LACLAUGPT_LLM_MODEL:-gemma4:12b}
 export LACLAUGPT_LLM_ENDPOINT=${LACLAUGPT_LLM_ENDPOINT:-http://127.0.0.1:11500}
@@ -164,7 +165,9 @@ if ! "$PY" -m laclaugpt_data_analysis.preflight; then
 fi
 
 # Verify the deployed code before check-only success or task claims.
-"$PY" -m laclaugpt_data_analysis.deploy_drift --strict --quiet || fail "deployed revisions failed verification"
+"$PY" -m laclaugpt_data_analysis.deploy_drift --strict --path "$ROOT_DIR" --quiet || fail "Analysis checkout failed deployment verification at $ROOT_DIR; inspect git status and fast-forward main safely outside cron"
+# Collection and Visualization are independent services; drift there is warning-only.
+"$PY" -m laclaugpt_data_analysis.deploy_drift --quiet || log "WARNING: sibling drift reporting failed"
 
 if (( CHECK_ONLY )); then
   log "preflight complete (--check); no tasks claimed"
