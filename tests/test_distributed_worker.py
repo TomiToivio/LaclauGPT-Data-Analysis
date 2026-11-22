@@ -22,6 +22,20 @@ def sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+@pytest.mark.parametrize(
+    "payload",
+    [b"", b"analysis", bytes(range(256)) * 8192],
+    ids=["empty", "text", "multi-megabyte-binary"],
+)
+def test_worker_checksum_matches_standard_sha256(tmp_path: Path, payload: bytes) -> None:
+    """Frozen worker inputs retain their byte-for-byte SHA-256 identity."""
+    from laclaugpt_data_analysis.distributed_worker import _sha256
+
+    path = tmp_path / "frozen.bin"
+    path.write_bytes(payload)
+    assert _sha256(path) == hashlib.sha256(payload).hexdigest()
+
+
 def make_binding(tmp_path: Path, *, public_git_sha: str = "abc123") -> WorkerBinding:
     private = tmp_path / "private"
     private.mkdir()
