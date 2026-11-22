@@ -110,3 +110,16 @@ def test_a_glob_in_the_lock_path_is_rejected(tmp_path: Path) -> None:
     assert result.returncode == 2
     assert "shell glob" in result.stderr
     assert not Path(str(lock)).exists()
+
+
+def test_force_unlock_is_not_recorded_as_a_completed_cycle(tmp_path: Path) -> None:
+    """A recovery command must not reset the stall alarm it is recovering from."""
+    telemetry = tmp_path / "analysis" / "ai26" / "logs"
+    telemetry.mkdir(parents=True)
+    journal = telemetry / "ai26-analysis-ticks.jsonl"
+    lock = tmp_path / "run" / "ai26.lock"
+
+    result = run_force_unlock(tmp_path, lock)
+
+    assert result.returncode == 0, result.stderr
+    assert not journal.exists(), "force-unlock wrote a tick event and masked the stall"
