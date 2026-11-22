@@ -47,8 +47,8 @@ from ..canonical import (
     Relation,
     RelationChain,
 )
-from ..models import Topic
 from ..formation_vocabulary import FORMATION_VOCABULARY_VERSION, normalize_formation_label
+from ..models import Topic
 from ..research_record import ensure_research_layers
 from ..social_semiotic import UncertaintyObservation
 from .evidence import evidence_ids
