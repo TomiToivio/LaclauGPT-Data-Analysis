@@ -94,7 +94,7 @@ def summarize_record(
     """Run the descriptive pass and store it as the record's summary."""
     system_id, task_id = phase1_preanalysis_prompt_ids("summary")
     system_resource = load_prompt(system_id, version="v2")
-    task_resource = load_prompt(task_id, version="v2")
+    task_resource = load_prompt(task_id, version="v3" if project_profile.casefold() == "ai26" else "v2")
     rendered_task = task_resource.render(
         project_note=f"{project_profile.upper()} source context only; remain descriptive."
     )

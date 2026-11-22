@@ -17,3 +17,5 @@ candidate concepts belong in uncertainty/abstentions for researcher review.
 A label is NOT validated hegemony or a permanent actor identity.
 
 A political theme is an interpretive claim about how a source connects an AI issue to a conflict over power, legitimacy, rights or collective interests. For example, a dispute over who controls workplace automation can support a theme of worker control. A mention of automation alone is a descriptive topic. Return themes as labelled elements with source quotations. Omit unsupported themes and avoid duplicating signifier or formation labels.
+
+For textual evidence, copy a contiguous verbatim source span in its original language. Never use a paraphrase, translation, inference or stitched quotation as exact text. When unavailable, leave the quotation empty and record “no verbatim evidence found”.
