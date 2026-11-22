@@ -1,10 +1,9 @@
 # Documentation index
 
-Every document in `docs/`, grouped by what it is for. 72 files; this page is
+Every document under `docs/` (including subdirectories), grouped by what it is for.
+84 files; this page is
 generated from each file's own title, so it cannot drift from what the files say about
 themselves. Start with [ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the repository.
-
-- [Phase 1 research method: source evidence to human review](AI26_PHASE1_METHOD.md)
 
 ## AI26 operations and runtime
 
@@ -19,6 +18,7 @@ themselves. Start with [ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the 
 - [AI26 multimodal method](AI26_MULTIMODAL_METHOD.md)
 - [AI26 analysis on NooPunk](AI26_NOOPUNK_ANALYSIS.md)
 - [AI26: the open decisions, with the numbers that make them decidable](AI26_OPEN_DECISIONS.md)
+- [Reading an AI26 record as social-science evidence](AI26_PHASE1_METHOD.md)
 - [AI26 prompt budget: the decision (#425)](AI26_PROMPT_BUDGET_425.md)
 - [AI26 quality-review template for a bounded batch](AI26_QUALITY_REVIEW_TEMPLATE.md)
 - [AI26 analysis reference case](AI26_REFERENCE_CASE.md)
@@ -55,7 +55,6 @@ themselves. Start with [ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the 
 ## Research record and data contracts
 
 - [CSC Allas S3 write verification](ALLAS_S3_WRITE_VERIFICATION.md)
-- [Research method guide: from one record to a reviewed claim (methods/)](methods/RESEARCH_METHOD_GUIDE.md)
 - [Canonical analysis record](CANONICAL_RECORD.md)
 - [Distributed project storage](DISTRIBUTED_PROJECT_STORAGE.md)
 - [Four-layer research record in Data Analysis](FOUR_LAYER_RESEARCH_RECORD.md)
@@ -89,12 +88,21 @@ themselves. Start with [ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the 
 - [Porting applicable fixes from Multimodal-Analysis into AI26 (#372)](PORT_FROM_MULTIMODAL.md)
 - [Restricted-project reprocessing on CSC Roihu](RESTRICTED_ROIHU_REPROCESSING.md)
 - [VASAMA-OSINT reuse audit for Data Analysis](VASAMA_REUSE_AUDIT.md)
+- [Issue #372 — upstream port inventory (Multimodal → AI26 Data-Analysis)](design/ISSUE_372_UPSTREAM_PORT_INVENTORY.md)
 - [EP24 Finland/Poland Phase 1 reprocessing on CSC Roihu](ep24-reprocessing.md)
 - [Issue #300: exhausted structured-output budget](issue-300-remediation.md)
 
 ## Cross-cutting notes
 
-- [Repository map: paths and responsibilities](REPOSITORY_MAP.md)
-- [Repository navigation for human maintainers](REPOSITORY_GUIDE.md)
-
+- [Architecture: where things are](ARCHITECTURE.md)
 - [LaclauGPT Coding Style](CODING_STYLE.md)
+- [Repository navigation for human maintainers](REPOSITORY_GUIDE.md)
+- [Repository map](REPOSITORY_MAP.md)
+- [Legacy `puhti_frame.py` prompts](legacy_ep24_prompts/puhti_frame_prompt.md)
+- [Legacy `puhti_populism.py` prompt](legacy_ep24_prompts/puhti_populism_prompt.md)
+- [Legacy `puhti_postprocess.py` prompt](legacy_ep24_prompts/puhti_postprocess_prompt.md)
+- [Legacy `puhti_summary.py` prompts](legacy_ep24_prompts/puhti_summary_prompt.md)
+- [Research method guide — from one record to a reviewed claim](methods/RESEARCH_METHOD_GUIDE.md)
+- [Critical AI Studies analysis](methods/critical_ai_studies.md)
+- [DNA-compatible statement coding](methods/dna_compatibility.md)
+- [Phase 1 researcher guide: from source to reviewed interpretation](methods/phase1_researcher_guide.md)

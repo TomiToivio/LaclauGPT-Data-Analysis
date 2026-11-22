@@ -17,11 +17,13 @@ INDEX = DOCS / "README.md"
 
 
 def documents() -> set[str]:
-    return {path.name for path in DOCS.glob("*.md")} - {INDEX.name}
+    return {
+        path.relative_to(DOCS).as_posix() for path in DOCS.rglob("*.md")
+    } - {INDEX.name}
 
 
 def links(index: str) -> set[str]:
-    return set(re.findall(r"\]\(([A-Za-z0-9_.-]+\.md)\)", index))
+    return set(re.findall(r"\]\(([A-Za-z0-9_./-]+\.md)\)", index))
 
 
 def test_every_document_is_indexed():
