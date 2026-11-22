@@ -32,7 +32,7 @@ def test_every_public_class_and_function_is_documented(tree: ast.Module):
     undocumented = [
         node.name
         for node in tree.body
-        if isinstance(node, (ast.ClassDef, ast.FunctionDef))
+        if isinstance(node, ast.ClassDef | ast.FunctionDef)
         and not node.name.startswith("_")
         and not ast.get_docstring(node)
     ]
@@ -43,6 +43,6 @@ def test_the_audit_and_failure_paths_explain_themselves(tree: ast.Module):
     """Two docstrings carry the reasoning that keeps the layer honest; they must not be emptied."""
     wanted = {"RetrievalAudit": "provenance", "failed_context": "raising"}
     for node in tree.body:
-        if isinstance(node, (ast.ClassDef, ast.FunctionDef)) and node.name in wanted:
+        if isinstance(node, ast.ClassDef | ast.FunctionDef) and node.name in wanted:
             doc = (ast.get_docstring(node) or "").lower()
             assert wanted[node.name] in doc, f"{node.name} lost the reason it exists"
