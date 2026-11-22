@@ -8,6 +8,8 @@ same task a duplicate rather than a second row.
 
 from __future__ import annotations
 
+from ..mongo_safety import strip_mongo_id
+
 import time
 from typing import Any, Mapping
 
@@ -173,7 +175,7 @@ class MongoTaskStore:
                 return False
             # Keep the existing document's identity: a replacement may not carry `_id` at all.
             self.results.replace_one(
-                query, {key: value for key, value in document.items() if key != "_id"}
+                query, strip_mongo_id(document)
             )
             return True
 
