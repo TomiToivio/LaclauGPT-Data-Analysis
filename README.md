@@ -1,5 +1,7 @@
 # LaclauGPT Data Analysis
 
+**New to the codebase?** Start with the [repository navigation guide](docs/REPOSITORY_GUIDE.md) for the module map, development commands and safe refactoring boundaries. For scientific step order, read [Data Analysis Pipeline](docs/DATA_ANALYSIS_PIPELINE.md).
+
 > [!IMPORTANT]
 > **Continuous software development; research phases apply to papers only.** This repository's `main` branch maintains the current AI26 implementation. AI26 is the default and only project developed here. EP24, Hungary26 and Brazil26 are moving to separate project repositories. Historical compatibility code may remain, but it is dormant and must not drive new architecture or defaults. Human-readable/project-publication versions belong in the legacy EP24 or other project-specific repositories; this repository currently prioritizes machine-readable canonical data, reproducibility and live AI26 operations over human-readable reports or legacy dashboards.
 
