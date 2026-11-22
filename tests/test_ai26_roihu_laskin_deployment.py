@@ -47,8 +47,7 @@ def test_roihu_template_uses_shared_distributed_worker():
     script = (ROOT / "scripts/roihu/ai26_worker.sbatch.example").read_text(encoding="utf-8")
     assert "LACLAUGPT_MACHINE=roihu" in script
     assert "LACLAUGPT_EXECUTION=slurm" in script
-    assert "LACLAUGPT_OBJECT_BACKEND=local" in script
-    assert "LACLAUGPT_OBJECT_STORE_REQUIRED=0" in script
+    assert "LACLAUGPT_OBJECT_BACKEND=s3" in script
     assert "SLURM_JOB_ID" in script
     assert "--reclaim-idle-ms" in script
     assert "laclaugpt-analysis-worker" in script
