@@ -14,6 +14,10 @@
 >
 > **Project map:** [LaclauGPT / paper + meta-repo](https://github.com/TomiToivio/LaclauGPT) → [Data Collection](https://github.com/TomiToivio/LaclauGPT-Data-Collection) → **Data Analysis (you are here)** → [Data Visualization](https://github.com/TomiToivio/LaclauGPT-Data-Visualization)
 
+**New to the codebase?** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) maps the tree, the
+pipelines and where each feature lives; [docs/README.md](docs/README.md) indexes every topical
+document in `docs/`.
+
 **LaclauGPT** is an open social-science research framework for **LLM-assisted computational discourse analysis** of large textual and multimodal corpora. It combines computational methods with interpretive political research while keeping model outputs traceable to source evidence, uncertainty, provenance and human review.
 
 The current flagship research programme is **[LaclauGPT: Ideological contestation over AI](https://github.com/TomiToivio/LaclauGPT/blob/main/paper/PHASE_1_PAPER.md)**. The canonical theoretical and methodological contract is **[THEORY.md](https://github.com/TomiToivio/LaclauGPT/blob/main/THEORY.md)**.
