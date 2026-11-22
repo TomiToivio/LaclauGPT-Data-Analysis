@@ -48,6 +48,7 @@ themselves. Start with [ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the 
 - [MongoDB-first graph / vector RAG](RAG.md)
 - [Redis coordination for distributed analysis](REDIS_COORDINATION.md)
 - [Optional Redis analysis task worker](REDIS_TASK_WORKER.md)
+- [Repository map: where everything lives](REPOSITORY_MAP.md)
 - [Versioned analysis pipelines (#399)](VERSIONED_ANALYSIS_PIPELINES.md)
 
 ## Research record and data contracts
@@ -91,6 +92,7 @@ themselves. Start with [ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the 
 
 ## Cross-cutting notes
 
+- [Repository map: paths and responsibilities](REPOSITORY_MAP.md)
 - [Repository navigation for human maintainers](REPOSITORY_GUIDE.md)
 
 - [LaclauGPT Coding Style](CODING_STYLE.md)
