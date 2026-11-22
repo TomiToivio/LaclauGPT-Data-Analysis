@@ -205,3 +205,11 @@ Do not let the second surface erase the first. A future maintainer should be abl
 **Readable research software beats clever research software.**
 
 Optimize for inspectability, reproducibility and methodological transparency.
+
+## Formatting and linting Python changes
+
+Run `ruff format path/to/new_module.py` on new Python files. Run
+`ruff check path/to/changed_module.py` when editing existing code.
+CI checks formatting on added files and compares lint findings against the
+base revision for changed files. Moving an existing finding to another line
+in the same file does not count as introducing it again.
