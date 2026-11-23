@@ -304,6 +304,16 @@ if ! "$PY" -m laclaugpt_data_analysis.preflight; then
   fail "preflight reported a configuration problem; refusing to claim tasks"
 fi
 
+# #564: on a repository where several agents push to main, a checkout is behind within the
+# hour, and rejecting every behind-only cycle turned ordinary drift into a stall. Do the
+# human's `git merge --ff-only origin/main` deterministically, but only when nothing can be
+# lost (main, clean tree, nothing ahead, no cycle holding the lock). A refusal is not fatal:
+# the strict gate below still owns the decision and prints the remedy.
+if [[ "${LACLAUGPT_AI26_AUTO_UPDATE:-1}" != "0" ]]; then
+  "$PY" -m laclaugpt_data_analysis.deploy_update --path "$ROOT_DIR" --lock-file "$LOCK_FILE" \
+    || log "WARNING: automatic checkout update failed; the strict drift gate decides next"
+fi
+
 # Verify the deployed code before check-only success or task claims.
 "$PY" -m laclaugpt_data_analysis.deploy_drift --strict --path "$ROOT_DIR" --quiet || fail "Analysis checkout failed deployment verification at $ROOT_DIR; inspect git status and fast-forward main safely outside cron"
 # Collection and Visualization are independent services; drift there is warning-only.
