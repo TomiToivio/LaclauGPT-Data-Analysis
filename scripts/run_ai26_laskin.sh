@@ -304,8 +304,27 @@ if ! "$PY" -m laclaugpt_data_analysis.preflight; then
   fail "preflight reported a configuration problem; refusing to claim tasks"
 fi
 
+# #564: a checkout that is behind -- clean, on main, nothing local ahead -- used to stall the
+# runner until a human ran `git merge --ff-only` between cron slots. The refresh below performs
+# that same command deterministically, and only while a *probe* lock proves no cycle is running:
+# a fast-forward during a live worker would swap the code underneath it. Ahead, diverged, dirty
+# or wrong-branch checkouts are left untouched, and the strict gate still has the last word.
+try_refresh_when_behind() {
+  exec 8>"$LOCK_FILE"
+  if ! flock -n 8; then
+    exec 8>&-
+    log "checkout refresh skipped: a cycle holds the lock; the drift gate will decide"
+    return 0
+  fi
+  "$PY" -m laclaugpt_data_analysis.ai26_checkout --path "$ROOT_DIR" --apply 2>&1 | while IFS= read -r line; do log "$line"; done
+  exec 8>&-
+}
+
 # Verify the deployed code before check-only success or task claims.
-"$PY" -m laclaugpt_data_analysis.deploy_drift --strict --path "$ROOT_DIR" --quiet || fail "Analysis checkout failed deployment verification at $ROOT_DIR; inspect git status and fast-forward main safely outside cron"
+"$PY" -m laclaugpt_data_analysis.deploy_drift --strict --path "$ROOT_DIR" --quiet || {
+  try_refresh_when_behind
+  "$PY" -m laclaugpt_data_analysis.deploy_drift --strict --path "$ROOT_DIR" --quiet || fail "Analysis checkout failed deployment verification at $ROOT_DIR; inspect git status and fast-forward main safely outside cron"
+}
 # Collection and Visualization are independent services; drift there is warning-only.
 "$PY" -m laclaugpt_data_analysis.deploy_drift --quiet || log "WARNING: sibling drift reporting failed"
 
