@@ -4,6 +4,7 @@ Redis is coordination only, MongoDB owns durable canonical/result state, and the
 existing canonical pipeline performs analysis. Private configuration and codebooks are
 verified against a frozen run manifest before any task is processed.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -404,11 +405,15 @@ def build_media_stager(settings: Settings) -> MediaStager | None:
     )
 
 
-def ready_handoff_query(*, project_id: str, run_id: str | None = None,
-                        not_before: str | None = None,
-                        platform: str | None = None,
-                        before: str | None = None,
-                        exclude_platforms: Sequence[str] | None = None) -> dict[str, Any]:
+def ready_handoff_query(
+    *,
+    project_id: str,
+    run_id: str | None = None,
+    not_before: str | None = None,
+    platform: str | None = None,
+    before: str | None = None,
+    exclude_platforms: Sequence[str] | None = None,
+) -> dict[str, Any]:
     """Build the canonical Collection -> Analysis handoff query.
 
     Study date boundaries come from the Phase 1 protocol profile. Keeping this
@@ -448,7 +453,8 @@ def ready_handoff_query(*, project_id: str, run_id: str | None = None,
         # #433: keep the reserved slice out of a stratum that is already closed, without asking the
         # caller to enumerate every live platform.
         platform_condition = (
-            {"$nin": excluded} if platform_condition is None
+            {"$nin": excluded}
+            if platform_condition is None
             else {"$in": [platform_condition], "$nin": excluded}
         )
     if platform_condition is not None:
@@ -480,33 +486,44 @@ class MongoCollectionHandoff:
         # instead of terminally rejecting it at seed (#426, the loader half of #352).
         return CanonicalRecord.model_validate(preserve_undeclared_source_keys(clean))
 
-    def ready_handoffs(self, run_id: str, *, limit: int, offset: int = 0,
-                       platform: str | None = None) -> list[dict[str, Any]]:
+    def ready_handoffs(
+        self, run_id: str, *, limit: int, offset: int = 0, platform: str | None = None
+    ) -> list[dict[str, Any]]:
         if limit < 1:
             return []
         platform = self.platform if platform is None else platform
-        cursor = self.collection.find(
-            ready_handoff_query(
-                project_id=self.project_id,
-                run_id=run_id,
-                not_before=self.not_before,
-                platform=platform,
-                before=self.before,
-            ),
-            {"handoff": 1, "_id": 0},
-        ).sort(
-            [
-                ("handoff.source_priority", 1),
-                ("handoff.published_at", 1 if self.before else -1),
-                ("source_url", 1),
-            ]
-        ).skip(max(offset, 0)).limit(limit)
+        cursor = (
+            self.collection.find(
+                ready_handoff_query(
+                    project_id=self.project_id,
+                    run_id=run_id,
+                    not_before=self.not_before,
+                    platform=platform,
+                    before=self.before,
+                ),
+                {"handoff": 1, "_id": 0},
+            )
+            .sort(
+                [
+                    ("handoff.source_priority", 1),
+                    ("handoff.published_at", 1 if self.before else -1),
+                    ("source_url", 1),
+                ]
+            )
+            .skip(max(offset, 0))
+            .limit(limit)
+        )
         return [dict(row.get("handoff") or {}) for row in cursor]
 
-
-    def oldest_ready_handoffs(self, run_id: str, *, limit: int, offset: int = 0,
-                              platform: str | None = None,
-                              exclude_platforms: Sequence[str] | None = None) -> list[dict[str, Any]]:
+    def oldest_ready_handoffs(
+        self,
+        run_id: str,
+        *,
+        limit: int,
+        offset: int = 0,
+        platform: str | None = None,
+        exclude_platforms: Sequence[str] | None = None,
+    ) -> list[dict[str, Any]]:
         """Ready handoffs in publication order, oldest first (#429).
 
         The priority-ordered frame is right for keeping the live tiers fresh, and wrong as the *only*
@@ -526,21 +543,26 @@ class MongoCollectionHandoff:
         if limit < 1:
             return []
         platform = self.platform if platform is None else platform
-        cursor = self.collection.find(
-            ready_handoff_query(
-                project_id=self.project_id,
-                run_id=run_id,
-                not_before=self.not_before,
-                platform=platform,
-                exclude_platforms=exclude_platforms,
-            ),
-            {"handoff": 1, "_id": 0},
-        ).sort(
-            [
-                ("handoff.published_at", 1),
-                ("source_url", 1),
-            ]
-        ).skip(max(offset, 0)).limit(limit)
+        cursor = (
+            self.collection.find(
+                ready_handoff_query(
+                    project_id=self.project_id,
+                    run_id=run_id,
+                    not_before=self.not_before,
+                    platform=platform,
+                    exclude_platforms=exclude_platforms,
+                ),
+                {"handoff": 1, "_id": 0},
+            )
+            .sort(
+                [
+                    ("handoff.published_at", 1),
+                    ("source_url", 1),
+                ]
+            )
+            .skip(max(offset, 0))
+            .limit(limit)
+        )
         return [dict(row.get("handoff") or {}) for row in cursor]
 
 
@@ -603,7 +625,9 @@ def _codebook_identity(codebook: Any) -> dict[str, list[str]]:
     }
 
 
-def _analysis_context(binding: Any, project_config: dict[str, Any], codebook: Any) -> PipelineContext:
+def _analysis_context(
+    binding: Any, project_config: dict[str, Any], codebook: Any
+) -> PipelineContext:
     """The per-worker context, carrying the revisions that produced each stored result (#459).
 
     ``codebook_revision`` holds the frozen file's SHA-256 because that is what the run
@@ -729,14 +753,18 @@ def _failure_diagnostics(exc: Exception) -> dict[str, Any]:
     if isinstance(decode_details, dict):
         diagnostics.update(decode_details)
     if isinstance(exc, LLMTruncationError):
-        diagnostics.update({
-            "terminal_reason": "unanalysable_within_budget",
-            "output_budget_tokens": getattr(exc, "output_budget_tokens", 0),
-            "required_output_tokens_lower_bound": getattr(exc, "required_output_tokens_lower_bound", 0),
-            "generated_output_chars": getattr(
-                exc, "generated_output_chars", len(diagnostics["response_raw"])
-            ),
-        })
+        diagnostics.update(
+            {
+                "terminal_reason": "unanalysable_within_budget",
+                "output_budget_tokens": getattr(exc, "output_budget_tokens", 0),
+                "required_output_tokens_lower_bound": getattr(
+                    exc, "required_output_tokens_lower_bound", 0
+                ),
+                "generated_output_chars": getattr(
+                    exc, "generated_output_chars", len(diagnostics["response_raw"])
+                ),
+            }
+        )
     return diagnostics
 
 
@@ -818,10 +846,21 @@ class AI26TaskWorker(TaskWorker):
                 mongo_code = getattr(write_exc, "code", None)
                 if isinstance(mongo_details, dict):
                     mongo_code = mongo_code or mongo_details.get("code")
+                # #553: frame locations pinpoint the failing write site without
+                # logging exception text, source records, connection strings or BSON.
+                frames = []
+                tb = write_exc.__traceback__
+                while tb is not None:
+                    frame = tb.tb_frame
+                    frames.append(f"{frame.f_code.co_name}:{tb.tb_lineno}")
+                    tb = tb.tb_next
                 logger.error(
                     "AI26 result persistence failed: exception=%s mongo_code=%s site=%s "
-                    "operation=write_result; task remains retryable",
-                    type(write_exc).__name__, mongo_code, exception_site(write_exc),
+                    "operation=write_result frames=%s; task remains retryable",
+                    type(write_exc).__name__,
+                    mongo_code,
+                    exception_site(write_exc),
+                    " > ".join(frames[-8:]),
                 )
                 raise
             self.queue.ack(claimed.message_id)
@@ -884,7 +923,9 @@ class AI26TaskWorker(TaskWorker):
 #: responses are excluded on purpose — those are properties of the generation, and replaying them
 #: unchanged cannot help.
 def is_infrastructure_failure(exc: BaseException) -> bool:
-    return isinstance(exc, ProviderError) and not isinstance(exc, (LLMTruncationError, LLMEmptyResponseError))
+    return isinstance(exc, ProviderError) and not isinstance(
+        exc, (LLMTruncationError, LLMEmptyResponseError)
+    )
 
 
 #: How many times one worker run will refund and re-queue the same task before leaving it to the next
@@ -1109,7 +1150,9 @@ def seed_ready_tasks(
                         ", ".join(backfill_excluded),
                     )
             walk(
-                lambda **kwargs: backfill_reader(binding.manifest.run_id, **kwargs, **reader_kwargs),
+                lambda **kwargs: backfill_reader(
+                    binding.manifest.run_id, **kwargs, **reader_kwargs
+                ),
                 quota=backfill_quota,
                 backfill=True,
             )
@@ -1143,7 +1186,9 @@ def seed_ready_tasks(
             diagnostics.update(counts)
 
 
-def build_worker(binding: WorkerBinding, settings: Settings) -> tuple[TaskWorker, MongoCollectionHandoff]:
+def build_worker(
+    binding: WorkerBinding, settings: Settings
+) -> tuple[TaskWorker, MongoCollectionHandoff]:
     binding.validate_runtime_code()
     enforce_local_model(binding.manifest)
     policy = load_ai26_runtime_policy()
@@ -1197,16 +1242,20 @@ def _write_ai26_progress(counts: dict[str, int], phase: str) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         with temporary.open("w", encoding="utf-8") as stream:
             os.chmod(temporary, 0o600)
-            json.dump({
-                "timestamp_utc": datetime.now(timezone.utc).isoformat(),
-                "phase": phase,
-                "pid": os.getpid(),
-                "claims": counts.get("claims", 0),
-                "completed": counts.get("completed", 0),
-                "duplicate": counts.get("duplicate", 0),
-                "retry": counts.get("retry", 0),
-                "dead_letter": counts.get("dead-letter", 0),
-            }, stream, sort_keys=True)
+            json.dump(
+                {
+                    "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+                    "phase": phase,
+                    "pid": os.getpid(),
+                    "claims": counts.get("claims", 0),
+                    "completed": counts.get("completed", 0),
+                    "duplicate": counts.get("duplicate", 0),
+                    "retry": counts.get("retry", 0),
+                    "dead_letter": counts.get("dead-letter", 0),
+                },
+                stream,
+                sort_keys=True,
+            )
             stream.write("\n")
         os.replace(temporary, path)
     except OSError as exc:
@@ -1233,11 +1282,7 @@ def _run_bounded_cycle(
     cannot create an unbounded cycle.
     """
     work_limit = max(max_tasks, 0)
-    claim_limit = (
-        max(max_claims, 0)
-        if max_claims is not None
-        else max(1000, work_limit * 100)
-    )
+    claim_limit = max(max_claims, 0) if max_claims is not None else max(1000, work_limit * 100)
     counts = {
         "completed": 0,
         "duplicate": 0,
@@ -1269,6 +1314,7 @@ def _run_bounded_cycle(
             work_units += 1
     _write_ai26_progress(counts, "cycle_finished")
     return counts, failure_classes
+
 
 def _cycle_exit_status(
     *,
@@ -1368,7 +1414,9 @@ def main(argv: list[str] | None = None) -> int:
             limit=max(args.max_tasks, 0),
             backfill_limit=max(args.backfill_tasks, 0),
             backfill_exclude_platforms=[
-                name.strip() for name in str(args.backfill_exclude_platforms).split(",") if name.strip()
+                name.strip()
+                for name in str(args.backfill_exclude_platforms).split(",")
+                if name.strip()
             ],
             fingerprint=worker.generation_fingerprint,
             rejected=rejected_handoffs,

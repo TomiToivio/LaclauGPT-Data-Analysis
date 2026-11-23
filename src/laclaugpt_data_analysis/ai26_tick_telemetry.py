@@ -3,6 +3,7 @@
 No credentials, source text, prompts, host paths or environment values are recorded.
 An advisory lock prevents concurrent cron ticks from interleaving JSON writes.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -15,11 +16,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
-                worker_status: str = "", report_status: str = "", git_sha: str = "",
-                skip_threshold: int = 0, reject_threshold: int = 0,
-                stall_threshold: int = 0,
-                progress_path: Path | None = None) -> dict:
+def append_tick(
+    path: Path,
+    *,
+    stage: str,
+    exit_code: int,
+    check_only: bool,
+    worker_status: str = "",
+    report_status: str = "",
+    git_sha: str = "",
+    skip_threshold: int = 0,
+    reject_threshold: int = 0,
+    stall_threshold: int = 0,
+    progress_path: Path | None = None,
+) -> dict:
     """Write exactly one atomic JSONL event per invocation, including skipped ticks."""
     if exit_code == 3:
         outcome = "already_running"
@@ -56,9 +66,9 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
                 observed = datetime.fromisoformat(progress["timestamp_utc"])
                 if observed.tzinfo is None:
                     raise ValueError("progress timestamp missing timezone")
-                event["progress_age_seconds"] = max(0, int(
-                    (datetime.now(timezone.utc) - observed).total_seconds()
-                ))
+                event["progress_age_seconds"] = max(
+                    0, int((datetime.now(timezone.utc) - observed).total_seconds())
+                )
                 event["progress_phase"] = str(progress.get("phase", ""))[:32]
                 event["progress_claims"] = int(progress.get("claims", 0))
                 event["progress_completed"] = int(progress.get("completed", 0))
@@ -134,17 +144,26 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
             event["stall_streak"] = stall_streak
             event["stall_reasons"] = dict(sorted(stall_reasons.items()))
             event["last_success_utc"] = last_success or None
+            # One ladder, in one order: a stall is "no successful cycle, whatever the reason"; the
+            # single-reason names stay for homogeneous streaks, because an operator recognises them.
+            # A mixed run reaches `stalled` through `stall_streak`, which is why no reason-specific
+            # clause is needed for it (main's semantics, #561-#563).
             event["escalation"] = (
-                "stalled" if stall_threshold and stall_streak >= stall_threshold
-                else "skipped" if skip_threshold and event["skip_streak"] >= skip_threshold
-                else "rejected" if reject_threshold and event["reject_streak"] >= reject_threshold
+                "stalled"
+                if stall_threshold and stall_streak >= stall_threshold
+                else "skipped"
+                if skip_threshold and event["skip_streak"] >= skip_threshold
+                else "rejected"
+                if reject_threshold and event["reject_streak"] >= reject_threshold
                 else None
             )
             if event["escalation"]:
                 # #514: the status file is for a watcher; this line is for the operator reading
                 # cron's log. Three hours of silence was possible because only one of them existed.
                 # #554: name the reason mix and the last successful cycle, so the alert says why.
-                reasons = ",".join(f"{name}x{count}" for name, count in event["stall_reasons"].items())
+                reasons = ",".join(
+                    f"{name}x{count}" for name, count in event["stall_reasons"].items()
+                )
                 print(
                     f"ALERT: AI26 analysis is not completing ({event['escalation']}): "
                     f"stall_streak={event['stall_streak']} reasons={reasons or 'none'} "
@@ -162,9 +181,22 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
             try:
                 with temporary.open("w", encoding="utf-8") as status:
                     os.chmod(temporary, 0o600)
-                    json.dump({k: event[k] for k in ("timestamp_utc", "outcome",
-                              "skip_streak", "reject_streak", "stall_streak",
-                              "stall_reasons", "last_success_utc", "escalation")}, status)
+                    json.dump(
+                        {
+                            k: event[k]
+                            for k in (
+                                "timestamp_utc",
+                                "outcome",
+                                "skip_streak",
+                                "reject_streak",
+                                "stall_streak",
+                                "stall_reasons",
+                                "last_success_utc",
+                                "escalation",
+                            )
+                        },
+                        status,
+                    )
                     status.write("\n")
                 os.replace(temporary, status_path)
             finally:
@@ -178,9 +210,13 @@ def append_tick(path: Path, *, stage: str, exit_code: int, check_only: bool,
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Record sanitized AI26 cron outcome in private JSONL")
+    parser = argparse.ArgumentParser(
+        description="Record sanitized AI26 cron outcome in private JSONL"
+    )
     parser.add_argument("--path", type=Path, required=True)
-    parser.add_argument("--stage", required=True, choices=("preflight", "check", "lock", "worker", "complete"))
+    parser.add_argument(
+        "--stage", required=True, choices=("preflight", "check", "lock", "worker", "complete")
+    )
     parser.add_argument("--exit-code", type=int, required=True)
     parser.add_argument("--check-only", action="store_true")
     parser.add_argument("--worker-status", default="")
@@ -196,12 +232,19 @@ def main() -> None:
         help="alert when this many consecutive ticks complete no cycle, whatever the reason",
     )
     args = parser.parse_args()
-    append_tick(args.path, stage=args.stage, exit_code=args.exit_code,
-                check_only=args.check_only, worker_status=args.worker_status,
-                report_status=args.report_status, git_sha=args.git_sha,
-                skip_threshold=args.skip_threshold, reject_threshold=args.reject_threshold,
-                stall_threshold=args.stall_threshold,
-                progress_path=args.progress_path)
+    append_tick(
+        args.path,
+        stage=args.stage,
+        exit_code=args.exit_code,
+        check_only=args.check_only,
+        worker_status=args.worker_status,
+        report_status=args.report_status,
+        git_sha=args.git_sha,
+        skip_threshold=args.skip_threshold,
+        reject_threshold=args.reject_threshold,
+        stall_threshold=args.stall_threshold,
+        progress_path=args.progress_path,
+    )
 
 
 if __name__ == "__main__":
