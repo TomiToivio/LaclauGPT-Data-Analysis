@@ -9,7 +9,8 @@ looks inconsistent with `main`.**
 It deliberately does not repeat procedures that already live there. What it adds is the
 operating knowledge that only exists because things went wrong:
 
-1. the deployed checkouts drift from `main`, and nothing pulls them (issue #353);
+1. the deployed checkouts drift from `main`; Analysis now refreshes itself when that is provably
+   safe (#564), the other two still need a deliberate fast-forward (issue #353);
 2. the environment can lag the repository even when the checkout is current;
 3. the log's failure lines are not all faults, and the ones that are can be told apart;
 4. what an operator or agent must *ask* before doing.
@@ -19,6 +20,15 @@ operating knowledge that only exists because things went wrong:
 The three cron lines run their checkouts directly, and the Analysis venv is an **editable**
 install pointing at the checkout's `src/`. There is no build step and no copy: **whatever the
 checkout contains is what runs**, which cuts both ways.
+
+**Analysis refreshes itself (#564).** Before the strict deployment gate, preflight runs
+`python -m laclaugpt_data_analysis.deploy_update`, which performs the same
+`git merge --ff-only origin/main` an operator would — but only when nothing can be lost: the
+branch is `main`, the tree is clean, there are no commits ahead, and no cycle holds the lock.
+Anything else is refused with a stable reason (`dirty-tree`, `commits-ahead`, `wrong-branch`,
+`lock-held`) and the gate below keeps its remedy text. Set `LACLAUGPT_AI26_AUTO_UPDATE=0` to
+turn it off. A refusal is not a failure: it prints why and exits 0, leaving the decision to the
+strict gate.
 
 Measured on 2026-10-15: Analysis was nine commits behind and three merged fixes were silently
 not in effect, so every measurement taken from the live log that day described *pre-fix*
@@ -49,7 +59,7 @@ housekeeping:
 | Checkout | Suggested handling |
 |---|---|
 | `LaclauGPT-Data-Visualization` | usually safe: no writer, so fast-forward it |
-| `LaclauGPT-Data-Analysis` | fast-forward **between** cycles, then confirm the next tick |
+| `LaclauGPT-Data-Analysis` | self-refreshing since #564; nothing to do unless the update is refused (dirty tree, local commits, or a held lock) |
 | `LaclauGPT-Data-Collection` | **ask first**: it is a live collector writing a corpus |
 
 After refreshing Analysis, the hourly cycle detects the stale run manifest and re-freezes it
