@@ -1,8 +1,6 @@
 """Mongo-backed periodic Phase 1 reports for the AI26 Laskin node."""
 from __future__ import annotations
 
-from .mongo_safety import strip_mongo_id
-
 import argparse
 import os
 from datetime import UTC, datetime, timedelta
@@ -10,6 +8,7 @@ from typing import Any, Mapping, Sequence
 
 from .canonical import CanonicalRecord
 from .config import Settings, load_settings
+from .mongo_write import without_immutable_id
 from .periodic_summary import (
     PeriodicDiscourseSummary,
     grouped_summaries,
@@ -272,7 +271,7 @@ def generate_latest_reports(
                 "run_id": run_id,
                 "report_id": summary.id,
             },
-            {"$set": strip_mongo_id(document)},
+            {"$set": without_immutable_id(document)},
             upsert=True,
         )
 

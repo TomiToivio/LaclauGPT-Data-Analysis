@@ -8,11 +8,10 @@ same task a duplicate rather than a second row.
 
 from __future__ import annotations
 
-from ..mongo_safety import strip_mongo_id
-
 import time
 from typing import Any, Mapping
 
+from ..mongo_write import without_immutable_id
 from ..storage import mongo_client
 from ..timequery import now_utc
 from .models import (
@@ -174,9 +173,7 @@ class MongoTaskStore:
             if not result_supersedes_fingerprint(stored, fingerprint):
                 return False
             # Keep the existing document's identity: a replacement may not carry `_id` at all.
-            self.results.replace_one(
-                query, strip_mongo_id(document)
-            )
+            self.results.replace_one(query, without_immutable_id(document))
             return True
 
     def write_failure(

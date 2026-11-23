@@ -15,6 +15,7 @@ import logging
 import os
 import socket
 import subprocess
+import traceback
 from dataclasses import dataclass, fields, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -67,6 +68,19 @@ AI26_MODEL = "gemma4:12b"
 # for. A run recorded as v1 was made under the paraphrase-tolerant instruction, so the
 # two must never be pooled when evidence quality is measured.
 AI26_PROMPT_VERSION = "canonical-pipeline-v2"
+
+
+def exception_site(exc: BaseException) -> str:
+    """Name where an exception was raised, without quoting its message.
+
+    ``module.py:function:line`` is enough to find a failing write; exception text can carry
+    private source material, so it is never logged (#515, #553).
+    """
+    frames = traceback.extract_tb(exc.__traceback__)
+    if not frames:
+        return "unknown"
+    frame = frames[-1]
+    return f"{Path(frame.filename).name}:{frame.name}:{frame.lineno}"
 
 
 def ai26_generation_fingerprint(
@@ -797,6 +811,9 @@ class AI26TaskWorker(TaskWorker):
             except Exception as write_exc:
                 # #515: report safe MongoDB diagnostic metadata; exception strings can
                 # contain private source text or complete documents, so never print them.
+                # #553: a class name and a code are not enough to find the failing write --
+                # naming the last frame's module/function/line identifies the site without
+                # quoting any message text.
                 mongo_details = getattr(write_exc, "details", None)
                 mongo_code = getattr(write_exc, "code", None)
                 if isinstance(mongo_details, dict):
@@ -810,9 +827,10 @@ class AI26TaskWorker(TaskWorker):
                     frames.append(f"{frame.f_code.co_name}:{tb.tb_lineno}")
                     tb = tb.tb_next
                 logger.error(
-                    "AI26 result persistence failed: exception=%s mongo_code=%s "
+                    "AI26 result persistence failed: exception=%s mongo_code=%s site=%s "
                     "operation=write_result frames=%s; task remains retryable",
-                    type(write_exc).__name__, mongo_code, " > ".join(frames[-8:]),
+                    type(write_exc).__name__, mongo_code, exception_site(write_exc),
+                    " > ".join(frames[-8:]),
                 )
                 raise
             self.queue.ack(claimed.message_id)
@@ -1194,6 +1212,7 @@ def _write_ai26_progress(counts: dict[str, int], phase: str) -> None:
                 "pid": os.getpid(),
                 "claims": counts.get("claims", 0),
                 "completed": counts.get("completed", 0),
+                "duplicate": counts.get("duplicate", 0),
                 "retry": counts.get("retry", 0),
                 "dead_letter": counts.get("dead-letter", 0),
             }, stream, sort_keys=True)

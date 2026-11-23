@@ -7,8 +7,6 @@ client-side cosine search when the connected deployment has no vector index.
 """
 from __future__ import annotations
 
-from .mongo_safety import strip_mongo_id
-
 import hashlib
 import math
 from collections import deque
@@ -16,6 +14,7 @@ from datetime import UTC, datetime
 from typing import Any, Iterable, Mapping, Sequence
 
 from .canonical import SCHEMA_VERSION, CanonicalRecord
+from .mongo_write import without_immutable_id
 from .rag import (
     RAG_INDEX_VERSION,
     RAG_MODES,
@@ -155,7 +154,9 @@ class MongoRetrievalBackend:
                 "topics": [item.label for item in record.analysis.topics],
             }
             self.records.update_one(
-                {"canonical_id": record.source_url}, {"$set": strip_mongo_id(document)}, upsert=True
+                {"canonical_id": record.source_url},
+                {"$set": without_immutable_id(document)},
+                upsert=True,
             )
             self.edges.delete_many({"source_record": record.source_url, "rag_managed": True})
             edges: list[dict[str, Any]] = []

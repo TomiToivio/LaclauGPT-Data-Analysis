@@ -8,8 +8,6 @@ falling back to local persistence.
 """
 from __future__ import annotations
 
-from .mongo_safety import strip_mongo_id
-
 import csv
 import importlib.util
 import json
@@ -21,6 +19,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from .config import Settings
+from .mongo_write import without_immutable_id
 
 Record = dict[str, Any]
 
@@ -133,12 +132,11 @@ class MongoStore:
         enrichment. A full canonical record may still update those fields explicitly.
         """
         for row in rows:
-            # #515: ``_id`` is immutable in MongoDB. A row that came back from a read (or from a
-            # pipeline stage that carried one through) would make ``$set`` raise WriteError code 66
-            # "the (immutable) field '_id' was found to have been altered", and the caller's completed
-            # analysis was discarded. The store is the boundary that must not attempt it: ``read()``
-            # already strips ``_id``, so ``write()`` strips it symmetrically.
-            payload = strip_mongo_id(row)
+            # #515/#553: ``_id`` is immutable in MongoDB. A row that came back from a read (or
+            # from a pipeline stage that carried one through) would make ``$set`` raise WriteError
+            # code 66 "the (immutable) field '_id' was found to have been altered", and the caller's
+            # completed analysis was discarded. The rule lives in one helper so every writer obeys it.
+            payload = without_immutable_id(row)
             payload["project_id"] = self.project_id
             source_url = str(payload.get("source_url") or "")
             if source_url:
