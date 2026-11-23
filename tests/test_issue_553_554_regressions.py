@@ -1,4 +1,5 @@
 """Regression coverage for AI26 persistence and combined-stall alerts."""
+
 from __future__ import annotations
 
 from laclaugpt_data_analysis.ai26_tick_telemetry import append_tick
