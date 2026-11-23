@@ -124,6 +124,7 @@ trap record_tick_on_exit EXIT
 # by `--force-unlock`.
 trap 'exit 143' TERM
 trap 'exit 130' INT
+trap 'exit 129' HUP
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -243,6 +244,12 @@ set -a
 set +a
 
 # GNU timeout is required for the worker watchdog (issue #332).
+# `setsid` isolates the worker into its own process group so a wrapper exit can terminate
+# it as a unit (#554); without it the group kill below is a no-op and the fix silently
+# degrades, so fail loudly instead.
+if ! command -v setsid >/dev/null 2>&1; then
+  fail "setsid is required to isolate and clean up the AI26 worker process group"
+fi
 if ! command -v timeout >/dev/null 2>&1; then
   fail "GNU timeout is required for the AI26 worker watchdog"
 fi
