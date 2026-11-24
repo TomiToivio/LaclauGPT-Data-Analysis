@@ -173,12 +173,16 @@ bounded batch and exits. Exit codes:
 2   configuration or preflight failure
 3   another tick holds the lock (benign; the previous run is still working)
 4   periodic-report stage failed after a successful worker cycle
+75  provider capacity unavailable; after two consecutive no-GPU-capacity failures the cycle parked
 124 the cycle's wall-clock ceiling elapsed; the worker was terminated
 137 the ceiling elapsed and SIGTERM was ignored, so the worker was SIGKILLed
 ```
 
 A cycle that attempts work and completes none of it exits non-zero, so cron or
 monitoring can detect a broken analysis path instead of silently accepting it.
+Exit `75` (`EX_TEMPFAIL`) specifically means the model provider had no GPU capacity
+for `gemma4:12b`; the worker parks after two consecutive capacity failures rather
+than letting the 9000 s ceiling decide. See issue #569.
 
 ### The cycle wall-clock ceiling (issue #332)
 
