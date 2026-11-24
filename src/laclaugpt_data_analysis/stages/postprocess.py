@@ -53,6 +53,7 @@ from ..research_record import ensure_research_layers
 from ..social_semiotic import UncertaintyObservation
 from .evidence import evidence_ids, locate_quote
 from .evidence_gate import abstain_without_source_evidence
+from .merge_registry_stage import apply_configured_registry
 from .proposals import (
     DiscourseProposal,
     DiscursiveElement,
@@ -311,4 +312,9 @@ def postprocess_record(
         },
     )
     record.analysis.completed_at = datetime.now(UTC)
+    # Labels exist now; the pinned merge registry decides what they are called (#311). Off unless
+    # LACLAUGPT_MERGE_REGISTRY is set; a registry that is set but untrustworthy raises here, because an
+    # output that says "canonicalised" and carries raw labels is worse than a failed run.
+    apply_configured_registry(record)
+
     return ensure_research_layers(record)
