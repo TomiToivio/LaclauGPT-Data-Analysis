@@ -81,7 +81,7 @@ def is_capacity_unavailable(exc: BaseException) -> bool:
     """
     if not isinstance(exc, ProviderError):
         return False
-    if isinstance(exc, (LLMTruncationError, LLMEmptyResponseError)):
+    if isinstance(exc, LLMTruncationError | LLMEmptyResponseError):
         # A length stop or an empty reply is a property of the generation; it must keep its own
         # escalation ladder even if the message happens to mention capacity.
         return False
