@@ -1,4 +1,5 @@
 """Issue #569: the parked capacity status must be visible to the operator."""
+
 from __future__ import annotations
 
 from pathlib import Path
