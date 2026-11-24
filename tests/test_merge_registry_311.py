@@ -111,16 +111,39 @@ class TestSchemaConformance:
         # a field this adapter must learn, this list is where the change is noticed rather than in a run that
         # silently ignores the new decision.
         assert set(ENTRY_FIELDS) == {
-            "category", "alias", "canonical", "status", "canonical_id", "wiki_title", "wiki_url",
-            "wikidata_qid", "fallback_reason", "polarity", "scope", "evidence", "reviewers", "method",
-            "decision", "created_at", "revision", "supersedes",
+            "category",
+            "alias",
+            "canonical",
+            "status",
+            "canonical_id",
+            "wiki_title",
+            "wiki_url",
+            "wikidata_qid",
+            "fallback_reason",
+            "polarity",
+            "scope",
+            "evidence",
+            "reviewers",
+            "method",
+            "decision",
+            "created_at",
+            "revision",
+            "supersedes",
         }
 
     def test_a_row_with_the_optional_fields_still_loads(self, tmp_path):
         path, digest = write_registry(
             tmp_path,
-            [entry(wiki_title="Alex Testsson", fallback_reason="no article", method="panel",
-                   decision="merge", created_at="2026-11-24T00:00:00+00:00", supersedes="")],
+            [
+                entry(
+                    wiki_title="Alex Testsson",
+                    fallback_reason="no article",
+                    method="panel",
+                    decision="merge",
+                    created_at="2026-11-24T00:00:00+00:00",
+                    supersedes="",
+                )
+            ],
         )
         assert MergeRegistry.load(path, expected_sha256=digest).entries
 
@@ -166,7 +189,10 @@ class TestResolution:
             ],
         )
         registry = MergeRegistry.load(path, expected_sha256=digest)
-        assert registry.resolve("person", "Testsson", country="XX").canonical_label == "Alex Testsson (politician)"
+        assert (
+            registry.resolve("person", "Testsson", country="XX").canonical_label
+            == "Alex Testsson (politician)"
+        )
         assert registry.resolve("person", "Testsson").canonical_label == "Alex Testsson"
 
     def test_equally_specific_disagreement_is_a_review_not_a_coin_toss(self, tmp_path):
@@ -185,23 +211,49 @@ class TestResolution:
     def test_keep_separate_maps_a_label_to_itself(self, tmp_path):
         path, digest = write_registry(
             tmp_path,
-            [entry(status="keep_separate", canonical="Testsson", canonical_id="", reviewers=["r1", "r2", "r3"])],
+            [
+                entry(
+                    status="keep_separate",
+                    canonical="Testsson",
+                    canonical_id="",
+                    reviewers=["r1", "r2", "r3"],
+                )
+            ],
         )
         registry = MergeRegistry.load(path, expected_sha256=digest)
         resolution = registry.resolve("person", "Testsson", country="XX")
         assert resolution.status == "keep_separate"
-        assert not resolution.applies  # nothing to rewrite, and the decision still travels in the metadata
+        assert (
+            not resolution.applies
+        )  # nothing to rewrite, and the decision still travels in the metadata
 
     def test_sentiment_needs_its_polarity(self, tmp_path):
         rows = [
-            entry(category="sentiment", alias="Test issue", canonical="Test issue", polarity="negative",
-                  reviewers=["r1", "r2", "r3"], canonical_id="", wiki_url=""),
-            entry(category="sentiment", alias="Test issue", canonical="Test issue", polarity="positive",
-                  reviewers=["r1", "r2", "r3"], canonical_id="", wiki_url=""),
+            entry(
+                category="sentiment",
+                alias="Test issue",
+                canonical="Test issue",
+                polarity="negative",
+                reviewers=["r1", "r2", "r3"],
+                canonical_id="",
+                wiki_url="",
+            ),
+            entry(
+                category="sentiment",
+                alias="Test issue",
+                canonical="Test issue",
+                polarity="positive",
+                reviewers=["r1", "r2", "r3"],
+                canonical_id="",
+                wiki_url="",
+            ),
         ]
         path, digest = write_registry(tmp_path, rows)
         registry = MergeRegistry.load(path, expected_sha256=digest)
-        assert registry.resolve("sentiment", "Test issue", country="XX", polarity="negative").status == "approved"
+        assert (
+            registry.resolve("sentiment", "Test issue", country="XX", polarity="negative").status
+            == "approved"
+        )
         assert registry.resolve("sentiment", "Test issue", country="XX").status == "unresolved"
 
 

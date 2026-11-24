@@ -24,7 +24,12 @@ from ..merge_registry import ENV_PATH, ENV_SHA256, MergeRegistry
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from ..canonical import CanonicalRecord
 
-__all__ = ["apply_configured_registry", "apply_merge_registry", "configured_registry", "registry_provenance"]
+__all__ = [
+    "apply_configured_registry",
+    "apply_merge_registry",
+    "configured_registry",
+    "registry_provenance",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -72,8 +77,11 @@ def apply_merge_registry(record: CanonicalRecord, registry: MergeRegistry) -> in
     touched: list[str] = []
 
     for entity in record.analysis.entities:
-        resolution = registry.resolve("person" if (entity.entity_type or "").casefold() == "person" else "entity",
-                                      entity.label, country=country)
+        resolution = registry.resolve(
+            "person" if (entity.entity_type or "").casefold() == "person" else "entity",
+            entity.label,
+            country=country,
+        )
         if resolution.applies:
             entity.aliases = sorted({*entity.aliases, entity.label})
             entity.label = resolution.canonical_label

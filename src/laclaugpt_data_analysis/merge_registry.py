@@ -96,7 +96,11 @@ class RegistryEntry:
         return sum(1 for part in (self.country, self.language, self.source) if part)
 
     def matches_scope(self, *, country: str, language: str, source: str) -> bool:
-        for wanted, given in ((self.country, country), (self.language, language), (self.source, source)):
+        for wanted, given in (
+            (self.country, country),
+            (self.language, language),
+            (self.source, source),
+        ):
             if wanted and wanted.casefold() != (given or "").casefold():
                 return False
         return True
@@ -225,7 +229,9 @@ class MergeRegistry:
             if not isinstance(payload, Mapping):
                 raise RegistryUnavailable(f"{target.name}:{number}: not a registry object")
             entry = RegistryEntry.from_json(payload)
-            problems.extend(f"{entry.category}/{entry.alias}: {problem}" for problem in entry.problems())
+            problems.extend(
+                f"{entry.category}/{entry.alias}: {problem}" for problem in entry.problems()
+            )
             entries.append(entry)
         if problems:
             raise RegistryUnavailable("; ".join(problems[:5]))
@@ -269,7 +275,10 @@ class MergeRegistry:
             if entry.category == category
             and entry.alias.strip().casefold() == folded
             and entry.matches_scope(country=country, language=language, source=source)
-            and (category != "sentiment" or (polarity and entry.polarity.casefold() in {polarity.casefold(), "*"}))
+            and (
+                category != "sentiment"
+                or (polarity and entry.polarity.casefold() in {polarity.casefold(), "*"})
+            )
         ]
         if not candidates:
             return Resolution(alias, alias, "", "unresolved", self.sha256, category)
