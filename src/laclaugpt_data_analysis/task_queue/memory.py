@@ -170,3 +170,13 @@ class InMemoryTaskStore:
         )
         if terminal:
             self.terminal_failures.add(task.idempotency_key)
+
+    def has_capacity_deferral(self, idempotency_key: str, *, within_minutes: int) -> bool:
+        """In-process twin of the Mongo query: the most recent capacity failure for this key (#569)."""
+        del within_minutes  # in-process work has no transport clock, like `reclaim`
+        for record in reversed(self.failures):
+            task = record.get("task") or {}
+            if task.get("idempotency_key") != idempotency_key:
+                continue
+            return bool(record.get("capacity_unavailable"))
+        return False

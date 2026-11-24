@@ -9,6 +9,7 @@ same task a duplicate rather than a second row.
 from __future__ import annotations
 
 import time
+from datetime import timedelta
 from typing import Any, Mapping
 
 from ..mongo_write import without_immutable_id
@@ -176,6 +177,25 @@ class MongoTaskStore:
             self.results.replace_one(query, without_immutable_id(document))
             return True
 
+    def has_capacity_deferral(self, idempotency_key: str, *, within_minutes: int) -> bool:
+        """Whether this document was refused for want of provider capacity within the window (#569).
+
+        The seed pass asks before publishing, so a task that has already paid the scheduler timeout is
+        not put back at the head of the queue for every cycle of an outage.
+        """
+        since = now_utc() - timedelta(minutes=max(within_minutes, 1))
+        return (
+            self.failures.find_one(
+                {
+                    "idempotency_key": idempotency_key,
+                    "capacity_unavailable": True,
+                    "created_at": {"$gte": since},
+                },
+                {"_id": 1},
+            )
+            is not None
+        )
+
     def write_failure(
         self,
         task: TaskEnvelope,
@@ -196,6 +216,9 @@ class MongoTaskStore:
                 "error": error,
                 "provenance": dict(provenance),
                 "terminal": terminal,
+                # #569: an explicit flag beats a regex over the error string when a later cycle asks
+                # "did the provider refuse this document recently?".
+                "capacity_unavailable": bool((diagnostics or {}).get("capacity_unavailable")),
                 **bounded_failure_diagnostics(diagnostics),
                 # #504: use BSON datetime so standard range queries can find failures.
                 "created_at": now_utc(),

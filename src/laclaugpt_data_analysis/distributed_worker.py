@@ -43,6 +43,15 @@ from .llm.ollama import (
 )
 from .llm.structured_output import effective_structured_options, structured_output_ceiling
 from .phase1_laskin_runtime import load_ai26_runtime_policy
+from .provider_capacity import (
+    CAPACITY_FAILURE_FIELD,
+    CAPACITY_OUTCOME,
+    EXIT_PROVIDER_UNAVAILABLE,
+    abort_after,
+    backoff_minutes,
+    capacity_reason,
+    is_capacity_unavailable,
+)
 from .schema_version import preserve_undeclared_source_keys
 from .staging import (
     MediaStager,
@@ -779,6 +788,7 @@ class AI26TaskWorker(TaskWorker):
         self.last_failure_class: str | None = None
         self.last_resume_invalidated = 0
         self.last_provider_capacity_failure = False
+        self.last_capacity_reason = ""
         quarantine_before = int(getattr(self.queue, "quarantined_count", 0))
         self.last_quarantined = 0
         claimed = None
@@ -870,9 +880,10 @@ class AI26TaskWorker(TaskWorker):
             self.last_failure_class = type(exc).__name__
             error = f"{self.last_failure_class}: {exc}"
             infrastructure = is_infrastructure_failure(exc)
-            self.last_provider_capacity_failure = (
-                infrastructure and "no gpu capacity" in str(exc).lower()
-            )
+            # One classifier for the whole pipeline: the narrow substring missed `scheduler:`,
+            # `model not loaded` and the 503 forms the same outage takes (#569).
+            self.last_provider_capacity_failure = is_capacity_unavailable(exc)
+            self.last_capacity_reason = capacity_reason(exc) or ""
             # A second length stop has already exhausted the structured call's
             # escalation. Replaying the same immutable task cannot help; require
             # explicit re-arm after changing the prompt/model/configuration.
@@ -884,6 +895,13 @@ class AI26TaskWorker(TaskWorker):
             diagnostics = _failure_diagnostics(exc)
             if infrastructure:
                 diagnostics = {**diagnostics, "infrastructure": True}
+            capacity = is_capacity_unavailable(exc)
+            if capacity:
+                # #569: the endpoint says it has no GPU. Re-publishing cannot help inside this cycle --
+                # it would pay the scheduler timeout again -- and the document has done nothing wrong, so
+                # the failure is marked and the task is left for a later seed pass, which defers it by
+                # `backoff_minutes()` before trying again.
+                diagnostics = {**diagnostics, "infrastructure": True, CAPACITY_FAILURE_FIELD: True}
             self.durable_store.write_failure(
                 task,
                 error,
@@ -895,6 +913,10 @@ class AI26TaskWorker(TaskWorker):
                 self.queue.dead_letter(task, error)
                 self.queue.ack(claimed.message_id)
                 return "dead-letter"
+            if capacity:
+                # Recorded on the failure so a later *cycle* can defer the task; the streak below only
+                # reorders work inside one cycle.
+                diagnostics = {**diagnostics, "infrastructure": True, CAPACITY_FAILURE_FIELD: True}
             if self.last_provider_capacity_failure:
                 # Capacity failures are not document failures. Move to the stream tail
                 # immediately, preserving the attempt and publishing before acknowledgement.
@@ -955,6 +977,7 @@ SEED_BUDGET_ZERO = "budget_zero"
 SEED_UPSTREAM_EMPTY = "upstream_empty"
 SEED_ALL_REJECTED = "all_rejected"
 SEED_NO_NEW_WORK = "no_new_work"
+SEED_CAPACITY_DEFERRED = "capacity_deferred"
 
 
 def seed_disposition(diagnostics: dict[str, int]) -> str:
@@ -974,6 +997,10 @@ def seed_disposition(diagnostics: dict[str, int]) -> str:
     This is the complement of the handoff quarantine: the quarantine names rows that
     arrived and could not be used, this names what the zero means.
     """
+    if diagnostics.get("capacity_deferred", 0) > 0 and diagnostics.get("published", 0) == 0:
+        # Nothing was published because the provider refused this work recently, not because the
+        # corpus is analysed. Saying so keeps a capacity outage from reading as a finished corpus.
+        return SEED_CAPACITY_DEFERRED
     if diagnostics.get("published", 0) > 0:
         return SEED_SEEDED
     if diagnostics.get("limit", 0) < 1:
@@ -1048,6 +1075,9 @@ def seed_ready_tasks(
         "published": 0,
         "already_analyzed": 0,
         "terminal_failure": 0,
+        # #569: ready work the provider refused within the backoff window, so a capacity outage is
+        # visible in the seed disposition instead of looking like an empty ready set.
+        "capacity_deferred": 0,
         "rearmed": 0,
         "rejected": 0,
         # #429: the drain the priority order cannot reach. Reported every cycle so the pool is
@@ -1087,6 +1117,14 @@ def seed_ready_tasks(
                 return False
             if durable_store.has_result(task.idempotency_key, fingerprint):
                 counts["already_analyzed"] += 1
+                return False
+            deferral = getattr(durable_store, "has_capacity_deferral", None)
+            if deferral is not None and deferral(
+                task.idempotency_key, within_minutes=backoff_minutes()
+            ):
+                # #569: the provider refused this document recently; paying the scheduler timeout again
+                # this cycle would starve every other task in the ready set.
+                counts["capacity_deferred"] += 1
                 return False
             if durable_store.has_terminal_failure(task.idempotency_key):
                 rearmed = _maybe_rearm_terminal_failure_for_higher_budget(
@@ -1286,6 +1324,7 @@ def _run_bounded_cycle(
     reclaim_idle_ms: int | None,
     max_claims: int | None = None,
     seeded: int = 0,
+    provider_abort_after: int | None = None,
 ) -> tuple[dict[str, int], dict[str, int]]:
     """Run a bounded cycle where duplicate claims do not consume the work budget.
 
@@ -1305,6 +1344,7 @@ def _run_bounded_cycle(
         "seeded": max(seeded, 0),
         "claims": 0,
         "resume_invalidated": 0,
+        CAPACITY_OUTCOME: 0,
     }
     failure_classes: dict[str, int] = {}
     work_units = 0
@@ -1325,11 +1365,15 @@ def _run_bounded_cycle(
             capacity_streak += 1
         elif outcome not in ("duplicate", "idle"):
             capacity_streak = 0
-        if capacity_streak >= 2:
+        if capacity_streak >= (provider_abort_after or abort_after()):
             counts["provider_unavailable"] = 1
             logger.warning(
-                "AI26 cycle parked: provider_unavailable reason=no_gpu_capacity "
-                "consecutive_failures=%d exit_code=75", capacity_streak
+                "AI26 cycle parked: provider_unavailable reason=%s consecutive_failures=%d "
+                "exit_code=%d (seed pass defers such tasks for %d min)",
+                getattr(worker, "last_capacity_reason", "") or "provider_capacity",
+                capacity_streak,
+                EXIT_PROVIDER_UNAVAILABLE,
+                backoff_minutes(),
             )
             break
         if outcome == "idle":
