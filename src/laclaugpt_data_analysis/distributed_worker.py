@@ -776,6 +776,10 @@ class AI26TaskWorker(TaskWorker):
         #: its existing construction contract; one worker process is one run.
         if not hasattr(self, "_infrastructure_refunds"):
             self._infrastructure_refunds = {}
+        if not hasattr(self, "consecutive_capacity_failures"):
+            self.consecutive_capacity_failures = 0
+        self.provider_unavailable = False
+        self.last_provider_condition: str | None = None
         self.last_failure_class: str | None = None
         self.last_resume_invalidated = 0
         quarantine_before = int(getattr(self.queue, "quarantined_count", 0))
@@ -811,6 +815,7 @@ class AI26TaskWorker(TaskWorker):
                 self.queue.ack(claimed.message_id)
                 return "dead-letter"
         if self.has_current_result(task):
+            self.consecutive_capacity_failures = 0
             self.queue.ack(claimed.message_id)
             return "duplicate"
         if self.durable_store.has_terminal_failure(task.idempotency_key):
@@ -863,12 +868,24 @@ class AI26TaskWorker(TaskWorker):
                     " > ".join(frames[-8:]),
                 )
                 raise
+            self.consecutive_capacity_failures = 0
             self.queue.ack(claimed.message_id)
             return "completed" if inserted else "duplicate"
         except Exception as exc:
             self.last_failure_class = type(exc).__name__
             error = f"{self.last_failure_class}: {exc}"
             infrastructure = is_infrastructure_failure(exc)
+            capacity_unavailable = is_capacity_unavailable(exc)
+            if capacity_unavailable:
+                self.consecutive_capacity_failures += 1
+                self.last_provider_condition = "no GPU capacity"
+                if self.consecutive_capacity_failures >= CAPACITY_FAILURE_ABORT_AFTER:
+                    # Every further call will pay the provider's scheduler timeout before failing.
+                    # Stop the cycle after this claim, release it, and let the scheduler see a
+                    # provider-availability status instead of a generic 9000 s timeout (#569).
+                    self.provider_unavailable = True
+            else:
+                self.consecutive_capacity_failures = 0
             # A second length stop has already exhausted the structured call's
             # escalation. Replaying the same immutable task cannot help; require
             # explicit re-arm after changing the prompt/model/configuration.
@@ -880,6 +897,8 @@ class AI26TaskWorker(TaskWorker):
             diagnostics = _failure_diagnostics(exc)
             if infrastructure:
                 diagnostics = {**diagnostics, "infrastructure": True}
+            if capacity_unavailable:
+                diagnostics = {**diagnostics, "provider_condition": "no_gpu_capacity"}
             self.durable_store.write_failure(
                 task,
                 error,
@@ -891,6 +910,18 @@ class AI26TaskWorker(TaskWorker):
                 self.queue.dead_letter(task, error)
                 self.queue.ack(claimed.message_id)
                 return "dead-letter"
+            if infrastructure and capacity_unavailable:
+                # The provider cannot place the model at all. Re-publishing the same task here
+                # would make it the next claim in this cycle and pay the scheduler timeout again;
+                # drop the message without spending an attempt and let the seeded handoff wait for
+                # the next cycle. The seed cooldown below keeps a poison task from retaking the head
+                # of every cycle (#569).
+                logger.warning(
+                    "capacity failure left %s for a later seed cycle without spending an attempt",
+                    task.idempotency_key,
+                )
+                self.queue.ack(claimed.message_id)
+                return "retry"
             if infrastructure:
                 refunded = self._infrastructure_refunds.get(task.idempotency_key, 0)
                 if refunded >= INFRASTRUCTURE_REFUND_LIMIT:
@@ -915,6 +946,43 @@ class AI26TaskWorker(TaskWorker):
             self.queue.publish(retry_task)
             self.queue.ack(claimed.message_id)
             return "retry"
+
+
+#: A provider that cannot place the model at all is different from a slow provider: every retry
+#: pays the scheduler's full 900 s timeout. After this many consecutive capacity failures the
+#: worker stops claiming, releases its current claim, and exits with PROVIDER_UNAVAILABLE_EXIT_CODE
+#: so cron/monitoring can name the outage instead of waiting for the 9000 s cycle ceiling (#569).
+CAPACITY_FAILURE_ABORT_AFTER = 2
+PROVIDER_UNAVAILABLE_EXIT_CODE = 5
+
+#: How long a document that has just failed for lack of GPU capacity is left out of the *seed* walk.
+#: Re-seeding it immediately is what makes three poison tasks retake the head of every cycle; a
+#: cooldown lets the other ready documents through, while the handoff remains ready upstream.
+CAPACITY_COOLDOWN_SECONDS_DEFAULT = 1800.0
+
+
+def capacity_cooldown_seconds() -> float:
+    """Read the seed cooldown, falling back rather than disabling it on a bad value."""
+    raw = os.environ.get("LACLAUGPT_AI26_CAPACITY_COOLDOWN_SECONDS", "")
+    if not raw.strip():
+        return CAPACITY_COOLDOWN_SECONDS_DEFAULT
+    try:
+        value = float(raw)
+    except ValueError:
+        return CAPACITY_COOLDOWN_SECONDS_DEFAULT
+    return max(0.0, value)
+
+
+#: The Ollama-compatible GPU scheduler's terminal capacity response. Match the condition, not a
+#: generic HTTP 503: a normal model restart can also return 503 and should keep the ordinary
+#: infrastructure retry path.
+def is_capacity_unavailable(exc: BaseException) -> bool:
+    if not isinstance(exc, ProviderError):
+        return False
+    message = str(exc).casefold()
+    return "no gpu capacity" in message or (
+        "scheduler" in message and "status code: 503" in message
+    )
 
 
 #: Failures that say something about the provider, not about the document (#414). An upstream 5xx is
@@ -944,6 +1012,7 @@ SEED_SEEDED = "seeded"
 SEED_BUDGET_ZERO = "budget_zero"
 SEED_UPSTREAM_EMPTY = "upstream_empty"
 SEED_ALL_REJECTED = "all_rejected"
+SEED_PROVIDER_DEFERRED = "provider_deferred"
 SEED_NO_NEW_WORK = "no_new_work"
 
 
@@ -972,6 +1041,8 @@ def seed_disposition(diagnostics: dict[str, int]) -> str:
         return SEED_UPSTREAM_EMPTY
     if diagnostics.get("rejected", 0) > 0 and diagnostics["rejected"] >= diagnostics["examined"]:
         return SEED_ALL_REJECTED
+    if diagnostics.get("provider_deferred", 0) > 0:
+        return SEED_PROVIDER_DEFERRED
     return SEED_NO_NEW_WORK
 
 
@@ -1093,6 +1164,23 @@ def seed_ready_tasks(
                 if durable_store.has_terminal_failure(task.idempotency_key):
                     counts["terminal_failure"] += 1
                     return False
+            cooldown = capacity_cooldown_seconds()
+            capacity_history = getattr(
+                durable_store, "has_recent_capacity_failure", None
+            )
+            if (
+                cooldown
+                and callable(capacity_history)
+                and capacity_history(task.idempotency_key, within_seconds=cooldown)
+            ):
+                counts["provider_deferred"] += 1
+                logger.info(
+                    "AI26 seed deferred %s after a recent no-GPU-capacity failure "
+                    "(cooldown=%.0fs); other ready documents keep their turn",
+                    task.idempotency_key,
+                    cooldown,
+                )
+                return False
             queue.publish(task)
             counts["published"] += 1
             if backfill:
@@ -1219,6 +1307,8 @@ def build_worker(
 
 
 def _cycle_exit_code(counts: dict[str, int]) -> int:
+    if counts.get("provider_unavailable", 0):
+        return PROVIDER_UNAVAILABLE_EXIT_CODE
     failures = counts.get("retry", 0) + counts.get("dead-letter", 0)
     if counts.get("completed", 0) == 0 and failures > 0:
         return 1
@@ -1252,6 +1342,8 @@ def _write_ai26_progress(counts: dict[str, int], phase: str) -> None:
                     "duplicate": counts.get("duplicate", 0),
                     "retry": counts.get("retry", 0),
                     "dead_letter": counts.get("dead-letter", 0),
+                    "provider_unavailable": counts.get("provider_unavailable", 0),
+                    "provider_deferred": counts.get("provider_deferred", 0),
                 },
                 stream,
                 sort_keys=True,
@@ -1293,6 +1385,8 @@ def _run_bounded_cycle(
         "seeded": max(seeded, 0),
         "claims": 0,
         "resume_invalidated": 0,
+        "provider_unavailable": 0,
+        "provider_deferred": 0,
     }
     failure_classes: dict[str, int] = {}
     work_units = 0
@@ -1307,6 +1401,15 @@ def _run_bounded_cycle(
         failure_class = getattr(worker, "last_failure_class", None)
         if failure_class:
             failure_classes[failure_class] = failure_classes.get(failure_class, 0) + 1
+        if getattr(worker, "provider_unavailable", False):
+            counts["provider_unavailable"] = 1
+            logger.error(
+                "AI26 cycle stopped early: provider capacity unavailable "
+                "(%s); releasing the current claim and leaving later tasks for the next cycle",
+                getattr(worker, "last_provider_condition", "no GPU capacity"),
+            )
+            _write_ai26_progress(counts, "provider_unavailable")
+            break
         _write_ai26_progress(counts, "task_finished")
         if outcome == "idle":
             break

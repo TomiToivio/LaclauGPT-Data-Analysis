@@ -173,12 +173,21 @@ bounded batch and exits. Exit codes:
 2   configuration or preflight failure
 3   another tick holds the lock (benign; the previous run is still working)
 4   periodic-report stage failed after a successful worker cycle
+5   provider capacity unavailable; the model scheduler could not place the model, so the cycle stopped early
 124 the cycle's wall-clock ceiling elapsed; the worker was terminated
 137 the ceiling elapsed and SIGTERM was ignored, so the worker was SIGKILLed
 ```
 
 A cycle that attempts work and completes none of it exits non-zero, so cron or
 monitoring can detect a broken analysis path instead of silently accepting it.
+Exit `5` is specifically a provider-capacity outage: after two consecutive
+`no GPU capacity` failures the worker releases its claim and stops, rather than
+letting three poisoned tasks consume the 9000 s cycle ceiling (#569). A document
+that has just failed for lack of GPU capacity is also left out of the next seed
+walks for `LACLAUGPT_AI26_CAPACITY_COOLDOWN_SECONDS` (default `1800`), so the same
+poison task cannot retake the head of every cycle while the other ready documents
+wait. Setting the cooldown to `0` disables that deferral; a malformed value keeps
+the default rather than disabling it.
 
 ### The cycle wall-clock ceiling (issue #332)
 

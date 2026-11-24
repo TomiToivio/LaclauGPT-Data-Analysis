@@ -81,6 +81,19 @@ class InMemoryTaskStore:
     def has_terminal_failure(self, idempotency_key: str) -> bool:
         return idempotency_key in self.terminal_failures
 
+    def has_recent_capacity_failure(
+        self, idempotency_key: str, *, within_seconds: float
+    ) -> bool:
+        if within_seconds <= 0:
+            return False
+        cutoff = time.time() - within_seconds
+        return any(
+            row["task"]["idempotency_key"] == idempotency_key
+            and row.get("provider_condition") == "no_gpu_capacity"
+            and float(row.get("created_at") or 0) >= cutoff
+            for row in self.failures
+        )
+
     def rearm_terminal_failure(self, idempotency_key: str) -> int:
         if idempotency_key not in self.terminal_failures:
             return 0
@@ -165,6 +178,7 @@ class InMemoryTaskStore:
                 "error": error,
                 "provenance": dict(provenance),
                 "terminal": terminal,
+                "created_at": time.time(),
                 **bounded_failure_diagnostics(diagnostics),
             }
         )

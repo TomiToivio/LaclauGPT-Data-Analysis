@@ -439,6 +439,8 @@ if [[ "$WORKER_STATUS" -eq 124 ]]; then
   log "AI26 Laskin analysis CYCLE CEILING exceeded after ${CYCLE_MAX_SECONDS}s; worker terminated by TERM (then KILL after ${CYCLE_KILL_GRACE_SECONDS}s). Pending tasks are left for safe reclaim on a later cycle; see issue #332."
 elif [[ "$WORKER_STATUS" -eq 137 ]]; then
   log "AI26 Laskin analysis worker was SIGKILLed after the ${CYCLE_MAX_SECONDS}s ceiling (watchdog escalation or external SIGKILL); see issue #332."
+elif [[ "$WORKER_STATUS" -eq 5 ]]; then
+  log "AI26 Laskin analysis PROVIDER CAPACITY UNAVAILABLE: the model scheduler could not place ${LACLAUGPT_LLM_MODEL}; the cycle stopped early instead of paying the full ${CYCLE_MAX_SECONDS}s ceiling. Pending tasks are left for the next seed cycle; see issue #569."
 fi
 REPORT_STATUS="not-run"
 FINAL_STATUS=$WORKER_STATUS

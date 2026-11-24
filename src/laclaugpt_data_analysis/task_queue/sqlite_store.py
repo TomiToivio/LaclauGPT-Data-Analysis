@@ -97,6 +97,20 @@ class SqliteTaskStore:
             ).fetchone()
         return row is not None
 
+    def has_recent_capacity_failure(
+        self, idempotency_key: str, *, within_seconds: float
+    ) -> bool:
+        if within_seconds <= 0:
+            return False
+        cutoff = time.time() - within_seconds
+        with sqlite3.connect(self.path) as connection:
+            row = connection.execute(
+                "SELECT 1 FROM task_failures WHERE idempotency_key = ? "
+                "AND error LIKE '%no GPU capacity%' AND created_at >= ? LIMIT 1",
+                (idempotency_key, cutoff),
+            ).fetchone()
+        return row is not None
+
     def rearm_terminal_failure(self, idempotency_key: str) -> int:
         with sqlite3.connect(self.path) as connection:
             cursor = connection.execute(

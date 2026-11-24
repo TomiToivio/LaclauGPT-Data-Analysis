@@ -9,6 +9,7 @@ same task a duplicate rather than a second row.
 from __future__ import annotations
 
 import time
+from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping
 
 from ..mongo_write import without_immutable_id
@@ -81,6 +82,26 @@ class MongoTaskStore:
                     "idempotency_key": idempotency_key,
                     "terminal": True,
                     "rearmed_at": {"$exists": False},
+                },
+                {"_id": 1},
+            )
+            is not None
+        )
+
+    def has_recent_capacity_failure(
+        self, idempotency_key: str, *, within_seconds: float
+    ) -> bool:
+        if within_seconds <= 0:
+            return False
+        cutoff = datetime.now(timezone.utc) - timedelta(seconds=within_seconds)
+        return (
+            self.failures.find_one(
+                {
+                    "project_id": self.project_id,
+                    "run_id": self.run_id,
+                    "idempotency_key": idempotency_key,
+                    "provider_condition": "no_gpu_capacity",
+                    "created_at": {"$gte": cutoff},
                 },
                 {"_id": 1},
             )

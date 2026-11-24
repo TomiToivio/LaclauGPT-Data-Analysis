@@ -25,8 +25,12 @@ def bounded_failure_diagnostics(
     # single boolean: it survives bounding so an operator can tell "the endpoint was down" from "the
     # document was unanalysable" without reading the error string (#414).
     infrastructure = diagnostics.get("infrastructure") is True
+    provider_condition = str(diagnostics.get("provider_condition") or "")
     if not raw and not finish_reason and not outcome:
-        return {"infrastructure": True} if infrastructure else {}
+        result = {"infrastructure": True} if infrastructure else {}
+        if provider_condition:
+            result["provider_condition"] = provider_condition
+        return result
     result = {
         "response_raw": raw[:FAILURE_RESPONSE_RAW_MAX_CHARS],
         "response_raw_chars": len(raw),
@@ -36,6 +40,8 @@ def bounded_failure_diagnostics(
     }
     if infrastructure:
         result["infrastructure"] = True
+    if provider_condition:
+        result["provider_condition"] = provider_condition
     if outcome == "unanalysable_within_budget":
         result["terminal_reason"] = outcome
         for key in (
@@ -203,6 +209,10 @@ class DurableTaskStore(Protocol):
     def has_result(self, idempotency_key: str, fingerprint: str = "") -> bool: ...
 
     def has_terminal_failure(self, idempotency_key: str) -> bool: ...
+
+    def has_recent_capacity_failure(
+        self, idempotency_key: str, *, within_seconds: float
+    ) -> bool: ...
 
     def rearm_terminal_failure(self, idempotency_key: str) -> int: ...
 
