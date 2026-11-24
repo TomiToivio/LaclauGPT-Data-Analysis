@@ -778,6 +778,7 @@ class AI26TaskWorker(TaskWorker):
             self._infrastructure_refunds = {}
         self.last_failure_class: str | None = None
         self.last_resume_invalidated = 0
+        self.last_provider_capacity_failure = False
         quarantine_before = int(getattr(self.queue, "quarantined_count", 0))
         self.last_quarantined = 0
         claimed = None
@@ -869,6 +870,9 @@ class AI26TaskWorker(TaskWorker):
             self.last_failure_class = type(exc).__name__
             error = f"{self.last_failure_class}: {exc}"
             infrastructure = is_infrastructure_failure(exc)
+            self.last_provider_capacity_failure = (
+                infrastructure and "no gpu capacity" in str(exc).lower()
+            )
             # A second length stop has already exhausted the structured call's
             # escalation. Replaying the same immutable task cannot help; require
             # explicit re-arm after changing the prompt/model/configuration.
@@ -891,6 +895,12 @@ class AI26TaskWorker(TaskWorker):
                 self.queue.dead_letter(task, error)
                 self.queue.ack(claimed.message_id)
                 return "dead-letter"
+            if self.last_provider_capacity_failure:
+                # Capacity failures are not document failures. Move to the stream tail
+                # immediately, preserving the attempt and publishing before acknowledgement.
+                self.queue.publish(task)
+                self.queue.ack(claimed.message_id)
+                return "retry"
             if infrastructure:
                 refunded = self._infrastructure_refunds.get(task.idempotency_key, 0)
                 if refunded >= INFRASTRUCTURE_REFUND_LIMIT:
@@ -1219,6 +1229,8 @@ def build_worker(
 
 
 def _cycle_exit_code(counts: dict[str, int]) -> int:
+    if counts.get("provider_unavailable", 0):
+        return 75  # EX_TEMPFAIL: provider capacity, not watchdog timeout
     failures = counts.get("retry", 0) + counts.get("dead-letter", 0)
     if counts.get("completed", 0) == 0 and failures > 0:
         return 1
@@ -1296,6 +1308,7 @@ def _run_bounded_cycle(
     }
     failure_classes: dict[str, int] = {}
     work_units = 0
+    capacity_streak = 0
     _write_ai26_progress(counts, "ready")
     while work_units < work_limit and counts["claims"] < claim_limit:
         _write_ai26_progress(counts, "running_task")
@@ -1308,6 +1321,17 @@ def _run_bounded_cycle(
         if failure_class:
             failure_classes[failure_class] = failure_classes.get(failure_class, 0) + 1
         _write_ai26_progress(counts, "task_finished")
+        if getattr(worker, "last_provider_capacity_failure", False):
+            capacity_streak += 1
+        elif outcome not in ("duplicate", "idle"):
+            capacity_streak = 0
+        if capacity_streak >= 2:
+            counts["provider_unavailable"] = 1
+            logger.warning(
+                "AI26 cycle parked: provider_unavailable reason=no_gpu_capacity "
+                "consecutive_failures=%d exit_code=75", capacity_streak
+            )
+            break
         if outcome == "idle":
             break
         if outcome != "duplicate":
