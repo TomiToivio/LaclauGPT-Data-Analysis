@@ -15,6 +15,8 @@ from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
 
+from .provider_capacity import CAPACITY_OUTCOME
+
 
 def append_tick(
     path: Path,
@@ -31,7 +33,11 @@ def append_tick(
     progress_path: Path | None = None,
 ) -> dict:
     """Write exactly one atomic JSONL event per invocation, including skipped ticks."""
-    if exit_code == 3:
+    if exit_code == 75:
+        # #569: the provider said it has no capacity. That is neither a completed cycle nor a document
+        # failure, and an operator reading the journal must be able to tell it from both.
+        outcome = "provider_unavailable"
+    elif exit_code == 3:
         outcome = "already_running"
     elif exit_code != 0 and stage == "preflight":
         outcome = "preflight_rejected"
@@ -121,7 +127,8 @@ def append_tick(
                 else:
                     in_reject = False
                 stall_streak += 1
-                if state in ("already_running", "preflight_rejected", "cycle_failed"):
+                if state in ("already_running", "preflight_rejected", "cycle_failed",
+                              CAPACITY_OUTCOME):
                     stall_reasons[str(state)] = stall_reasons.get(str(state), 0) + 1
             if outcome == "cycle_completed":
                 # The success that ends a stall must read as zero on its own event, and it is
@@ -129,7 +136,8 @@ def append_tick(
                 stall_streak = 0
                 stall_reasons = {}
                 last_success = str(event["timestamp_utc"])
-            elif outcome in ("already_running", "preflight_rejected", "cycle_failed"):
+            elif outcome in ("already_running", "preflight_rejected", "cycle_failed",
+                             CAPACITY_OUTCOME):
                 # A cycle that moved work is progress even if the worker exited 1 for one
                 # retried task; only a tick that moved nothing advances the stall.
                 if stage == "complete" and progress_units > 0:

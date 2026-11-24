@@ -25,8 +25,14 @@ def bounded_failure_diagnostics(
     # single boolean: it survives bounding so an operator can tell "the endpoint was down" from "the
     # document was unanalysable" without reading the error string (#414).
     infrastructure = diagnostics.get("infrastructure") is True
+    capacity = diagnostics.get("capacity_unavailable") is True
     if not raw and not finish_reason and not outcome:
-        return {"infrastructure": True} if infrastructure else {}
+        kept: dict[str, Any] = {}
+        if infrastructure:
+            kept["infrastructure"] = True
+        if capacity:
+            kept["capacity_unavailable"] = True
+        return kept
     result = {
         "response_raw": raw[:FAILURE_RESPONSE_RAW_MAX_CHARS],
         "response_raw_chars": len(raw),
@@ -36,6 +42,8 @@ def bounded_failure_diagnostics(
     }
     if infrastructure:
         result["infrastructure"] = True
+    if capacity:
+        result["capacity_unavailable"] = True
     if outcome == "unanalysable_within_budget":
         result["terminal_reason"] = outcome
         for key in (

@@ -439,6 +439,11 @@ if [[ "$WORKER_STATUS" -eq 124 ]]; then
   log "AI26 Laskin analysis CYCLE CEILING exceeded after ${CYCLE_MAX_SECONDS}s; worker terminated by TERM (then KILL after ${CYCLE_KILL_GRACE_SECONDS}s). Pending tasks are left for safe reclaim on a later cycle; see issue #332."
 elif [[ "$WORKER_STATUS" -eq 137 ]]; then
   log "AI26 Laskin analysis worker was SIGKILLed after the ${CYCLE_MAX_SECONDS}s ceiling (watchdog escalation or external SIGKILL); see issue #332."
+elif [[ "$WORKER_STATUS" -eq 75 ]]; then
+  # #569: the model endpoint refused the work for want of GPU capacity. The cycle ended early on
+  # purpose rather than paying the scheduler timeout on every task until the ceiling; the queue keeps
+  # the work and the next seed pass defers those tasks for LACLAUGPT_AI26_CAPACITY_BACKOFF_MINUTES.
+  log "AI26 Laskin analysis PROVIDER UNAVAILABLE (exit 75): the model endpoint has no capacity for this model. Cycle ended early; work is retained and deferred. This is an endpoint/GPU condition, not a document or pipeline failure."
 fi
 REPORT_STATUS="not-run"
 FINAL_STATUS=$WORKER_STATUS
