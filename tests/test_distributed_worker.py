@@ -454,3 +454,39 @@ def test_permanent_failure_is_not_reseeded_across_cycles_until_rearmed() -> None
     third_cycle_queue = InMemoryTaskQueue()
     assert seed_ready_tasks(binding, handoff, third_cycle_queue, store, limit=1) == 1
     assert third_cycle_queue.pending[0].task.attempt == 1
+
+
+def test_gpu_capacity_parks_cycle_and_moves_tasks_to_tail(caplog) -> None:
+    from laclaugpt_data_analysis.distributed_worker import (
+        _cycle_exit_code,
+        _run_bounded_cycle,
+    )
+    from laclaugpt_data_analysis.llm.base import ProviderError
+
+    queue = InMemoryTaskQueue()
+    store = InMemoryTaskStore()
+    seen = []
+
+    def unavailable(task):
+        seen.append(task.task_id)
+        raise ProviderError("scheduler: no GPU capacity for model within 900s")
+
+    for i in range(3):
+        queue.publish(TaskEnvelope(
+            task_id=str(i), idempotency_key=str(i), project_id="ai26",
+            run_id="run-001", task_type="analyze-record",
+            record_ref=f"https://example.invalid/{i}", schema_version=SCHEMA_VERSION,
+            config_revision="cfg", codebook_revision="cb",
+        ))
+    worker = AI26TaskWorker(
+        queue=queue, durable_store=store, handler=unavailable,
+        worker_id="worker-1", provenance={}, max_attempts=1,
+    )
+    counts, _ = _run_bounded_cycle(worker, max_tasks=10, reclaim_idle_ms=None)
+    assert seen == ["0", "1"]
+    assert counts["retry"] == 2
+    assert _cycle_exit_code(counts) == 75
+    assert "reason=no_gpu_capacity" in caplog.text
+    assert [entry.task.task_id for entry in queue.pending] == ["2", "0", "1"]
+    assert all(entry.task.attempt == 1 for entry in queue.pending)
+    assert not store.has_terminal_failure("0")
