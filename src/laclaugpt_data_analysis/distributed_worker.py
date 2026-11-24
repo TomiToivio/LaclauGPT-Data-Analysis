@@ -1119,7 +1119,9 @@ def seed_ready_tasks(
                 counts["already_analyzed"] += 1
                 return False
             deferral = getattr(durable_store, "has_capacity_deferral", None)
-            if deferral is not None and deferral(task.idempotency_key, within_minutes=backoff_minutes()):
+            if deferral is not None and deferral(
+                task.idempotency_key, within_minutes=backoff_minutes()
+            ):
                 # #569: the provider refused this document recently; paying the scheduler timeout again
                 # this cycle would starve every other task in the ready set.
                 counts["capacity_deferred"] += 1
