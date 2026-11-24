@@ -110,7 +110,8 @@ record_tick_on_exit() {
     [[ -z "$sha" ]] || args+=(--git-sha "$sha")
     local interpreter="$ROOT_DIR/.venv/bin/python"
     [[ -x "$interpreter" ]] || interpreter=python3
-    if ! "$interpreter" "$ROOT_DIR/src/laclaugpt_data_analysis/ai26_tick_telemetry.py" "${args[@]}"; then
+    if ! PYTHONPATH="$ROOT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" \
+      "$interpreter" -m laclaugpt_data_analysis.ai26_tick_telemetry "${args[@]}"; then
       printf '[%s] WARNING: AI26 tick journal append failed; verify journal path and permissions\n' "$(date -Is)" >&2
     fi
   else
