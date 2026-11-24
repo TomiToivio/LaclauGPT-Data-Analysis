@@ -42,6 +42,7 @@ title, so it cannot drift from what the file says about itself. Start with
 - [Data analysis pipeline](DATA_ANALYSIS_PIPELINE.md)
 - [Discourse Network Analysis (experimental)](DISCOURSE_NETWORK_ANALYSIS.md)
 - [Analytical knowledge graph contract](KNOWLEDGE_GRAPH.md)
+- [Consuming the shared label-merge registry (#311)](MERGE_REGISTRY_CONSUMPTION.md)
 - [Experimental Luhmann / Social Systems analysis layer](LUHMANN_ANALYSIS.md)
 - [Multi-pipeline architecture (#399)](MULTI_PIPELINE_ARCHITECTURE.md)
 - [Periodic discourse / ideology summaries](PERIODIC_SUMMARIES.md)
