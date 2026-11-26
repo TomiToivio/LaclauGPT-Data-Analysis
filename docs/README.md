@@ -1,6 +1,6 @@
 # Documentation index
 
-Every document in `docs/`, grouped by what it is for. 84 files, including the
+Every document in `docs/`, grouped by what it is for. 85 files, including the
 `methods/`, `design/` and `legacy_ep24_prompts/` subdirectories; each entry is the file's own
 title, so it cannot drift from what the file says about itself. Start with
 [ARCHITECTURE.md](ARCHITECTURE.md) if you are new to the repository.
@@ -18,6 +18,7 @@ title, so it cannot drift from what the file says about itself. Start with
 - [AI26 Laskin operations: drift, failure classes and recovery](AI26_LASKIN_OPERATIONS.md)
 - [AI26 multi-method discourse analysis](AI26_MULTIMETHOD_ANALYSIS.md)
 - [AI26 multimodal method](AI26_MULTIMODAL_METHOD.md)
+- [AI26 graph publication and capacity-aware daily throughput](AI26_NETWORK_PUBLICATION.md)
 - [AI26 analysis on NooPunk](AI26_NOOPUNK_ANALYSIS.md)
 - [AI26: the open decisions, with the numbers that make them decidable](AI26_OPEN_DECISIONS.md)
 - [AI26 prompt budget: the decision (#425)](AI26_PROMPT_BUDGET_425.md)
