@@ -114,6 +114,7 @@ class StoredStatements:
     statements: list[DiscourseStatement] = field(default_factory=list)
     invalid: int = 0
     duplicates: int = 0
+    conflicted: list[str] = field(default_factory=list)
     validation: Counter[str] = field(default_factory=Counter)
     stance: Counter[str] = field(default_factory=Counter)
     prompt_versions: Counter[str] = field(default_factory=Counter)
@@ -125,6 +126,7 @@ class StoredStatements:
             "statements": len(self.statements),
             "invalid": self.invalid,
             "duplicates": self.duplicates,
+            "conflicted_statements": len(self.conflicted),
             "validation": dict(self.validation),
             "stance": dict(self.stance),
             "prompt_versions": sorted(self.prompt_versions),
@@ -202,6 +204,7 @@ def statements_from_results(documents: Iterable[Mapping[str, Any]]) -> StoredSta
     """
     stored = StoredStatements()
     by_id: set[str] = set()
+    pending: list[tuple[DiscourseStatement, Mapping[str, Any]]] = []
     for document in documents:
         result = _mapping(document.get("result")) or document
         run_id = _text(document.get("run_id")) or _text(result.get("run_id"))
@@ -221,11 +224,27 @@ def statements_from_results(documents: Iterable[Mapping[str, Any]]) -> StoredSta
                 stored.duplicates += 1
                 continue
             by_id.add(statement.statement_id)
-            stored.statements.append(statement)
-            stored.stance[statement.qualifier or _STANCE_UNKNOWN] += 1
-            validation = _text(_mapping(raw).get("validation_status")) or "unknown"
-            stored.validation[validation] += 1
-            stored.prompt_versions[_text(_mapping(raw).get("prompt_version")) or "unknown"] += 1
+            pending.append((statement, _mapping(raw)))
+    # One identity may not play two roles in the same graph. Where the coder used the same slug as
+    # both an actor and a concept, every statement touching it is refused and named, instead of
+    # silently re-labelling one side.
+    ambiguous = {statement.actor_id for statement, _ in pending} & {
+        statement.concept_id for statement, _ in pending
+    }
+    for statement, raw in pending:
+        if statement.actor_id in ambiguous or statement.concept_id in ambiguous:
+            stored.conflicted.append(statement.statement_id)
+            continue
+        stored.statements.append(statement)
+        stored.stance[statement.qualifier or _STANCE_UNKNOWN] += 1
+        stored.validation[_text(raw.get("validation_status")) or "unknown"] += 1
+        stored.prompt_versions[_text(raw.get("prompt_version")) or "unknown"] += 1
+    if stored.conflicted:
+        stored.notes.append(
+            f"{len(stored.conflicted)} statement(s) refused because the coder used the same identity "
+            f"as both actor and concept ({', '.join(sorted(ambiguous))}); the coding has to "
+            "distinguish them before those statements can be projected."
+        )
     if stored.duplicates:
         stored.notes.append(
             f"{stored.duplicates} repeated statement ID(s) across re-analysed sources; "

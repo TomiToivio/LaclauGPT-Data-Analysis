@@ -103,6 +103,25 @@ def test_reanalysis_is_counted_and_an_invalid_statement_is_refused():
     assert stored.statements[0].review_status == "PROVISIONAL"
 
 
+def test_one_identity_cannot_play_two_roles_in_the_graph():
+    documents = [
+        result_document(
+            coded_statement(statement_id="dna:a", actor_id="shared", concept_id="conc_a")
+        ),
+        result_document(
+            coded_statement(statement_id="dna:b", actor_id="org_b", concept_id="shared")
+        ),
+        result_document(
+            coded_statement(statement_id="dna:c", actor_id="org_c", concept_id="conc_c")
+        ),
+    ]
+    stored = statements_from_results(documents)
+    assert [statement.statement_id for statement in stored.statements] == ["dna:c"]
+    assert stored.conflicted == ["dna:a", "dna:b"]
+    assert stored.summary()["conflicted_statements"] == 2
+    assert any("same identity" in note for note in stored.notes)
+
+
 def test_unknown_stance_is_recorded_rather_than_assigned():
     stored = statements_from_results([result_document(coded_statement(stance="unknown"))])
     assert stored.statements[0].qualifier == "unknown"
