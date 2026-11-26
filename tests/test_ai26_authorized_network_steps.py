@@ -1,7 +1,6 @@
 """Evidence-only, explicitly authorized Phase 2 steps."""
 
 import pytest
-
 from pipeline_models import DNAResult, HumanPipelineRecord, LaclauResult
 from step_06_dna import analyze_dna
 from step_07_sna import analyze_sna
