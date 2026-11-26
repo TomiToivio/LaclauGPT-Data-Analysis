@@ -1,11 +1,10 @@
 # AI26 graph publication and capacity-aware daily throughput
 
-Issues #577, #578 and #579. These tools do not modify the locked Phase 1 paper
-or the seven human-owned scientific steps. DNA and SNA are optional Phase 2
-products. The locked step 6 and step 7 functions currently raise
-`NotImplementedError`. The study owner must implement or authorize their
-specific scientific logic, or provide already coded inputs. No support tool
-may bypass those functions by guessing stance, identity or social ties.
+Issues #577, #578 and #579. The locked Phase 1 paper remains unchanged. DNA and SNA are optional Phase 2
+products. Tomi explicitly authorized implementation of steps 6 and 7 on
+2026-11-26; their TOMI-LOCKED status remains. They project explicit typed
+inputs supplied in record metadata (`dna_statements` / `sna_relations`)
+and abstain when evidence is absent. No label or co-occurrence inference.
 
 ## Daily analysis throughput (#577)
 
@@ -79,3 +78,20 @@ when covered by evidence, correct source/evidence IDs and review state, and
 honest zero counts for absent coverage. Do not publish private data to Git.
 The issues stay open until real producer inputs, capacity and live host
 verification are available.
+
+## Existing optional DNA coder
+
+The publisher also accepts a private JSON object with `records` (canonical
+records containing the successful `analysis.plugin_results.dna_statement_coding`
+output), `identities` (explicit reviewed mappings `actors` and `concepts`,
+from native coder IDs to canonical IDs), and `relations` (observed SNA ties).
+The adapter excludes failed coding, abstentions, unmatched source quotations,
+rejected/needs-review claims and unresolved identities. It preserves provisional
+status, actual model-run provenance and evidence spans. The normal publication
+command above is unchanged. No private records belong in Git.
+
+Enable the existing optional DNA coder only in authorized private study
+configuration; retain the local gemma4:12b model and no cloud fallback.
+Actual production still requires a host with available GPU capacity, reviewed
+identity mappings and explicitly observed relations. No SNA ties are inferred
+from DNA agreement. A lack of observed relations is a valid zero layer.
