@@ -158,8 +158,14 @@ def main() -> None:
     )
     args = parser.parse_args()
     data = json.loads(args.input.read_text(encoding="utf-8"))
+    statements = data.get("statements", [])
+    if "records" in data:
+        from .ai26_dna_graph_input import convert_coded_record
+
+        for record in data["records"]:
+            statements.extend(convert_coded_record(record, data["identities"]))
     graph = build_graph(
-        [DiscourseStatement.model_validate(s) for s in data["statements"]],
+        [DiscourseStatement.model_validate(s) for s in statements],
         [SNARelation.model_validate(r) for r in data["relations"]],
         run_id=args.run_id,
         codebook_version=args.codebook_version,
