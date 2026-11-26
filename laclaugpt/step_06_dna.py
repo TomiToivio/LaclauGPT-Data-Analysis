@@ -6,9 +6,10 @@ Laclaudian themes, demands and signifiers alone are not binary stances.
 """
 
 # TOMI-LOCKED: changes to this step require Tomi's explicit authorization.
+from pipeline_models import DNAResult, HumanPipelineRecord, LaclauResult
+
 from laclaugpt_data_analysis.interoperability import DiscourseStatement
 from laclaugpt_data_analysis.knowledge_graph import project_dna
-from pipeline_models import DNAResult, HumanPipelineRecord, LaclauResult
 
 
 def analyze_dna(record: HumanPipelineRecord, laclau: LaclauResult) -> DNAResult:
