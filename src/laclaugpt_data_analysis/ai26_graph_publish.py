@@ -2,6 +2,7 @@
 
 No model calls, source coding, or changes to the human-owned scientific steps.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -22,8 +23,14 @@ from .knowledge_graph import (
 )
 
 
-def build_graph(statements: list[DiscourseStatement], relations: list[SNARelation], *,
-                run_id: str, codebook_version: str, prompt_version: str) -> AnalyticalGraph:
+def build_graph(
+    statements: list[DiscourseStatement],
+    relations: list[SNARelation],
+    *,
+    run_id: str,
+    codebook_version: str,
+    prompt_version: str,
+) -> AnalyticalGraph:
     """Reject incomplete provenance and publish only explicit typed inputs."""
     if not all(value.strip() for value in (run_id, codebook_version, prompt_version)):
         raise ValueError("Run, codebook and prompt versions are required")
@@ -36,17 +43,29 @@ def build_graph(statements: list[DiscourseStatement], relations: list[SNARelatio
     for s in statements:
         if s.review_status in {"REJECTED", "SUPERSEDED"}:
             raise ValueError("Rejected or superseded statement is not publishable")
-        if not all((s.actor_id.strip(), s.concept_id.strip(), s.statement_id.strip(),
-                    (s.qualifier or "").strip(), (s.evidence_id or "").strip(),
-                    (s.provenance_id or "").strip())):
+        if not all(
+            (
+                s.actor_id.strip(),
+                s.concept_id.strip(),
+                s.statement_id.strip(),
+                (s.qualifier or "").strip(),
+                (s.evidence_id or "").strip(),
+                (s.provenance_id or "").strip(),
+            )
+        ):
             raise ValueError("DNA requires explicit identities, stance and evidence provenance")
         if s.actor_id == s.concept_id:
             raise ValueError("Actor and concept IDs must be distinct")
     for r in relations:
-        if not all((r.relation_id.strip(), r.source_actor_id.strip(), r.target_actor_id.strip(),
-                    r.source_url.strip(), (r.provenance_id or "").strip())) or not any(
-                        value.strip() for value in r.evidence_ids
-                    ):
+        if not all(
+            (
+                r.relation_id.strip(),
+                r.source_actor_id.strip(),
+                r.target_actor_id.strip(),
+                r.source_url.strip(),
+                (r.provenance_id or "").strip(),
+            )
+        ) or not any(value.strip() for value in r.evidence_ids):
             raise ValueError("SNA requires observed identities and source evidence provenance")
         if r.relation_type == "co-occurrence":
             raise ValueError("Co-occurrence is not an observed social tie")
@@ -60,10 +79,14 @@ def build_graph(statements: list[DiscourseStatement], relations: list[SNARelatio
         f"source:{r.source_url}" for r in relations
     }
     roles = (actors, concepts, statement_ids, sources)
-    if any(left & right for i, left in enumerate(roles) for right in roles[i + 1:]):
+    if any(left & right for i, left in enumerate(roles) for right in roles[i + 1 :]):
         raise ValueError("Conflicting typed identities in graph inputs")
-    dna = project_dna(sorted(statements, key=lambda s: s.statement_id), project_id="ai26", run_id=run_id)
-    sna = project_sna(sorted(relations, key=lambda r: r.relation_id), project_id="ai26", run_id=run_id)
+    dna = project_dna(
+        sorted(statements, key=lambda s: s.statement_id), project_id="ai26", run_id=run_id
+    )
+    sna = project_sna(
+        sorted(relations, key=lambda r: r.relation_id), project_id="ai26", run_id=run_id
+    )
     review = {s.statement_id: s.review_status for s in statements}
     for edge in dna.edges:
         statement_id = edge.id.rsplit(":", 1)[0]
@@ -71,11 +94,16 @@ def build_graph(statements: list[DiscourseStatement], relations: list[SNARelatio
     graph = merge_graphs(dna, sna)
     for element in [*graph.nodes, *graph.edges]:
         element.provenance.codebook_refs = [codebook_version]
-    graph.metadata.update({
-        "run_id": run_id, "codebook_version": codebook_version,
-        "prompt_version": prompt_version, "experimental": True,
-        "dna_statements": len(statements), "sna_relations": len(relations),
-    })
+    graph.metadata.update(
+        {
+            "run_id": run_id,
+            "codebook_version": codebook_version,
+            "prompt_version": prompt_version,
+            "experimental": True,
+            "dna_statements": len(statements),
+            "sna_relations": len(relations),
+        }
+    )
     graph.validate_references()
     return graph
 
@@ -115,18 +143,27 @@ def publish_mongo(graph: AnalyticalGraph, database) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--input", type=Path, required=True, help="private JSON with statements and relations arrays")
+    parser.add_argument(
+        "--input",
+        type=Path,
+        required=True,
+        help="private JSON with statements and relations arrays",
+    )
     parser.add_argument("--output", type=Path, required=True, help="private JSON graph output")
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--codebook-version", required=True)
     parser.add_argument("--prompt-version", required=True)
-    parser.add_argument("--mongo", action="store_true", help="explicitly publish to configured private DB")
+    parser.add_argument(
+        "--mongo", action="store_true", help="explicitly publish to configured private DB"
+    )
     args = parser.parse_args()
     data = json.loads(args.input.read_text(encoding="utf-8"))
     graph = build_graph(
         [DiscourseStatement.model_validate(s) for s in data["statements"]],
         [SNARelation.model_validate(r) for r in data["relations"]],
-        run_id=args.run_id, codebook_version=args.codebook_version, prompt_version=args.prompt_version,
+        run_id=args.run_id,
+        codebook_version=args.codebook_version,
+        prompt_version=args.prompt_version,
     )
     write_json(graph, args.output)
     if args.mongo:
