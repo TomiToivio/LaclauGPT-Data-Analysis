@@ -4,6 +4,7 @@ The canonical record remains authoritative. This module builds an optional graph
 projection that preserves semantic identity across RDF, local files, MongoDB,
 ArangoDB, DNA and SNA workflows without changing Phase-0 execution.
 """
+
 from __future__ import annotations
 
 import csv
@@ -11,6 +12,7 @@ import hashlib
 import json
 import sqlite3
 import urllib.parse
+from collections.abc import Mapping
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Literal, Protocol, Sequence
@@ -29,6 +31,7 @@ Layer = Literal["source", "laclau", "dna", "sna", "cross-layer"]
 
 class GraphProvenance(Model):
     """Where a graph element came from: source, run, method, model, codebook and evidence references."""
+
     source_id: str
     source_url: str | None = None
     run_id: str | None = None
@@ -43,6 +46,7 @@ class GraphProvenance(Model):
 
 class GraphNode(Model):
     """One node of the analytical graph: a stable URI, a layer, and the provenance that justifies it."""
+
     id: str
     uri: str
     kind: str
@@ -58,6 +62,7 @@ class GraphNode(Model):
 
 class GraphEdge(Model):
     """One relation between two nodes, carrying its layer, whether it is directed, and its provenance."""
+
     id: str
     uri: str
     source: str
@@ -76,6 +81,7 @@ class GraphEdge(Model):
 
 class AnalyticalGraph(Model):
     """A project's knowledge graph - nodes, edges and metadata - whose references must resolve inside the graph."""
+
     schema_version: str = KG_SCHEMA_VERSION
     project_id: str
     base_uri: str
@@ -86,7 +92,12 @@ class AnalyticalGraph(Model):
     def validate_references(self) -> None:
         node_ids = {node.id for node in self.nodes}
         missing = sorted(
-            {ref for edge in self.edges for ref in (edge.source, edge.target) if ref not in node_ids}
+            {
+                ref
+                for edge in self.edges
+                for ref in (edge.source, edge.target)
+                if ref not in node_ids
+            }
         )
         if missing:
             raise ValueError(f"Graph edges reference missing nodes: {missing}")
@@ -94,6 +105,7 @@ class AnalyticalGraph(Model):
 
 class SNARelation(Model):
     """One social-network tie observed in the corpus: its two actors, relation type and supporting evidence."""
+
     relation_id: str
     source_actor_id: str
     target_actor_id: str
@@ -112,6 +124,7 @@ class SNARelation(Model):
 
 class SNADerivedResult(Model):
     """A metric computed over relations - centrality, component, community, role or position - with its method and time window."""
+
     result_id: str
     actor_id: str | None = None
     community_id: str | None = None
@@ -194,7 +207,9 @@ def project_laclau_record(
                 "language": record.content.language or record.source.language,
                 "region": record.source.region if hasattr(record.source, "region") else None,
                 "country": record.source.country,
-                "created_at": record.source.created_at.isoformat() if record.source.created_at else None,
+                "created_at": record.source.created_at.isoformat()
+                if record.source.created_at
+                else None,
             },
             provenance=_prov(
                 source_id=source_id,
@@ -377,6 +392,65 @@ def project_laclau_record(
     return graph
 
 
+def _first_attr(value: Any, *names: str) -> Any:
+    """The first non-empty attribute among ``names``.
+
+    Two statement contracts reach this projection: the canonical interoperability one
+    (``actor_label``/``evidence_id``/``review_status``) and the coded discourse-network one the AI26
+    worker stores (``actor_name``/``proposition``/``validation_status``). Reading both keeps one
+    projector honest for either caller instead of failing on a name that the other model lacks.
+    """
+    for name in names:
+        candidate = getattr(value, name, None)
+        if candidate:
+            return candidate
+    return None
+
+
+def _statement_provenance_id(statement: Any) -> str | None:
+    """Read a provenance id from the statement's provenance, whatever shape it takes."""
+    provenance = getattr(statement, "provenance", None)
+    if isinstance(provenance, Mapping):
+        for key in ("provenance_id", "run_id", "id"):
+            value = provenance.get(key)
+            if value:
+                return str(value)
+    elif provenance is not None:
+        for name in ("provenance_id", "run_id", "id"):
+            value = getattr(provenance, name, None)
+            if value:
+                return str(value)
+    direct = getattr(statement, "provenance_id", None)
+    return str(direct) if direct else None
+
+
+def _statement_evidence_ids(statement: Any) -> list[str]:
+    """Evidence ids for a statement edge.
+
+    The coded contract stores one EvidenceSpan rather than an id, so the span's own quote is what a
+    reader can verify. Returning a stable digest keeps the reference resolvable instead of empty.
+    """
+    direct = getattr(statement, "evidence_id", None)
+    if direct:
+        return [str(direct)]
+    span = getattr(statement, "evidence", None)
+    quote = None
+    if span is not None:
+        quote = getattr(span, "quote", None) or getattr(span, "exact", None)
+    if not quote:
+        return []
+    return ["sha256:" + hashlib.sha256(str(quote).encode("utf-8")).hexdigest()[:32]]
+
+
+def _statement_text(statement: Any) -> str:
+    return str(
+        _first_attr(
+            statement, "proposition", "original_concept_wording", "evidence_text", "concept_label"
+        )
+        or ""
+    )
+
+
 def project_dna(
     statements: Sequence[DiscourseStatement],
     *,
@@ -401,12 +475,13 @@ def project_dna(
                     kind="source",
                     layer="source",
                     assertion_kind="empirical",
-                    label=statement.source_document_id,
+                    label=_first_attr(statement, "source_record_id", "source_document_id")
+                    or statement.source_url,
                     provenance=_prov(
                         source_id=source_id,
                         source_url=statement.source_url,
                         run_id=run_id,
-                        provenance_id=statement.provenance_id,
+                        provenance_id=_statement_provenance_id(statement),
                         method="dna-source",
                     ),
                 )
@@ -419,15 +494,15 @@ def project_dna(
                     uri=canonical_actor_uri(base_uri, project_id, statement.actor_id),
                     kind="actor",
                     layer="dna",
-                    label=statement.actor_label,
+                    label=_first_attr(statement, "actor_name", "actor_label") or statement.actor_id,
                     assertion_kind="coded",
                     provenance=_prov(
                         source_id=source_id,
                         source_url=statement.source_url,
                         run_id=run_id,
-                        provenance_id=statement.provenance_id,
+                        provenance_id=_statement_provenance_id(statement),
                         method="discourse-network-analysis",
-                        evidence_ids=[statement.evidence_id] if statement.evidence_id else [],
+                        evidence_ids=_statement_evidence_ids(statement),
                     ),
                 )
             )
@@ -445,9 +520,9 @@ def project_dna(
                         source_id=source_id,
                         source_url=statement.source_url,
                         run_id=run_id,
-                        provenance_id=statement.provenance_id,
+                        provenance_id=_statement_provenance_id(statement),
                         method="discourse-network-analysis",
-                        evidence_ids=[statement.evidence_id] if statement.evidence_id else [],
+                        evidence_ids=_statement_evidence_ids(statement),
                     ),
                 )
             )
@@ -458,21 +533,21 @@ def project_dna(
                 uri=stable_uri(base_uri, project_id, "statement", statement.statement_id),
                 kind="statement",
                 layer="dna",
-                label=statement.evidence_text,
+                label=_statement_text(statement),
                 assertion_kind="coded",
                 properties={
-                    "qualifier": statement.qualifier,
+                    "qualifier": _first_attr(statement, "original_concept_wording", "qualifier"),
                     "confidence": statement.confidence,
-                    "review_status": statement.review_status,
+                    "review_status": _first_attr(statement, "validation_status", "review_status"),
                     "timestamp": statement.timestamp.isoformat() if statement.timestamp else None,
                 },
                 provenance=_prov(
                     source_id=source_id,
                     source_url=statement.source_url,
                     run_id=run_id,
-                    provenance_id=statement.provenance_id,
+                    provenance_id=_statement_provenance_id(statement),
                     method="discourse-network-analysis",
-                    evidence_ids=[statement.evidence_id] if statement.evidence_id else [],
+                    evidence_ids=_statement_evidence_ids(statement),
                     transformation="dna-statement-projection",
                 ),
                 valid_from=statement.timestamp,
@@ -493,14 +568,16 @@ def project_dna(
                     kind=kind,
                     layer="dna",
                     assertion_kind="coded",
-                    properties={"qualifier": statement.qualifier},
+                    properties={
+                        "qualifier": _first_attr(statement, "original_concept_wording", "qualifier")
+                    },
                     provenance=_prov(
                         source_id=source_id,
                         source_url=statement.source_url,
                         run_id=run_id,
-                        provenance_id=statement.provenance_id,
+                        provenance_id=_statement_provenance_id(statement),
                         method="discourse-network-analysis",
-                        evidence_ids=[statement.evidence_id] if statement.evidence_id else [],
+                        evidence_ids=_statement_evidence_ids(statement),
                     ),
                     valid_from=statement.timestamp,
                 )
@@ -615,7 +692,12 @@ def project_sna(
                 graph.nodes.append(
                     GraphNode(
                         id=target_id,
-                        uri=stable_uri(base_uri, project_id, "community", result.community_id or result.result_id),
+                        uri=stable_uri(
+                            base_uri,
+                            project_id,
+                            "community",
+                            result.community_id or result.result_id,
+                        ),
                         kind="community",
                         layer="sna",
                         assertion_kind="graph-statistical",
@@ -633,7 +715,9 @@ def project_sna(
                 )
                 seen.add(target_id)
         result_node = f"derived:{result.result_id}"
-        relation_sources = [by_relation[rid].source_url for rid in result.source_relation_ids if rid in by_relation]
+        relation_sources = [
+            by_relation[rid].source_url for rid in result.source_relation_ids if rid in by_relation
+        ]
         graph.nodes.append(
             GraphNode(
                 id=result_node,
@@ -665,7 +749,10 @@ def project_sna(
                 kind="describes",
                 layer="sna",
                 assertion_kind="graph-statistical",
-                properties={"metric": result.metric, "source_relation_ids": result.source_relation_ids},
+                properties={
+                    "metric": result.metric,
+                    "source_relation_ids": result.source_relation_ids,
+                },
                 provenance=_prov(
                     source_id="derived:sna",
                     source_url=relation_sources[0] if relation_sources else None,
@@ -709,7 +796,10 @@ def merge_graphs(*graphs: AnalyticalGraph) -> AnalyticalGraph:
         base_uri=base_uri,
         nodes=list(node_map.values()),
         edges=list(edge_map.values()),
-        metadata={"projection": "cross-layer", "components": [g.metadata.get("projection") for g in graphs]},
+        metadata={
+            "projection": "cross-layer",
+            "components": [g.metadata.get("projection") for g in graphs],
+        },
     )
     merged.validate_references()
     return merged
@@ -717,6 +807,7 @@ def merge_graphs(*graphs: AnalyticalGraph) -> AnalyticalGraph:
 
 class GraphStore(Protocol):
     """Storage protocol a graph backend implements: write an analytical graph, read it back by project id."""
+
     def write(self, graph: AnalyticalGraph) -> dict[str, Any]: ...
 
     def read(self, project_id: str) -> AnalyticalGraph: ...
@@ -742,6 +833,7 @@ def _edge_row(edge: GraphEdge) -> dict[str, Any]:
 
 class CSVGraphStore:
     """GraphStore that writes ``nodes.csv`` and ``edges.csv`` so the graph is inspectable and round-trips losslessly."""
+
     def __init__(self, directory: str | Path):
         self.directory = Path(directory)
 
@@ -804,6 +896,7 @@ class CSVGraphStore:
 
 class SQLiteGraphStore:
     """GraphStore that persists the graph in SQLite for local querying without a server."""
+
     def __init__(self, path: str | Path):
         self.path = Path(path)
 
@@ -868,13 +961,15 @@ class SQLiteGraphStore:
             nodes = [
                 GraphNode.model_validate(json.loads(row[0]))
                 for row in db.execute(
-                    "SELECT payload_json FROM kg_nodes WHERE project_id=? ORDER BY id", (project_id,)
+                    "SELECT payload_json FROM kg_nodes WHERE project_id=? ORDER BY id",
+                    (project_id,),
                 )
             ]
             edges = [
                 GraphEdge.model_validate(json.loads(row[0]))
                 for row in db.execute(
-                    "SELECT payload_json FROM kg_edges WHERE project_id=? ORDER BY id", (project_id,)
+                    "SELECT payload_json FROM kg_edges WHERE project_id=? ORDER BY id",
+                    (project_id,),
                 )
             ]
         return AnalyticalGraph(
@@ -940,7 +1035,13 @@ class ArangoGraphStore:
     baseline dependency.
     """
 
-    def __init__(self, database: Any, *, vertex_collection: str = "kg_nodes", edge_collection: str = "kg_edges"):
+    def __init__(
+        self,
+        database: Any,
+        *,
+        vertex_collection: str = "kg_nodes",
+        edge_collection: str = "kg_edges",
+    ):
         self.database = database
         self.vertex_collection = vertex_collection
         self.edge_collection = edge_collection
@@ -997,7 +1098,9 @@ def graph_to_rdf(graph: AnalyticalGraph):
     for prefix, namespace in {"laclaugpt": ns, "prov": prov, "dcterms": dct}.items():
         dataset.bind(prefix, namespace)
     named = dataset.graph(
-        rdflib.URIRef(stable_uri(graph.base_uri, graph.project_id, "graph", f"kg:{graph.schema_version}"))
+        rdflib.URIRef(
+            stable_uri(graph.base_uri, graph.project_id, "graph", f"kg:{graph.schema_version}")
+        )
     )
     by_id = {node.id: rdflib.URIRef(node.uri) for node in graph.nodes}
     for node in graph.nodes:
@@ -1009,9 +1112,29 @@ def graph_to_rdf(graph: AnalyticalGraph):
         if node.label:
             named.add((subject, rdflib.namespace.RDFS.label, rdflib.Literal(node.label)))
         if node.provenance.source_url:
-            named.add((subject, prov.wasDerivedFrom, rdflib.URIRef(stable_uri(graph.base_uri, graph.project_id, "source", node.provenance.source_url))))
+            named.add(
+                (
+                    subject,
+                    prov.wasDerivedFrom,
+                    rdflib.URIRef(
+                        stable_uri(
+                            graph.base_uri, graph.project_id, "source", node.provenance.source_url
+                        )
+                    ),
+                )
+            )
         if node.provenance.run_id:
-            named.add((subject, prov.wasGeneratedBy, rdflib.URIRef(stable_uri(graph.base_uri, graph.project_id, "activity", node.provenance.run_id))))
+            named.add(
+                (
+                    subject,
+                    prov.wasGeneratedBy,
+                    rdflib.URIRef(
+                        stable_uri(
+                            graph.base_uri, graph.project_id, "activity", node.provenance.run_id
+                        )
+                    ),
+                )
+            )
     for edge in graph.edges:
         relation = rdflib.URIRef(edge.uri)
         named.add((relation, rdf.type, ns.GraphRelation))
@@ -1025,11 +1148,39 @@ def graph_to_rdf(graph: AnalyticalGraph):
         if edge.weight is not None:
             named.add((relation, ns.weight, rdflib.Literal(edge.weight)))
         if edge.provenance.source_url:
-            named.add((relation, prov.wasDerivedFrom, rdflib.URIRef(stable_uri(graph.base_uri, graph.project_id, "source", edge.provenance.source_url))))
+            named.add(
+                (
+                    relation,
+                    prov.wasDerivedFrom,
+                    rdflib.URIRef(
+                        stable_uri(
+                            graph.base_uri, graph.project_id, "source", edge.provenance.source_url
+                        )
+                    ),
+                )
+            )
         if edge.provenance.run_id:
-            named.add((relation, prov.wasGeneratedBy, rdflib.URIRef(stable_uri(graph.base_uri, graph.project_id, "activity", edge.provenance.run_id))))
+            named.add(
+                (
+                    relation,
+                    prov.wasGeneratedBy,
+                    rdflib.URIRef(
+                        stable_uri(
+                            graph.base_uri, graph.project_id, "activity", edge.provenance.run_id
+                        )
+                    ),
+                )
+            )
         for evidence_id in edge.provenance.evidence_ids:
-            named.add((relation, ns.hasEvidence, rdflib.URIRef(stable_uri(graph.base_uri, graph.project_id, "evidence", evidence_id))))
+            named.add(
+                (
+                    relation,
+                    ns.hasEvidence,
+                    rdflib.URIRef(
+                        stable_uri(graph.base_uri, graph.project_id, "evidence", evidence_id)
+                    ),
+                )
+            )
     return dataset
 
 
