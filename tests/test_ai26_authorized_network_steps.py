@@ -11,27 +11,39 @@ SOURCE = "https://example.test/article"
 
 def record(**metadata):
     return HumanPipelineRecord(
-        source_url=SOURCE, project="ai26", source_text="A supports safety.",
+        source_url=SOURCE,
+        project="ai26",
+        source_text="A supports safety.",
         metadata=metadata,
     )
 
 
 def statement(**overrides):
     return {
-        "statement_id": "statement:1", "actor_id": "actor:a",
-        "actor_label": "A", "concept_id": "concept:safety",
-        "concept_label": "Safety", "qualifier": "agree", "source_url": SOURCE,
-        "source_document_id": "doc-1", "evidence_id": "ev-1",
-        "provenance_id": "prov-1", "producer": {"type": "human", "id": "test"},
+        "statement_id": "statement:1",
+        "actor_id": "actor:a",
+        "actor_label": "A",
+        "concept_id": "concept:safety",
+        "concept_label": "Safety",
+        "qualifier": "agree",
+        "source_url": SOURCE,
+        "source_document_id": "doc-1",
+        "evidence_id": "ev-1",
+        "provenance_id": "prov-1",
+        "producer": {"type": "human", "id": "test"},
         **overrides,
     }
 
 
 def relation(**overrides):
     return {
-        "relation_id": "relation:1", "source_actor_id": "actor:a",
-        "target_actor_id": "actor:b", "relation_type": "mention",
-        "source_url": SOURCE, "evidence_ids": ["ev-2"], "provenance_id": "prov-2",
+        "relation_id": "relation:1",
+        "source_actor_id": "actor:a",
+        "target_actor_id": "actor:b",
+        "relation_type": "mention",
+        "source_url": SOURCE,
+        "evidence_ids": ["ev-2"],
+        "provenance_id": "prov-2",
         **overrides,
     }
 
@@ -55,11 +67,14 @@ def test_abstention_does_not_infer_networks():
     assert not analyze_sna(source, dna).edges
 
 
-@pytest.mark.parametrize("bad", [
-    {"source_url": "https://example.test/other"},
-    {"relation_type": "co-occurrence"},
-    {"evidence_ids": []},
-])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"source_url": "https://example.test/other"},
+        {"relation_type": "co-occurrence"},
+        {"evidence_ids": []},
+    ],
+)
 def test_sna_rejects_invalid_ties(bad):
     with pytest.raises(ValueError):
         analyze_sna(record(sna_relations=[relation(**bad)]), DNAResult())
