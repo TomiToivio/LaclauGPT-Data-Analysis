@@ -1,4 +1,5 @@
 """Synthetic publisher tests: no model or database connection."""
+
 from __future__ import annotations
 
 import json
@@ -13,14 +14,26 @@ OPTIONS = {"run_id": "synthetic", "codebook_version": "v1", "prompt_version": "p
 
 def inputs():
     statement = DiscourseStatement(
-        statement_id="statement:1", actor_id="actor-a", actor_label="Example A",
-        concept_id="concept-a", concept_label="Safety", qualifier="agree",
-        source_url=SOURCE, source_document_id="doc-1", evidence_id="ev-1",
-        provenance_id="prov-1", producer={"type": "human", "id": "synthetic"},
+        statement_id="statement:1",
+        actor_id="actor-a",
+        actor_label="Example A",
+        concept_id="concept-a",
+        concept_label="Safety",
+        qualifier="agree",
+        source_url=SOURCE,
+        source_document_id="doc-1",
+        evidence_id="ev-1",
+        provenance_id="prov-1",
+        producer={"type": "human", "id": "synthetic"},
     )
     relation = SNARelation(
-        relation_id="relation:1", source_actor_id="actor-a", target_actor_id="actor-b",
-        relation_type="mention", source_url=SOURCE, evidence_ids=["ev-2"], provenance_id="prov-2",
+        relation_id="relation:1",
+        source_actor_id="actor-a",
+        target_actor_id="actor-b",
+        relation_type="mention",
+        source_url=SOURCE,
+        evidence_ids=["ev-2"],
+        provenance_id="prov-2",
     )
     return statement, relation
 
@@ -35,7 +48,11 @@ def test_consumer_wire_contract(tmp_path):
     assert data["project_id"] == "ai26"
     assert data["metadata"]["prompt_version"] == "p1"
     assert {node["id"] for node in data["nodes"]} == {
-        "actor-a", "actor-b", "concept-a", "statement:1", f"source:{SOURCE}",
+        "actor-a",
+        "actor-b",
+        "concept-a",
+        "statement:1",
+        f"source:{SOURCE}",
     }
     assert {edge["layer"] for edge in data["edges"]} == {"dna", "sna"}
     for edge in data["edges"]:
