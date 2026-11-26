@@ -43,6 +43,7 @@ title, so it cannot drift from what the file says about itself. Start with
 - [Data analysis pipeline](DATA_ANALYSIS_PIPELINE.md)
 - [Discourse Network Analysis (experimental)](DISCOURSE_NETWORK_ANALYSIS.md)
 - [Analytical knowledge graph contract](KNOWLEDGE_GRAPH.md)
+- [AI26 daily task throughput (#577)](AI26_CAPACITY_OUTAGE_577.md)
 - [Consuming the shared label-merge registry (#311)](MERGE_REGISTRY_CONSUMPTION.md)
 - [Experimental Luhmann / Social Systems analysis layer](LUHMANN_ANALYSIS.md)
 - [Multi-pipeline architecture (#399)](MULTI_PIPELINE_ARCHITECTURE.md)
