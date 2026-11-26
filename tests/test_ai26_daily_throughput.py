@@ -1,4 +1,5 @@
 """Daily task counts do not confuse duplicate recognition or cycles with work."""
+
 from datetime import date
 
 from laclaugpt_data_analysis.ai26_daily_throughput import daily_throughput
@@ -23,6 +24,7 @@ def test_no_observations_are_unknown_not_zero():
     assert result["completed_tasks"] is None
     result = daily_throughput(
         ["2026-11-26T12:30:00 AI26 worker cycle: {'completed': 0}"],
-        date(2026, 11, 26), timezone="Europe/Helsinki",
+        date(2026, 11, 26),
+        timezone="Europe/Helsinki",
     )
     assert result["completed_tasks"] == 0
