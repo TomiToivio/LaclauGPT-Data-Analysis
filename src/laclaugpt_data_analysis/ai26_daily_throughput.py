@@ -1,4 +1,5 @@
 """Count completed tasks (not successful cron cycles) from private worker logs."""
+
 from __future__ import annotations
 
 import argparse
@@ -9,7 +10,9 @@ from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-_CYCLE = re.compile(r"(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:\d{2})?).*?AI26 worker cycle: (\{[^{}]*\})")
+_CYCLE = re.compile(
+    r"(\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?(?:Z|[+-]\d{2}:\d{2})?).*?AI26 worker cycle: (\{[^{}]*\})"
+)
 
 
 def daily_throughput(lines, day: date, *, timezone: str) -> dict:
@@ -43,10 +46,12 @@ def daily_throughput(lines, day: date, *, timezone: str) -> dict:
         duplicates += duplicate
         summaries += 1
     return {
-        "day": day.isoformat(), "timezone": timezone,
+        "day": day.isoformat(),
+        "timezone": timezone,
         "completed_tasks": completed if summaries else None,
         "duplicate_tasks": duplicates if summaries else None,
-        "worker_summaries": summaries, "malformed_summaries": malformed,
+        "worker_summaries": summaries,
+        "malformed_summaries": malformed,
         "coverage": "observed summaries only; missing or malformed cycles may undercount",
     }
 
@@ -55,7 +60,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--log", type=Path, required=True)
     parser.add_argument("--day", type=date.fromisoformat, required=True)
-    parser.add_argument("--timezone", required=True, help="IANA timezone of naive worker log timestamps")
+    parser.add_argument(
+        "--timezone", required=True, help="IANA timezone of naive worker log timestamps"
+    )
     args = parser.parse_args()
     with args.log.open(encoding="utf-8", errors="replace") as stream:
         print(json.dumps(daily_throughput(stream, args.day, timezone=args.timezone)))
