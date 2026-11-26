@@ -12,18 +12,35 @@ def coded_record():
     return {
         "source_url": SOURCE,
         "content": {"text": "A supports safety."},
-        "analysis": {"plugin_results": {"dna_statement_coding": {
-            "model_run": {"actual_model": "gemma4:12b"},
-            "proposal": {"statements": [{
-                "statement_id": "dna:1", "source_url": SOURCE,
-                "actor_id": "a", "actor_name": "A",
-                "concept_id": "c", "concept_label": "Safety",
-                "agreement": True, "stance": "support",
-                "evidence": {"quote": "A supports safety.", "start_char": 0,
-                             "end_char": 18, "exact": True},
-                "coder_type": "llm", "coder_id_or_model": "gemma4:12b",
-            }]},
-        }}},
+        "analysis": {
+            "plugin_results": {
+                "dna_statement_coding": {
+                    "model_run": {"actual_model": "gemma4:12b"},
+                    "proposal": {
+                        "statements": [
+                            {
+                                "statement_id": "dna:1",
+                                "source_url": SOURCE,
+                                "actor_id": "a",
+                                "actor_name": "A",
+                                "concept_id": "c",
+                                "concept_label": "Safety",
+                                "agreement": True,
+                                "stance": "support",
+                                "evidence": {
+                                    "quote": "A supports safety.",
+                                    "start_char": 0,
+                                    "end_char": 18,
+                                    "exact": True,
+                                },
+                                "coder_type": "llm",
+                                "coder_id_or_model": "gemma4:12b",
+                            }
+                        ],
+                    },
+                }
+            },
+        },
     }
 
 
