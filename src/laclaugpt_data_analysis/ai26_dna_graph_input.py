@@ -10,7 +10,9 @@ from __future__ import annotations
 import hashlib
 import json
 
-from laclaugpt_data_analysis.discourse_network.models import DiscourseStatement as NativeStatement
+from laclaugpt_data_analysis.discourse_network.models import (
+    DiscourseStatement as NativeStatement,
+)
 from laclaugpt_data_analysis.interoperability import DiscourseStatement
 
 
@@ -46,9 +48,11 @@ def convert_coded_record(record, identities):
             continue
         span = native.evidence
         if (
-            not span.exact or not span.quote
-            or span.start_char is None or span.end_char is None
-            or text[span.start_char:span.end_char] != span.quote
+            not span.exact
+            or not span.quote
+            or span.start_char is None
+            or span.end_char is None
+            or text[span.start_char : span.end_char] != span.quote
         ):
             continue
         actor = identities.get("actors", {}).get(native.actor_id)
@@ -74,10 +78,15 @@ def convert_coded_record(record, identities):
             producer={"type": producer_type, "id": coder, "version": native.model_version},
             provenance_id="dna-run:" + _digest([source_url, run, native.provenance]),
             confidence=native.confidence,
-            document_attributes={"evidence_span": span.model_dump(mode="json"),
-                                 "model_run": run, "native_provenance": native.provenance},
-            actor_attributes={"native_actor_id": native.actor_id,
-                              "native_concept_id": native.concept_id},
+            document_attributes={
+                "evidence_span": span.model_dump(mode="json"),
+                "model_run": run,
+                "native_provenance": native.provenance,
+            },
+            actor_attributes={
+                "native_actor_id": native.actor_id,
+                "native_concept_id": native.concept_id,
+            },
         )
         # Do not promote a candidate to a validated claim during export.
         statements.append(statement.model_dump(mode="json"))
