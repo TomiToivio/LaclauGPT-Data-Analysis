@@ -95,3 +95,49 @@ configuration; retain the local gemma4:12b model and no cloud fallback.
 Actual production still requires a host with available GPU capacity, reviewed
 identity mappings and explicitly observed relations. No SNA ties are inferred
 from DNA agreement. A lack of observed relations is a valid zero layer.
+
+## Direct producer from the stored results (#578/#579)
+
+`ai26_graph_publish` exists for an operator who already holds coded inputs. The
+AI26 pipeline also stores those inputs as it analyses: every result document
+carries the coded DNA statements under
+`result.analysis.plugin_results.dna_statement_coding.proposal.statements`, and
+every canonical record carries the author and `parent_source_url` from which an
+observed reply can be read. `analytical_graph_export` projects exactly those, so
+the graph no longer needs a hand-assembled input file:
+
+```bash
+python -m laclaugpt_data_analysis.analytical_graph_export --dry-run   # counts only
+python -m laclaugpt_data_analysis.analytical_graph_export             # upsert kg_*
+python -m laclaugpt_data_analysis.analytical_graph_export --output "$AI26_NETWORK_OUTPUT"
+```
+
+What it will and will not do:
+
+- **Reads** `ai26__analysis_results` and validates each stored statement against
+  the current `DiscourseStatement` model. A statement that no longer validates is
+  skipped and counted (`invalid_statements`), never repaired.
+- **DNA** is the existing `project_dna` projection: actor → statement → concept,
+  with the statement's own source URL, provenance id, evidence digest, qualifier
+  and review status. It codes nothing and calls no model.
+- **SNA** is only observed communication: a stored `parent_source_url` that
+  resolves to a known author, or an explicit `@handle` in the text that matches an
+  author in the same window. A reply whose parent is outside the window is counted
+  as unresolved and not written. Co-occurrence and similar labels never become
+  ties.
+- **Writes** with the existing `MongoGraphStore` (`kg_meta`, `kg_nodes`,
+  `kg_edges`), upserting on `project_id` + `id`, so a re-run over the same corpus
+  is idempotent.
+- **Reports** a summary: node and edge counts per layer, statement counts,
+  duplicates kept once, and the SNA scan's own explanation of what it did not
+  write. An empty window says so instead of writing a graph that looks complete.
+
+Measured on Laskin, 2026-11-26, over 5,541 stored AI26 results: 11,071 coded
+statements (802 duplicate statement ids across re-analysed sources, kept once),
+27,029 nodes and 33,340 edges (33,213 DNA, 127 SNA mentions; 272 replies carried
+a parent link but no author, so no tie was written for them).
+
+A bounded reader must not silently zero a layer: the Visualization adapter reads
+at most a fixed number of edges per source window, and an id-ordered bound that
+fills with DNA leaves the smaller SNA layer at zero. Read the adapter's own
+availability metrics after publication, not just the store's counts.
