@@ -314,6 +314,11 @@ def test_support_layer_does_not_implement_or_replace_a_step() -> None:
     """
     for _, module_name, _ in STEP_ORDER:
         source = (PIPELINE / f"{module_name}.py").read_text(encoding="utf-8")
+        # Tomi explicitly authorized these two steps for #578/#579 on 2026-11-26.
+        # Preserve their lock markers and keep the other five placeholder guards.
+        if module_name in {"step_06_dna", "step_07_sna"}:
+            assert "TOMI-LOCKED" in source
+            continue
         assert "NotImplementedError" in source, (
             f"{module_name}.py no longer raises NotImplementedError: either Tomi has "
             "hand-coded the step (fine) or an agent has written the method (not fine)."
