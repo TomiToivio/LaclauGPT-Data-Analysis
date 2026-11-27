@@ -201,3 +201,15 @@ def test_a_real_run_upserts_meta_nodes_and_edges():
     assert written["nodes"] > 0
     assert written["edges"] > 0
     assert database.collections["kg_meta"].rows[0]["project_id"] == "ai26"
+
+
+def test_a_named_run_id_is_recorded_on_metadata_and_every_edge():
+    """The graph must name the run that produced it, or it cannot be reproduced (#578)."""
+    report = build_graph(
+        [_document("urn:run", statements=[_statement(source_url="urn:run")])],
+        include_laclau=False,
+        run_id="ai26-graph-test-run",
+    )
+    assert report.graph.metadata["run_id"] == "ai26-graph-test-run"
+    assert report.graph.edges, "expected projected edges"
+    assert {edge.provenance.run_id for edge in report.graph.edges} == {"ai26-graph-test-run"}

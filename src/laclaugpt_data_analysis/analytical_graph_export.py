@@ -400,9 +400,12 @@ def export(
     dry_run: bool = False,
     prefix: str = "kg",
     include_laclau: bool = True,
+    run_id: str | None = None,
 ) -> dict[str, Any]:
     documents = read_documents(database, limit=limit, since=since)
-    report = build_graph(documents, project_id=project_id, include_laclau=include_laclau)
+    report = build_graph(
+        documents, project_id=project_id, run_id=run_id, include_laclau=include_laclau
+    )
     summary = report.summary()
     if dry_run:
         summary["written"] = False
@@ -426,6 +429,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--since", default=None, help="ISO date; only results created at or after it"
     )
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--run-id",
+        default="",
+        help="name this export run; recorded in every node/edge provenance and in kg_meta",
+    )
     parser.add_argument("--skip-laclau", action="store_true", help="project DNA and SNA only")
     args = parser.parse_args(argv)
     if not args.uri:
@@ -443,6 +451,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             since=since,
             dry_run=args.dry_run,
             include_laclau=not args.skip_laclau,
+            run_id=args.run_id or None,
         )
     finally:
         client.close()
