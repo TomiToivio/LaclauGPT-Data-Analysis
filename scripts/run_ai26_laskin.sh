@@ -114,6 +114,16 @@ record_tick_on_exit() {
       "$interpreter" -m laclaugpt_data_analysis.ai26_tick_telemetry "${args[@]}"; then
       printf '[%s] WARNING: AI26 tick journal append failed; verify journal path and permissions\n' "$(date -Is)" >&2
     fi
+    # #577: name a provider-capacity outage in the log itself, so an 18-hour park reads as one
+    # dated interval instead of eighteen identical failures. Read-only: it never changes the
+    # cycle's status, and a report failure must not fail the cycle.
+    if [[ -f "$telemetry_dir/logs/ai26-analysis-ticks.jsonl" ]]; then
+      local outage=""
+      outage=$(PYTHONPATH="$ROOT_DIR/src${PYTHONPATH:+:$PYTHONPATH}" \
+        "$interpreter" -m laclaugpt_data_analysis.ai26_capacity_outage \
+        --journal "$telemetry_dir/logs/ai26-analysis-ticks.jsonl" 2>/dev/null) || true
+      [[ -z "$outage" ]] || printf '[%s] %s\n' "$(date -Is)" "$outage"
+    fi
   else
     printf '[%s] WARNING: private telemetry directory unavailable; no tick JSONL written\n' "$(date -Is)" >&2
   fi
